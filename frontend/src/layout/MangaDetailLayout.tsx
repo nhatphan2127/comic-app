@@ -1,0 +1,645 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+
+import { formatTimeAgo } from '../helpers/formatDate';
+import { API_UPLOADS, comicApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import type { Chapter, Comic } from '../types/data';
+import '../assets/styles/MangaDetails.css';
+
+// Import separated comment component
+import CommentsSection from '../components/CommentsSection';
+
+function normalizeComic(data: Partial<Comic> | null | undefined): Comic | null {
+  if (!data) return null;
+
+  const names = Array.isArray(data.names) && data.names.length > 0
+    ? data.names
+    : (data.name ? [{ name: data.name, country: 'global' }] : [{ name: 'Untitled', country: 'global' }]);
+
+  const toStringArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    }
+
+    if (typeof value === 'string') {
+      return value.split(',').map((item) => item.trim()).filter(Boolean);
+    }
+
+    return [];
+  };
+
+  const chapters = Array.isArray(data.chapters)
+    ? data.chapters.map((chapter) => ({
+        ...chapter,
+        chapterNumber: Number(chapter.chapterNumber || 0),
+        title: chapter.title || 'Untitled chapter',
+      }))
+    : [];
+
+  return {
+    ...data,
+    id: data.id || '',
+    name: names[0]?.name || '',
+    names,
+    description: data.description || '',
+    coverUrl: data.coverUrl || '',
+    types: data.types || 'MANGA',
+    rating: typeof data.rating === 'number' ? data.rating : 0,
+    view: typeof data.view === 'number' ? data.view : 0,
+    follow: typeof data.follow === 'number' ? data.follow : 0,
+    author: data.author || '',
+    artist: data.artist || '',
+    genres: toStringArray(data.genres),
+    tags: toStringArray(data.tags),
+    formats: toStringArray(data.formats),
+    url: data.url || '',
+    chapters,
+    latestChapters: Array.isArray(data.latestChapters) ? data.latestChapters : [],
+  } as Comic;
+}
+
+export default function MangaDetailLayout() {
+  const navigate = useNavigate();
+  const { comicUrl } = useParams<{ comicUrl: string }>();
+  const { isLoggedIn } = useAuth();
+
+  // Comic data and chapters state
+  const [comic, setComic] = useState<Comic | null>(null);
+  const [chaptersList, setChaptersList] = useState<Chapter[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // UI state for user interactions
+  const [isFollowing, setIsFollowing] = useState<boolean>(false);
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [ratingHover, setRatingHover] = useState<number>(0);
+  const [userRating, setUserRating] = useState<number>(0);
+  const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
+
+  // Collapsible sections state
+  const [showAlts, setShowAlts] = useState<boolean>(false);
+  const [showFullDesc, setShowFullDesc] = useState<boolean>(false);
+  const [showDetailsShell, setShowDetailsShell] = useState<boolean>(false);
+  const [chapterSearch, setChapterSearch] = useState<string>('');
+
+  // Calculate formatted follow count (converts to thousands format)
+  const localFollowsCount = useMemo(() => {
+    if (!comic) return 0;
+    const baseFollows = comic.follow || 1500;
+    return Math.max(1, Math.round(baseFollows / 100) / 10);
+  }, [comic]);
+
+  // Navigate to chapter reader
+  const onRead = (chapterId: string) => navigate(`${chapterId}`);
+
+  // Fetch comic details and chapters list on component mount
+  useEffect(() => {
+    if (!comicUrl) return;
+
+    const fetchComicData = async () => {
+      try {
+        setLoading(true);
+        const data = await comicApi.getByUrl(comicUrl);
+        const normalizedComic = normalizeComic(data as Partial<Comic> | null);
+
+        if (normalizedComic) {
+          setComic(normalizedComic);
+          setChaptersList(normalizedComic.chapters || []);
+          setUserRating(typeof normalizedComic.userRating === 'number' ? normalizedComic.userRating : 0);
+        } else {
+          setComic(null);
+          setChaptersList([]);
+        }
+      } catch (error) {
+        setComic(null);
+        setChaptersList([]);
+        console.error('Error loading comic data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchComicData();
+  }, [comicUrl]);
+
+  useEffect(() => {
+    const fetchFollowState = async () => {
+      if (!comic?.id || !isLoggedIn) {
+        setIsFollowing(false);
+        return;
+      }
+
+      try {
+        const response = await comicApi.getFollowStatus(comic.id);
+        setIsFollowing(Boolean(response?.isFollowing));
+      } catch (error) {
+        setIsFollowing(false);
+      }
+    };
+
+    fetchFollowState();
+  }, [comic?.id, isLoggedIn]);
+
+  const handleFollowToggle = async () => {
+    if (!comic?.id) return;
+    if (!isLoggedIn) {
+      alert('Please log in to follow this comic.');
+      return;
+    }
+
+    try {
+      const nextState = !isFollowing;
+      const response = nextState ? await comicApi.follow(comic.id) : await comicApi.unfollow(comic.id);
+      const resolved = response?.isFollowing ?? nextState;
+      setIsFollowing(resolved);
+      setComic((prev) => prev ? { ...prev, follow: Math.max(0, (prev.follow || 0) + (resolved ? 1 : -1)) } : prev);
+    } catch (error) {
+      console.error('Unable to update follow state:', error);
+    }
+  };
+
+  // Handle rating submission
+  const handleRatingSubmit = async (rating: number) => {
+    if (!comic?.id) return;
+
+    if (!isLoggedIn) {
+      alert('Please log in to rate this comic.');
+      return;
+    }
+
+    try {
+      setIsSubmittingRating(true);
+      const response = await comicApi.rate(comic.id, rating);
+      setUserRating(response?.userRating ?? rating);
+      setComic((prev) => prev ? { ...prev, rating: response?.newAverageRating ?? prev.rating, userRating: response?.userRating ?? rating } : prev);
+    } catch (error) {
+      console.error('Unable to submit rating:', error);
+      alert('Unable to submit your rating right now.');
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
+  // Extract alternative titles (if available from API)
+  const alternativeTitles = useMemo(() => {
+    if (!comic) return [];
+
+    const names = (comic.names || [])
+      .map((entry) => entry?.name)
+      .filter((name): name is string => Boolean(name));
+
+    if (names.length > 0) {
+      return names;
+    }
+
+    return comic.name ? [comic.name] : [];
+  }, [comic]);
+
+  // Filter chapters by search term
+  const filteredChapters = useMemo(() => {
+    return chaptersList.filter((ch) => {
+      const term = chapterSearch.toLowerCase().trim();
+      if (!term) return true;
+      const numStr = String(ch.chapterNumber || '');
+      const titleStr = (ch.title || '').toLowerCase();
+      return numStr.includes(term) || titleStr.includes(term);
+    });
+  }, [chaptersList, chapterSearch]);
+
+  // Sort filtered chapters based on sort order
+  const sortedChapters = useMemo(() => {
+    return [...filteredChapters].sort((a, b) => {
+      const numA = a.chapterNumber || 0;
+      const numB = b.chapterNumber || 0;
+      return sortOrder === 'newest' ? numB - numA : numA - numB;
+    });
+  }, [filteredChapters, sortOrder]);
+
+  // Loading state UI
+  if (loading) {
+    return (
+      <div className="manga-details-container" style={{ padding: '80px', textAlign: 'center' }}>
+        <h2>Loading comic information...</h2>
+      </div>
+    );
+  }
+
+  // Error state - comic not found
+  if (!comic) {
+    return (
+      <div className="manga-details-container" style={{ padding: '40px', textAlign: 'center' }}>
+        <h2>Comic not found.</h2>
+        <button
+          onClick={() => navigate('/')}
+          className="btn btn--primary"
+          style={{ width: 'auto', display: 'inline-block', marginTop: '15px' }}
+        >
+          Back to home
+        </button>
+      </div>
+    );
+  }
+
+  // Find first chapter for quick read button
+  const firstChapter = [...chaptersList]
+    .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0))[0];
+  const primaryName = comic.name || comic.names?.[0]?.name || 'Untitled';
+  const coverSrc = comic.coverUrl ? `${API_UPLOADS}${comic.coverUrl}` : '/images/placeholder.png';
+
+  return (
+    <div className='layout layout--single'>
+      <article className="mpage" id={`manga-detail-${comic.id}`}>
+        <div id="mal-sync"></div>
+
+        {/* HEADER HERO SECTION */}
+        <header className="mpage__hero">
+          <div className="mpage__hero-inner">
+
+            {/* LEFT COLUMN: POSTER AND ACTIONS */}
+            <div className="mpage__poster">
+              <div className="poster">
+                <img
+                  sizes="(max-width: 720px) 50vw, 220px"
+                  alt={primaryName}
+                  src={coverSrc}
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div className="mpage__poster-actions">
+                <button
+                  type="button"
+                  className="btn btn--primary mpage__read"
+                  onClick={() => firstChapter && onRead(firstChapter.id)}
+                  disabled={!firstChapter}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2 4.5h7.5a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2zM22 4.5h-7.5a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"></path>
+                  </svg>
+                  <span>Start reading</span>
+                </button>
+
+                {/* Follow */}
+                <div className="fdrop mpage__follow">
+                  <button
+                    type="button"
+                    className={`btn btn--soft mpage__follow-btn ${isFollowing ? 'is-on' : ''}`}
+                    onClick={handleFollowToggle}
+                    aria-pressed={isFollowing}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={isFollowing ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z"></path>
+                    </svg>
+                    <span>{isFollowing ? 'Following' : 'Follow'}</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M9 6l6 6-6 6"></path>
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Rating stars */}
+                <div className="mpage__rate-stack">
+                  <div className="mstars" role="radiogroup" aria-label="Rate this title">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        className={`mstars__btn ${(ratingHover || userRating) >= star ? 'is-active' : ''} ${userRating >= star ? 'is-rated' : ''}`}
+                        aria-label={`Rate ${star} star`}
+                        aria-checked={userRating === star}
+                        role="radio"
+                        onClick={() => handleRatingSubmit(star)}
+                        onMouseEnter={() => setRatingHover(star)}
+                        onMouseLeave={() => setRatingHover(0)}
+                        disabled={isSubmittingRating}
+                      >
+                        <svg className="mstars__svg mstars__svg--bg" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M12 3.2l2.78 5.63 6.22.9-4.5 4.39 1.06 6.18L12 17.4l-5.56 2.92 1.06-6.18L3 9.74l6.22-.9z"></path>
+                        </svg>
+                        <svg className="mstars__svg mstars__svg--fg" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M12 3.2l2.78 5.63 6.22.9-4.5 4.39 1.06 6.18L12 17.4l-5.56 2.92 1.06-6.18L3 9.74l6.22-.9z"></path>
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Report */}
+                <div className="mpage__poster-aux">
+                  <button type="button" className="mpage__action-link">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <span>Report</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: COMIC DETAILS */}
+            <div className="mpage__head">
+              <div className="mpage__title-row">
+                <h1 className="mpage__title">{primaryName}</h1>
+              </div>
+
+              {/* Alternative titles section */}
+              <div className="mpage__alts">
+                <button
+                  type="button"
+                  className={`mpage__alts-toggle ${showAlts ? 'is-active' : ''}`}
+                  aria-expanded={showAlts}
+                  onClick={() => setShowAlts(!showAlts)}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                  </svg>
+                  <span className="mpage__alts-summary">
+                    {alternativeTitles.join(' / ')}
+                  </span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 6l6 6-6 6"></path>
+                  </svg>
+                </button>
+                <div style={{ height: showAlts ? 'auto' : '0px', overflow: 'hidden', transition: 'height 220ms' }}>
+                  <ul className="mpage__alts-list">
+                    {alternativeTitles.map((titleText: string, idx: number) => (
+                      <li key={idx}>{titleText}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Badges */}
+              <div className="mpage__badges">
+                <span className="mpage__badge mpage__badge--type">{(comic.types || 'MANGA').toUpperCase()}</span>
+                <span className="mpage__badge mpage__badge--rating mpage__badge--rating-safe">SAFE</span>
+                <span className="mpage__badge mono">2025</span>
+                <span className="mpage__badge mpage__badge--status mpage__badge--status-releasing">RELEASING</span>
+              </div>
+
+              {/* Stats & Rank Line */}
+              <div className="mpage__byline">
+                <span className="mpage__badge mpage__badge--rank mpage__rank" title="Ranked #69">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M8 21h8"></path>
+                    <path d="M12 17v4"></path>
+                    <path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path>
+                    <path d="M17 4h2a2 2 0 0 1 2 2v1a3 3 0 0 1-3 3"></path>
+                    <path d="M7 4H5a2 2 0 0 0-2 2v1a3 3 0 0 0 3 3"></path>
+                  </svg>
+                  <strong>#69</strong>
+                </span>
+                <span className="mpage__byline-sep" aria-hidden="true">·</span>
+                <span className="mpage__stat">
+                  <strong>★ {comic.rating?.toFixed(1) || 'N/A'}</strong>
+                  <span className="mpage__stat-sub">by 235 users</span>
+                </span>
+                <span className="mpage__byline-sep" aria-hidden="true">·</span>
+                <span className="mpage__stat">
+                  <strong>{localFollowsCount}K</strong>
+                  <span className="mpage__stat-sub">followed</span>
+                </span>
+              </div>
+
+              {/* Mobile action buttons (CTA) */}
+              <div className="mpage__cta">
+                <button type="button" className="btn btn--primary mpage__read" onClick={() => firstChapter && onRead(firstChapter.id)} disabled={!firstChapter}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2 4.5h7.5a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2zM22 4.5h-7.5a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"></path>
+                  </svg>
+                  <span>Start reading</span>
+                </button>
+              </div>
+
+              {/* Synopsis / Description */}
+              <div className="mpage__desc-wrap">
+                <p className={`mpage__desc ${showFullDesc ? 'is-expanded' : ''}`} style={{ WebkitLineClamp: showFullDesc ? 'unset' : 3 }}>
+                  {comic.description || "No description cataloged yet."}
+                </p>
+                <button
+                  type="button"
+                  className="mpage__desc-toggle"
+                  onClick={() => setShowFullDesc(!showFullDesc)}
+                >
+                  {showFullDesc ? '[view less]' : '[view more]'}
+                </button>
+              </div>
+
+              {/* Additional details panel */}
+              <div className="mpage__details-shell">
+                <button
+                  type="button"
+                  className="mpage__details-shell-toggle"
+                  aria-expanded={showDetailsShell}
+                  onClick={() => setShowDetailsShell(!showDetailsShell)}
+                >
+                  <span>{showDetailsShell ? 'Hide details' : 'Show details'}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" style={{ transform: showDetailsShell ? 'rotate(90deg)' : 'none', transition: 'transform 220ms' }}>
+                    <path d="M9 6l6 6-6 6"></path>
+                  </svg>
+                </button>
+                <div className="mpage__details-shell-body" style={{ height: showDetailsShell ? 'auto' : '0px', overflow: 'hidden', transition: 'height 220ms' }}>
+                  <dl className="mpage__details">
+
+                    {/* Genres */}
+                    <div className="mpage__detail">
+                      <dt className="mpage__detail-label">Genres</dt>
+                      <dd className="mpage__detail-items">
+                        <ul className="mpage__chips">
+                          {Array.isArray(comic.genres)
+                            ? comic.genres.map((genre, idx) => (
+                              <li key={idx}>
+                                <a className="mpage__chip" href='#'>{genre}</a>
+                              </li>
+                            ))
+                            : (<li><a className="mpage__chip" href='#'>Updating</a></li>)
+                          }
+                        </ul>
+                      </dd>
+                    </div>
+
+                    {/* Genres */}
+                    <div className="mpage__detail">
+                      <dt className="mpage__detail-label">Tags</dt>
+                      <dd className="mpage__detail-items">
+                        <ul className="mpage__chips">
+                          {Array.isArray(comic.tags)
+                            ? comic.tags.map((tag, idx) => (
+                              <li key={idx}>
+                                <a className="mpage__chip" href='#'>{tag}</a>
+                              </li>
+                            ))
+                            : (<li><a className="mpage__chip" href='#'>Updating</a></li>)
+                          }
+                        </ul>
+                      </dd>
+                    </div>
+
+                    {/* Genres */}
+                    <div className="mpage__detail">
+                      <dt className="mpage__detail-label">Formats</dt>
+                      <dd className="mpage__detail-items">
+                        <ul className="mpage__chips">
+                          {Array.isArray(comic.formats)
+                            ? comic.formats.map((format, idx) => (
+                              <li key={idx}>
+                                <a className="mpage__chip" href='#'>{format}</a>
+                              </li>
+                            ))
+                            : (<li><a className="mpage__chip" href='#'>Updating</a></li>)
+                          }
+                        </ul>
+                      </dd>
+                    </div>
+
+                    {/* Authors */}
+                    <div className="mpage__detail">
+                      <dt className="mpage__detail-label">Authors</dt>
+                      <dd className="mpage__detail-items">
+                        <ul className="mpage__chips">
+                          <li>
+                            <a className="mpage__chip" href='#'>{comic.author || 'Updating'}</a>
+                          </li>
+                        </ul>
+                      </dd>
+                    </div>
+
+                    {/* Artist */}
+                    <div className="mpage__detail">
+                      <dt className="mpage__detail-label">Authors</dt>
+                      <dd className="mpage__detail-items">
+                        <ul className="mpage__chips">
+                          <li>
+                            <a className="mpage__chip" href='#'>{comic.artist || 'Updating'}</a>
+                          </li>
+                        </ul>
+                      </dd>
+                    </div>
+
+                  </dl>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </header>
+
+        {/* BODY SECTION: CHAPTERS & COMMENTS */}
+        <div className="mpage__body">
+          <div className="mpage__main">
+
+            {/* CHAPTER SECTION */}
+            <section className="mpage__chapters">
+              <header className="mpage__sec-head">
+                <h2 className="mpage__sec-title">Chapters</h2>
+              </header>
+
+              {/* SEARCH AND SORT TOOLBAR */}
+              <div className="mchap-toolbar">
+                <div className="mchap-search">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                  <input
+                    placeholder="Search chapter…"
+                    type="text"
+                    value={chapterSearch}
+                    onChange={(e) => setChapterSearch(e.target.value)}
+                  />
+                </div>
+                <div className="useg mchap-toolbar__sort" role="group" aria-label="Sort">
+                  <button
+                    type="button"
+                    className={`useg__btn ${sortOrder === 'newest' ? 'is-on' : ''}`}
+                    onClick={() => setSortOrder('newest')}
+                    title="Sort by chapter (desc)"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: sortOrder === 'newest' ? 'none' : 'rotate(180deg)' }}>
+                      <path d="M12 5v14"></path>
+                      <path d="M19 12l-7 7-7-7"></path>
+                    </svg>
+                    <span>Chapter</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`useg__btn ${sortOrder === 'oldest' ? 'is-on' : ''}`}
+                    onClick={() => setSortOrder('oldest')}
+                    title="Sort by chapter (asc)"
+                  >
+                    <span>Oldest</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CHAPTERS LIST */}
+              <ul className="mchap-list">
+                {sortedChapters.map((ch: Chapter) => {
+                  // Use releaseAt date if available, otherwise use createdAt
+                  const dateToFormat = ch.updatedAt || ch.createdAt;
+                  const formattedDate = dateToFormat ? formatTimeAgo(dateToFormat) : 'Recently';
+
+                  return (
+                    <li key={ch.id} className="mchap-item">
+                      <div className="mchap-row">
+                        <a
+                          className="mchap-row__primary"
+                          href={`#ch-${ch.chapterNumber}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onRead(ch.id);
+                          }}
+                        >
+                          <span className="mchap-row__ch">Ch.{ch.chapterNumber}</span>
+                          {ch.title && <span className="mchap-row__title"> - {ch.title}</span>}
+                        </a>
+                        <div className="mchap-row__secondary">
+                          
+                          <span className="mchap-row__sep" aria-hidden="true">·</span>
+                          <span className="mchap-row__likes">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9A2 2 0 0 0 19.72 9z"></path>
+                              <line x1="7" y1="22" x2="7" y2="11"></line>
+                            </svg>
+                            12
+                          </span>
+                          <span className="mchap-row__sep" aria-hidden="true">·</span>
+                          <span className="mchap-row__time">{formattedDate || 'Recently'}</span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+
+                {sortedChapters.length === 0 && (
+                  <li className="mchap-item" style={{ padding: '24px', justifyContent: 'center', opacity: 0.6 }}>
+                    No chapters matching search.
+                  </li>
+                )}
+              </ul>
+
+              {/* Static pagination matching HTML template */}
+              {sortedChapters.length > 0 && (
+                <div className="mchap-foot">
+                  <span className="mchap-foot__hint">
+                    Showing 1 to {Math.min(20, sortedChapters.length)} of {sortedChapters.length} items
+                  </span>
+                  <nav className="npager" aria-label="Pagination">
+                    <button type="button" className="npager__num is-active" aria-current="page">1</button>
+                  </nav>
+                </div>
+              )}
+            </section>
+
+            {/* COMMENTS SECTION - Using separated component synchronized with API */}
+            <CommentsSection targetId={comic.id} type="comic" />
+
+          </div>
+        </div>
+      </article>
+    </div>
+  );
+}

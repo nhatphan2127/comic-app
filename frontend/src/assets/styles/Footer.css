@@ -1,0 +1,309 @@
+/* ============================================
+   FOOTER.CSS - Responsive & Themed
+   ============================================ */
+
+:root {
+  --fs-xs: clamp(0.7rem, 1.5vw, 0.875rem);
+  --fs-sm: clamp(0.8rem, 2vw, 0.95rem);
+  --fs-base: clamp(0.9rem, 2.5vw, 1rem);
+  --fs-lg: clamp(1rem, 3vw, 1.125rem);
+}
+
+.footer-container {
+  width: 100%;
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--f-sans);
+  box-sizing: border-box;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  border-top: 1px solid var(--border-color);
+}
+
+.footer-container * {
+  box-sizing: border-box;
+}
+
+/* ============================================
+   FOOTER TOP SECTION
+   ============================================ */
+
+.footer-top {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: clamp(2rem, 4vw, 3rem);
+  padding: clamp(2rem, 4vw, 3rem) clamp(1.5rem, 3vw, 4rem);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.footer-logo-col {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.75rem, 1.5vw, 1rem);
+}
+
+.footer-logo {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.5rem, 1vw, 0.75rem);
+  cursor: pointer;
+  user-select: none;
+  width: fit-content;
+}
+
+.footer-logo-x {
+  position: relative;
+  display: flex;
+  height: clamp(28px, 4vw, 36px);
+  width: clamp(28px, 4vw, 36px);
+  align-items: center;
+  justify-content: center;
+  border-radius: clamp(0.3rem, 0.8vw, 0.5rem);
+  border: 1px solid var(--border-light);
+  background: linear-gradient(135deg, var(--accent-color), #06b6d4);
+  font-weight: 900;
+  color: #ffffff;
+  font-style: italic;
+  font-size: clamp(0.9rem, 2vw, 1.125rem);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.footer-logo-x:hover {
+  transform: scale(1.05);
+}
+
+.footer-logo-text {
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+  transition: color 0.3s ease;
+}
+
+.footer-bio {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  max-width: 280px;
+  transition: color 0.3s ease;
+}
+
+/* Footer columns */
+.footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.footer-col-title {
+  color: var(--accent-color);
+  font-size: clamp(0.75rem, 1.2vw, 0.875rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin: 0;
+  transition: color 0.3s ease;
+}
+
+.footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.75rem, 1.5vw, 1rem);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.footer-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--fs-sm);
+  transition: color 0.2s ease;
+  cursor: pointer;
+}
+
+.footer-link:hover {
+  color: var(--accent-color);
+}
+
+/* ============================================
+   FOOTER BOTTOM SECTION
+   ============================================ */
+
+.footer-bottom {
+  background-color: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+  padding: clamp(1rem, 2vw, 1.5rem) clamp(1.5rem, 3vw, 4rem);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.footer-bottom-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1400px;
+  margin: 0 auto;
+  font-size: clamp(0.75rem, 1.2vw, 0.875rem);
+  color: var(--text-secondary);
+  transition: color 0.3s ease;
+  gap: clamp(0.75rem, 1.5vw, 1rem);
+}
+
+.footer-bottom-right {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.4rem, 1vw, 0.5rem);
+}
+
+.footer-heart {
+  color: #ef4444;
+  display: inline-block;
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+@keyframes heartbeat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.footer-reddit-icon {
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.3s ease;
+  cursor: pointer;
+}
+
+.footer-reddit-icon:hover {
+  color: var(--accent-color);
+}
+
+/* ============================================
+   RESPONSIVE: TABLET
+   ============================================ */
+
+@media (max-width: 1200px) {
+  .footer-top {
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: clamp(1.5rem, 3vw, 2rem);
+    padding: clamp(1.5rem, 3vw, 2rem) clamp(1.25rem, 2.5vw, 2rem);
+  }
+
+  .footer-logo-col {
+    grid-column: 1 / -1;
+  }
+
+  .footer-bio {
+    max-width: 100%;
+  }
+}
+
+/* ============================================
+   RESPONSIVE: MOBILE TABLET
+   ============================================ */
+
+@media (max-width: 1024px) {
+  .footer-top {
+    grid-template-columns: repeat(2, 1fr);
+    gap: clamp(1.25rem, 2.5vw, 1.75rem);
+    padding: clamp(1.25rem, 2.5vw, 1.75rem) clamp(1rem, 2vw, 1.5rem);
+  }
+
+  .footer-logo-col {
+    grid-column: 1 / -1;
+    gap: clamp(0.6rem, 1.2vw, 0.85rem);
+  }
+}
+
+/* ============================================
+   RESPONSIVE: MOBILE
+   ============================================ */
+
+@media (max-width: 768px) {
+  .footer-top {
+    grid-template-columns: 1fr;
+    gap: clamp(1rem, 2vw, 1.5rem);
+    padding: clamp(1.25rem, 2vw, 1.5rem) clamp(0.9rem, 2vw, 1.2rem);
+  }
+
+  .footer-logo-col {
+    grid-column: auto;
+    gap: clamp(0.6rem, 1.2vw, 0.85rem);
+  }
+
+  .footer-col {
+    gap: clamp(0.85rem, 1.5vw, 1.25rem);
+  }
+
+  .footer-col-title {
+    font-size: clamp(0.7rem, 1vw, 0.8rem);
+  }
+
+  .footer-link {
+    font-size: clamp(0.75rem, 1.2vw, 0.85rem);
+  }
+
+  .footer-bottom-content {
+    flex-direction: column;
+    gap: clamp(0.75rem, 1.5vw, 1rem);
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .footer-container {
+    border-top: none;
+  }
+
+  .footer-top {
+    gap: clamp(0.9rem, 1.8vw, 1.25rem);
+    padding: clamp(1rem, 1.8vw, 1.25rem) clamp(0.75rem, 1.5vw, 1rem);
+  }
+
+  .footer-logo {
+    gap: clamp(0.4rem, 0.8vw, 0.6rem);
+  }
+
+  .footer-logo-x {
+    height: clamp(24px, 3vw, 28px);
+    width: clamp(24px, 3vw, 28px);
+    font-size: clamp(0.75rem, 1.5vw, 0.9rem);
+  }
+
+  .footer-logo-text {
+    font-size: clamp(0.9rem, 1.5vw, 1rem);
+  }
+
+  .footer-bio {
+    font-size: clamp(0.7rem, 1.2vw, 0.8rem);
+    max-width: 100%;
+  }
+
+  .footer-col-title {
+    font-size: clamp(0.65rem, 0.9vw, 0.75rem);
+    margin-bottom: clamp(0.65rem, 1.2vw, 0.9rem);
+  }
+
+  .footer-link {
+    font-size: clamp(0.7rem, 1vw, 0.8rem);
+  }
+
+  .footer-bottom {
+    padding: clamp(0.85rem, 1.5vw, 1rem) clamp(0.75rem, 1.5vw, 1rem);
+  }
+
+  .footer-bottom-content {
+    font-size: clamp(0.65rem, 0.9vw, 0.75rem);
+    gap: clamp(0.5rem, 1vw, 0.75rem);
+  }
+
+  .footer-bottom-right {
+    gap: clamp(0.3rem, 0.6vw, 0.4rem);
+  }
+}

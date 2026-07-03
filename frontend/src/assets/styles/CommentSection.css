@@ -1,0 +1,15 @@
+.cm-item__ctrl--like.cm-item__ctrl--active {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.cm-item__ctrl--dislike.cm-item__ctrl--active {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.cm-item__ctrl--active {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}

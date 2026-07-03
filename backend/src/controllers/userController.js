@@ -1,0 +1,414 @@
+import db from '../config/database.js';
+import { v4 as uuidv4 } from 'uuid';
+
+export async function getProfile(req, res, next) {
+  try {
+    const user = await db.get('SELECT id, avatar, displayName, username, email, bio, socialLinks, role FROM users WHERE id = ?', [req.user.id]);
+    if (!user) {
+      return res.status(404).json({ status: 'fail', message: 'User not found' });
+    }
+
+    const preferences = await db.get('SELECT theme, filter FROM user_preferences WHERE userId = ?', [req.user.id]);
+    user.preference = preferences || { theme: 'light', filter: 1 };
+
+    return res.json({ status: 'success', data: user });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateProfile(req, res, next) {
+  try {
+    const { avatar, displayName, email, bio, socialLinks } = req.body;
+    const user = await db.get('SELECT id FROM users WHERE id = ?', [req.user.id]);
+    if (!user) {
+      return res.status(404).json({ status: 'fail', message: 'User not found' });
+    }
+
+    await db.run(
+      `UPDATE users SET avatar = COALESCE(?, avatar), displayName = COALESCE(?, displayName), email = COALESCE(?, email), bio = COALESCE(?, bio), socialLinks = COALESCE(?, socialLinks), updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [avatar, displayName, email, bio, socialLinks, req.user.id]
+    );
+
+    return res.json({ status: 'success', data: { avatar, displayName, email, bio, socialLinks } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updatePassword(req, res, next) {
+  try {
+    const { newPassword, confirmPassword } = req.body;
+    
+    if (!newPassword || !confirmPassword) {
+      return res.status(400).json({ status: 'fail', message: 'New password and confirmation are required' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ status: 'fail', message: 'New passwords do not match' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ status: 'fail', message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await db.get('SELECT id FROM users WHERE id = ?', [req.user.id]);
+    if (!user) {
+      return res.status(404).json({ status: 'fail', message: 'User not found' });
+    }
+
+    // TODO: Hash new password with bcrypt.hash(newPassword, 10) before saving
+    await db.run(
+      `UPDATE users SET password = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [newPassword, req.user.id]
+    );
+
+    return res.json({ status: 'success', message: 'Password updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updatePreferences(req, res, next) {
+  try {
+    const { theme, filter } = req.body;
+    const pref = await db.get('SELECT userId FROM user_preferences WHERE userId = ?', [req.user.id]);
+    if (pref) {
+      await db.run(`UPDATE user_preferences SET theme = COALESCE(?, theme), filter = COALESCE(?, filter) WHERE userId = ?`, [theme, filter, req.user.id]);
+    } else {
+      await db.run(`INSERT INTO user_preferences (userId, theme, filter) VALUES (?, ?, ?)`, [req.user.id, theme || 'light', filter ?? 1]);
+    }
+
+    const updated = await db.get('SELECT theme, filter FROM user_preferences WHERE userId = ?', [req.user.id]);
+    return res.json({ status: 'success', data: updated });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getFollowingList(req, res, next) {
+  try {
+    const userId = req.user.id;
+
+    // 1. Lấy thông tin cơ bản của truyện được theo dõi và mối quan hệ 1-1 (Category, Author, Artist, UserRating)
+    const list = await db.all(
+      `SELECT 
+         f.userId,
+         f.updatedAt AS followingUpdatedAt,
+         fc.id AS categoryId,
+         fc.category AS categoryName,
+         c.id AS comicId,
+         c.name AS comicName,
+         c.url AS comicUrl,
+         c.coverUrl AS comicCoverUrl,
+         c.description AS comicDescription,
+         c.updatedAt AS comicUpdatedAt,
+         c.types AS comicTypes,
+         c.contentRating AS comicContentRating,
+         c.demographic AS comicDemographic,
+         c.releaseStatus AS comicReleaseStatus,
+         c.releasingYear AS comicReleasingYear,
+         c.rating AS comicRating,
+         c.view AS comicView,
+         c.follow AS comicFollow,
+         au.name AS authorName,
+         ar.name AS artistName,
+         (SELECT rating FROM rating_history WHERE userId = f.userId AND comicId = c.id) AS userRating
+       FROM following f
+       JOIN comics c ON f.comicId = c.id
+       LEFT JOIN following_categories fc ON f.followingCategoryId = fc.id
+       LEFT JOIN author au ON c.authorId = au.id
+       LEFT JOIN artist ar ON c.artistId = ar.id
+       WHERE f.userId = ?
+       ORDER BY c.name`,
+      [userId]
+    );
+
+    // Nếu người dùng không theo dõi truyện nào, trả về mảng rỗng ngay lập tức
+    if (list.length === 0) {
+      return res.json({ status: 'success', data: [] });
+    }
+
+    const comicIds = list.map((item) => item.comicId);
+
+    // 2. Truy vấn gộp các thuộc tính có quan hệ 1-nhiều (One-to-Many / Many-to-Many)
+    const otherNames = await db.all(
+      `SELECT comicId, name FROM comic_other_names WHERE comicId IN (${comicIds.map(() => '?').join(',')})`,
+      comicIds
+    );
+
+    const genresList = await db.all(
+      `SELECT cg.comicId, g.name 
+       FROM comic_genres cg 
+       JOIN genres g ON cg.genreId = g.id 
+       WHERE cg.comicId IN (${comicIds.map(() => '?').join(',')})`,
+      comicIds
+    );
+
+    const formatsList = await db.all(
+      `SELECT cf.comicId, f.name 
+       FROM comic_formats cf 
+       JOIN formats f ON cf.formatId = f.id 
+       WHERE cf.comicId IN (${comicIds.map(() => '?').join(',')})`,
+      comicIds
+    );
+
+    const chaptersList = await db.all(
+      `SELECT id, comicId, title, chapterNumber, url, createdAt, updatedAt 
+       FROM chapters 
+       WHERE comicId IN (${comicIds.map(() => '?').join(',')}) 
+         AND deletedAt IS NULL
+       ORDER BY chapterNumber DESC`,
+      comicIds
+    );
+
+    // 3. Khởi tạo các từ điển (Maps) để tra cứu nhanh thông tin
+    const otherNamesMap = {};
+    const genresMap = {};
+    const formatsMap = {};
+    const chaptersMap = {};
+
+    comicIds.forEach((id) => {
+      otherNamesMap[id] = [];
+      genresMap[id] = [];
+      formatsMap[id] = [];
+      chaptersMap[id] = [];
+    });
+
+    otherNames.forEach((row) => {
+      // Vì DB không có cột quốc gia, tạm thời đặt mặc định hoặc chuỗi rỗng để khớp kiểu { name: string, country: string }
+      otherNamesMap[row.comicId].push({ name: row.name, country: 'Unknown' });
+    });
+
+    genresList.forEach((row) => {
+      genresMap[row.comicId].push(row.name);
+    });
+
+    formatsList.forEach((row) => {
+      formatsMap[row.comicId].push(row.name);
+    });
+
+    chaptersList.forEach((row) => {
+      chaptersMap[row.comicId].push({
+        id: row.id,
+        comicId: row.comicId,
+        title: row.title,
+        chapterNumber: row.chapterNumber,
+        url: row.url,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      });
+    });
+
+    // 4. Ánh xạ dữ liệu thô sang cấu trúc đối tượng lồng nhau chuẩn của TypeScript Interface
+    const responseData = list.map((item) => {
+      const comicId = item.comicId;
+      const allChapters = chaptersMap[comicId] || [];
+      const latestChapters = allChapters.slice(0, 1); // Lấy 1 chương mới nhất
+
+      return {
+        userId: item.userId,
+        updatedAt: item.followingUpdatedAt,
+        comic: {
+          id: comicId,
+          name: item.comicName || undefined,
+          names: otherNamesMap[comicId] || [],
+          url: item.comicUrl,
+          coverUrl: item.comicCoverUrl,
+          description: item.comicDescription || undefined,
+          updatedAt: item.comicUpdatedAt || null,
+          types: item.comicTypes || undefined,
+          contentRating: item.comicContentRating || undefined,
+          demographic: item.comicDemographic || undefined,
+          genres: genresMap[comicId] || [],
+          tags: [],
+          formats: formatsMap[comicId] || [],
+          releaseStatus: item.comicReleaseStatus || undefined,
+          releasingYear: item.comicReleasingYear ? String(item.releasingYear) : undefined,
+          userRating: item.userRating || undefined,
+          rating: item.comicRating || 0,
+          view: item.comicView || 0,
+          follow: item.comicFollow || 0,
+          author: item.authorName || undefined,
+          artist: item.artistName || undefined,
+          latestChapters: latestChapters,
+        },
+        category: {
+          id: item.categoryId || '',
+          category: item.categoryName || 'Default',
+        },
+      };
+    });
+
+    return res.json({ status: 'success', data: responseData });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getFollowingCategories(req, res, next) {
+  try {
+    const categories = await db.all(
+      `SELECT id, category, userId
+       FROM following_categories
+       WHERE userId IS NULL OR userId = ?
+       ORDER BY CASE WHEN userId IS NULL THEN 0 ELSE 1 END, category`,
+      [req.user.id]
+    );
+
+    return res.json({ status: 'success', data: categories });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function createFollowingCategory(req, res, next) {
+  try {
+    const { category } = req.body;
+    const trimmed = String(category || '').trim();
+
+    if (!trimmed) {
+      return res.status(400).json({ status: 'fail', message: 'Category name is required' });
+    }
+
+    const existing = await db.get(
+      `SELECT id FROM following_categories WHERE lower(category) = lower(?) AND (userId IS NULL OR userId = ?)`,
+      [trimmed, req.user.id]
+    );
+
+    if (existing) {
+      return res.status(409).json({ status: 'fail', message: 'Category already exists' });
+    }
+
+    const id = uuidv4();
+    await db.run(`INSERT INTO following_categories (id, category, userId) VALUES (?, ?, ?)`, [id, trimmed, req.user.id]);
+
+    return res.status(201).json({ status: 'success', data: { id, category: trimmed, userId: req.user.id } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateFollowingCategory(req, res, next) {
+  try {
+    const { categoryId } = req.params;
+    const { category } = req.body;
+    const trimmed = String(category || '').trim();
+
+    if (!trimmed) {
+      return res.status(400).json({ status: 'fail', message: 'Category name is required' });
+    }
+
+    const existing = await db.get('SELECT id FROM following_categories WHERE id = ? AND (userId IS NULL OR userId = ?)', [categoryId, req.user.id]);
+    if (!existing) {
+      return res.status(404).json({ status: 'fail', message: 'Category not found' });
+    }
+
+    await db.run(`UPDATE following_categories SET category = ? WHERE id = ?`, [trimmed, categoryId]);
+    return res.json({ status: 'success', data: { id: categoryId, category: trimmed } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteFollowingCategory(req, res, next) {
+  try {
+    const { categoryId } = req.params;
+    const category = await db.get('SELECT id FROM following_categories WHERE id = ? AND userId = ?', [categoryId, req.user.id]);
+    if (!category) {
+      return res.status(404).json({ status: 'fail', message: 'Category not found' });
+    }
+
+    await db.run(`UPDATE following SET followingCategoryId = NULL WHERE followingCategoryId = ? AND userId = ?`, [categoryId, req.user.id]);
+    await db.run(`DELETE FROM following_categories WHERE id = ? AND userId = ?`, [categoryId, req.user.id]);
+
+    return res.json({ status: 'success', message: 'Category deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateFollowingComicCategory(req, res, next) {
+  try {
+    const { comicId } = req.params;
+    const { categoryId } = req.body || {};
+
+    if (categoryId) {
+      const category = await db.get('SELECT id FROM following_categories WHERE id = ? AND (userId IS NULL OR userId = ?)', [categoryId, req.user.id]);
+      if (!category) {
+        return res.status(404).json({ status: 'fail', message: 'Category not found' });
+      }
+    }
+
+    const existing = await db.get('SELECT id FROM following WHERE userId = ? AND comicId = ?', [req.user.id, comicId]);
+    if (!existing) {
+      return res.status(404).json({ status: 'fail', message: 'Following entry not found' });
+    }
+
+    await db.run(`UPDATE following SET followingCategoryId = ? WHERE userId = ? AND comicId = ?`, [categoryId || null, req.user.id, comicId]);
+    return res.json({ status: 'success', data: { comicId, followingCategoryId: categoryId || null } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getBookmarks(req, res, next) {
+  try {
+    const list = await db.all(
+      `SELECT c.id, c.name, c.url
+       FROM bookmarks b
+       JOIN comics c ON b.comicId = c.id
+       WHERE b.userId = ?`,
+      [req.user.id]
+    );
+    return res.json({ status: 'success', data: list });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getReadingHistory(req, res, next) {
+  try {
+    const history = await db.all(
+      `SELECT rh.chapterId,
+              rh.scrollPosition,
+              rh.currentPage,
+              rh.readAt,
+              c.name AS comicName,
+              c.url AS comicUrl,
+              c.coverUrl AS coverUrl,
+              ch.title AS chapterTitle,
+              ch.url AS chapterUrl,
+              ch.chapterNumber AS chapterNumber,
+              (SELECT COUNT(*) FROM chapter_images WHERE chapterId = ch.id) AS totalPage
+       FROM read_history rh
+       JOIN chapters ch ON rh.chapterId = ch.id
+       JOIN comics c ON ch.comicId = c.id
+       WHERE rh.userId = ?
+       ORDER BY rh.readAt DESC`,
+      [req.user.id]
+    );
+    return res.json({ status: 'success', data: history });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function removeHistoryChapter(req, res, next) {
+  try {
+    const { chapterId } = req.params;
+    await db.run(`DELETE FROM read_history WHERE userId = ? AND chapterId = ?`, [req.user.id, chapterId]);
+    return res.json({ status: 'success', message: 'Successfully removed chapter from reading history' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function clearReadingHistory(req, res, next) {
+  try {
+    await db.run(`DELETE FROM read_history WHERE userId = ?`, [req.user.id]);
+    return res.json({ status: 'success', message: 'Successfully cleared all reading history' });
+  } catch (error) {
+    next(error);
+  }
+}
