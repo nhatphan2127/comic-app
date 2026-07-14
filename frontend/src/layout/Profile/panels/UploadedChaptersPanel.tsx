@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, GripVertical } from 'lucide-react';
-import type { ChapterContributor, Chapter } from '../../../types/data';
+import type { ChapterContributor, Chapter } from '../../../types/types';
 import { comicApi, chapterContributorApi } from '../../../services/api';
 import { ChapterRow } from '../../../components/UploadChapterCard'; 
 import '../../../assets/styles/ComicForm.css';
@@ -11,12 +11,8 @@ interface ChapterPage {
   previewUrl: string;
 }
 
-const isUnread = (contrib: ChapterContributor): boolean => contrib.unread === 1;
-
 export default function UploadedChaptersPanel() {
-  // Tab filter (status) và All/Unread filter
   const [activeTab, setActiveTab] = useState<'all' | 'accept' | 'pending' | 'reject'>('all');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'unread'>('all');
 
   // Danh sách dữ liệu chapter contributions
   const [contributions, setContributions] = useState<Array<ChapterContributor & { chapter?: Chapter }>>([]);
@@ -46,27 +42,7 @@ export default function UploadedChaptersPanel() {
   const [modalUrl, setModalUrl] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
 
-  // Tính toán số lượng chưa đọc riêng biệt
-  const acceptUnreadCount = contributions.filter(
-    c => isUnread(c) && c.status === 'accept'
-  ).length;
-
-  const pendingUnreadCount = contributions.filter(
-    c => isUnread(c) && c.status === 'pending'
-  ).length;
-
-  const rejectUnreadCount = contributions.filter(
-    c => isUnread(c) && c.status === 'reject'
-  ).length;
-
-  const totalUnreadCount = acceptUnreadCount + pendingUnreadCount + rejectUnreadCount;
-
-  // Lọc danh sách hiển thị theo Tab và Filter được chọn
-  const filteredContributions = contributions.filter(contrib => {
-    const matchesTab = activeTab === 'all' || contrib.status === activeTab;
-    const matchesFilter = activeFilter === 'all' || (activeFilter === 'unread' && isUnread(contrib));
-    return matchesTab && matchesFilter;
-  });
+  const filteredContributions = contributions.filter(contrib => activeTab === 'all' || contrib.status === activeTab);
 
   // Hàm tải danh sách chapter contributions từ server
   const loadContributions = useCallback(async () => {
@@ -118,7 +94,7 @@ export default function UploadedChaptersPanel() {
     const start = nums[0];
     for (let i = 0; i < nums.length; i += 1) {
       if (nums[i] !== start + i) {
-        setFormError('Page numbers must form a continuous sequence starting from the smallest number (e.g. 1,2,3...).');
+        setFormError('Page numbers must form a continuous sequence starting from the simplest number (e.g. 1,2,3...).');
         pages.forEach((page) => URL.revokeObjectURL(page.previewUrl));
         const newPages = sorted.map((file) => ({
           id: `${file.name}-${Date.now()}-${Math.random()}`,
@@ -336,81 +312,76 @@ export default function UploadedChaptersPanel() {
         {/* Phần đầu Tiêu đề & Công cụ */}
         <div className="uview__head uview__head--row">
           <div>
-            <h2 className="uview__title">Uploaded Chapters</h2>
-            <p className="uview__sub">{totalUnreadCount} unread total.</p>
+            <h2 className="uview__title">
+              {showForm ? 'Upload Chapter' : 'Uploaded Chapters'}
+            </h2>
+            <p className="uview__sub">
+              {showForm 
+                ? 'Fill in the form below to upload a new chapter.' 
+                : 'Review your recent uploads and their current status.'}
+            </p>
           </div>
           <div className="uview__head-tools">
-            <button
-              type="button"
-              className="ubtn ubtn--primary ubtn--sm"
-              onClick={() => setShowForm(true)}
-            >
-              + Upload Chapter
-            </button>
+            {/* 
+              Nút này thay đổi trạng thái và hành động tùy vào showForm:
+              - Nếu showForm true: nút biến thành "Back" và khi click sẽ quay lại danh sách ban đầu (setShowForm(false)).
+              - Nếu showForm false: nút là "+ Upload Chapter".
+            */}
+            {showForm ? (
+              <button
+                type="button"
+                className="ubtn ubtn--secondary ubtn--sm"
+                onClick={() => setShowForm(false)}
+              >
+                Back
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="ubtn ubtn--primary ubtn--sm"
+                onClick={() => setShowForm(true)}
+              >
+                + Upload Chapter
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Thanh Bộ lọc (Filters) */}
-        <div className="nfilters">
-          <div className="useg">
-            <button 
-              type="button"
-              className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
-              onClick={() => setActiveTab('all')}
-            >
-              <span>All</span>
-              {totalUnreadCount > 0 && (
-                <span className="useg__count mono">{totalUnreadCount}</span>
-              )}
-            </button>
-            <button 
-              type="button"
-              className={`useg__btn ${activeTab === 'accept' ? 'is-on' : ''}`}
-              onClick={() => setActiveTab('accept')}
-            >
-              <span>Accepted</span>
-              {acceptUnreadCount > 0 && (
-                <span className="useg__count mono">{acceptUnreadCount}</span>
-              )}
-            </button>
-            <button 
-              type="button"
-              className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
-              onClick={() => setActiveTab('pending')}
-            >
-              <span>Pending</span>
-              {pendingUnreadCount > 0 && (
-                <span className="useg__count mono">{pendingUnreadCount}</span>
-              )}
-            </button>
-            <button 
-              type="button"
-              className={`useg__btn ${activeTab === 'reject' ? 'is-on' : ''}`}
-              onClick={() => setActiveTab('reject')}
-            >
-              <span>Rejected</span>
-              {rejectUnreadCount > 0 && (
-                <span className="useg__count mono">{rejectUnreadCount}</span>
-              )}
-            </button>
+        {/* Thanh Bộ lọc (Filters) - Chỉ hiển thị khi showForm là false */}
+        {!showForm && (
+          <div className="nfilters">
+            <div className="useg">
+              <button 
+                type="button"
+                className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
+                onClick={() => setActiveTab('all')}
+              >
+                <span>All</span>
+              </button>
+              <button 
+                type="button"
+                className={`useg__btn ${activeTab === 'accept' ? 'is-on' : ''}`}
+                onClick={() => setActiveTab('accept')}
+              >
+                <span>Accepted</span>
+              </button>
+              <button 
+                type="button"
+                className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
+                onClick={() => setActiveTab('pending')}
+              >
+                <span>Pending</span>
+              </button>
+              <button 
+                type="button"
+                className={`useg__btn ${activeTab === 'reject' ? 'is-on' : ''}`}
+                onClick={() => setActiveTab('reject')}
+              >
+                <span>Rejected</span>
+              </button>
+            </div>
           </div>
-          <div className="useg">
-            <button 
-              type="button"
-              className={`useg__btn ${activeFilter === 'all' ? 'is-on' : ''}`}
-              onClick={() => setActiveFilter('all')}
-            >
-              All
-            </button>
-            <button 
-              type="button"
-              className={`useg__btn ${activeFilter === 'unread' ? 'is-on' : ''}`}
-              onClick={() => setActiveFilter('unread')}
-            >
-              Unread
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Kiểm tra điều kiện hiển thị danh sách hoặc form */}
         {loading ? (
@@ -418,18 +389,9 @@ export default function UploadedChaptersPanel() {
         ) : error ? (
           <div className="uempty">{error}</div>
         ) : showForm ? (
-          // (Giữ nguyên form upload)
           <div className="comic-form-container">
             <div className="comic-form-header">
               <h3 className="comic-form-title">Upload Chapter</h3>
-              <button
-                type="button"
-                className="comic-form-close-btn"
-                onClick={() => setShowForm(false)}
-                aria-label="Close form"
-              >
-                <X size={20} />
-              </button>
             </div>
 
             <form onSubmit={handleSubmit} className="comic-form">
@@ -446,15 +408,8 @@ export default function UploadedChaptersPanel() {
                       placeholder="comic-url-slug"
                       required
                     />
-                    <button
-                      type="button"
-                      className="btn-secondary small"
-                      onClick={() => fetchComicByUrl(comicUrl)}
-                    >
-                      Verify
-                    </button>
+                    
                   </div>
-                  {comicTitle && <p className="form-note">Comic found: {comicTitle}</p>}
                 </div>
 
                 <div className="form-group">
@@ -482,6 +437,12 @@ export default function UploadedChaptersPanel() {
                 />
               </div>
 
+              <div className="form-full">
+                {comicTitle  && <p className="form-note">Comic found: {comicTitle}</p>}
+
+                {formError && <div className="form-error">{formError}</div>}
+                
+              </div>
               <div className="form-group">
                 <label className="form-label">Chapter Pages *</label>
                 <p className="form-note">Select multiple image files with page numbers in filenames (e.g. 1, 2, 3...).</p>
@@ -504,8 +465,7 @@ export default function UploadedChaptersPanel() {
                   />
                 </div>
               </div>
-
-              {formError && <div className="form-error">{formError}</div>}
+              
 
               {pages.length > 0 && (
                 <div className="form-full">
@@ -597,10 +557,10 @@ export default function UploadedChaptersPanel() {
               )}
 
               <div className="form-actions-full">
-                <button type="submit" className="btn-primary" disabled={isSaving}>
+                <button type="submit" className="ubtn ubtn--primary" disabled={isSaving}>
                   {isSaving ? 'Uploading...' : 'Upload Chapter'}
                 </button>
-                <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
+                <button type="button" className="ubtn ubtn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
               </div>
             </form>
 
@@ -621,30 +581,12 @@ export default function UploadedChaptersPanel() {
             )}
           </div>
         ) : filteredContributions.length > 0 ? (
-          /* Tích hợp Component ChapterRow mới tại đây */
           <ul className="nlist" style={{ listStyle: 'none', padding: 0 }}>
             {filteredContributions.map((contrib) => (
               <ChapterRow
                 key={`${contrib.chapterId}-${contrib.userId}`}
                 contributor={contrib as ChapterContributor}
-                onClick={async () => {
-                  if (isUnread(contrib)) {
-                    try {
-                      // Đánh dấu đã đọc trong local state ngay lập tức để cải thiện UX
-                      setContributions(prev =>
-                        prev.map(c => 
-                          c.chapterId === contrib.chapterId && c.userId === contrib.userId
-                            ? { ...c, unread: 0 }
-                            : c
-                        )
-                      );
-                      // Gọi API cập nhật trạng thái đã đọc lên server
-                      await chapterContributorApi.markRead(contrib.chapterId, contrib.userId);
-                    } catch (err) {
-                      console.error('Failed to mark read:', err);
-                    }
-                  }
-                }}
+                onClick={() => undefined}
               />
             ))}
           </ul>

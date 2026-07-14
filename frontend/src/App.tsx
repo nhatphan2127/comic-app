@@ -18,18 +18,18 @@ function App() {
     <BrowserRouter>
 
       <AuthProvider>
-        <Routes>
+          <Routes>
 
-          <Route path="/" element={<Home />} />
-          <Route path="comics/:comicUrl" element={<MangaDetails />} />
-          <Route path="comics/:comicUrl/:chapterId" element={<MangaReader />} />
+            <Route path="/" element={<Home />} />
+            <Route path="comics/:comicUrl" element={<MangaDetails />} />
+            <Route path="comics/:comicUrl/:chapterId" element={<MangaReader />} />
 
-          {/* 2. Thêm Route cho trang cá nhân tại đây */}
-          <Route path="/profile" element={<UserProfile  />} />
+            {/* 2. Thêm Route cho trang cá nhân tại đây */}
+            <Route path="/profile" element={<UserProfile />} />
 
-          {/* <Route path="*" element={<NotFound />} /> */}
+            {/* <Route path="*" element={<NotFound />} /> */}
 
-        </Routes>
+          </Routes>
       </AuthProvider>
 
     </BrowserRouter>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Header from '../layout/Header.tsx';
 import UserProfilePage from '../layout/Profile/UserProfileLayout.tsx';
 import { userApi } from '../services/api';
-import type { UserProfile } from '../types/data';
+import type { UserProfile } from '../types/types.ts';
 
 export default function Home() {
     const [user, setUser] = useState<UserProfile | null>(null);

@@ -33,6 +33,7 @@ await db.exec(`
     bio TEXT,
     socialLinks TEXT,
     role TEXT DEFAULT 'user', -- 'user', 'contributor', 'moderator', 'admin'
+    isBanned INTEGER DEFAULT 0,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
   );
@@ -76,6 +77,7 @@ await db.exec(`
     name TEXT NOT NULL,
     source TEXT,
     types TEXT NOT NULL, -- manga, manhwa, manhua, other
+    status TEXT DEFAULT 'pending',
     contentRating TEXT NOT NULL, -- safe, suggestive, erotica, pornographic
     demographic TEXT NOT NULL, -- josei, seinen, shoujo, shounen
     description TEXT,
@@ -117,6 +119,7 @@ await db.exec(`
     id TEXT PRIMARY KEY,
     comicId TEXT NOT NULL,
     name TEXT NOT NULL,
+    country TEXT NOT NULL,
     FOREIGN KEY(comicId) REFERENCES comics(id)
   );
 
@@ -139,6 +142,7 @@ await db.exec(`
     comicId TEXT NOT NULL,
     title TEXT NOT NULL,
     chapterNumber REAL NOT NULL,
+    status TEXT DEFAULT 'pending',
     visibility TEXT DEFAULT 'public',
     deletedAt TEXT DEFAULT NULL,
     url TEXT NOT NULL UNIQUE,
@@ -174,7 +178,6 @@ await db.exec(`
     userId TEXT NOT NULL,
     chapterId TEXT NOT NULL,
     readAt TEXT DEFAULT CURRENT_TIMESTAMP,
-    scrollPosition INTEGER,
     currentPage INTEGER DEFAULT 1,
     PRIMARY KEY(userId, chapterId),
     FOREIGN KEY(userId) REFERENCES users(id),
@@ -233,6 +236,7 @@ await db.exec(`
     parentCommentId TEXT,
     likes INTEGER DEFAULT 0,
     dislikes INTEGER DEFAULT 0,
+    isBanned INTEGER DEFAULT 0,
     deletedAt TEXT DEFAULT NULL,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -249,6 +253,7 @@ await db.exec(`
     parentCommentId TEXT,
     likes INTEGER DEFAULT 0,
     dislikes INTEGER DEFAULT 0,
+    isBanned INTEGER DEFAULT 0,
     deletedAt TEXT DEFAULT NULL,
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -316,6 +321,12 @@ await db.exec(`
     FOREIGN KEY(userId) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS admin_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
@@ -353,5 +364,10 @@ await ensureColumn('bookmarks', 'followingCategoryId', 'TEXT');
 await ensureColumn('following', 'followingCategoryId', 'TEXT');
 await ensureColumn('read_history', 'currentPage', 'INTEGER DEFAULT 1');
 await ensureColumn('comics', 'source', 'TEXT');
+await ensureColumn('users', 'isBanned', 'INTEGER DEFAULT 0');
+await ensureColumn('comic_comments', 'isBanned', 'INTEGER DEFAULT 0');
+await ensureColumn('chapter_comments', 'isBanned', 'INTEGER DEFAULT 0');
+await ensureColumn('comics', 'status', 'TEXT DEFAULT \"pending\"');
+await ensureColumn('chapters', 'status', 'TEXT DEFAULT \"pending\"');
 
 export default db;

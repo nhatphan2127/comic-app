@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import type { UserFollowingCategory, FollowingComic } from '../../../types/data';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import type { UserFollowingCategory, FollowingComic } from '../../../types/types';
 import Pagination from '../../../components/Pagination';
 import { ComicCard, ComicRow } from '../../../components/FollowingComic';
 import { comicApi, userApi } from '../../../services/api';
@@ -22,41 +22,60 @@ const ALL_FORMATS = [
   'Full Color', 'Long Strip', 'Oneshot', 'Web Comic'
 ];
 
+// Định nghĩa 13 tùy chọn Sort By
+const SORT_OPTIONS = [
+  { key: 'updated_desc', label: 'Recently updated' },
+  { key: 'updated_asc', label: 'Least recently updated' },
+  { key: 'added_desc', label: 'Recently added' },
+  { key: 'added_asc', label: 'Oldest added' },
+  { key: 'read_desc', label: 'Recently read' },
+  { key: 'read_asc', label: 'Least recently read' },
+  { key: 'title_asc', label: 'Title A → Z' },
+  { key: 'title_desc', label: 'Title Z → A' },
+  { key: 'year_desc', label: 'Year (newest)' },
+  { key: 'year_asc', label: 'Year (oldest)' },
+  { key: 'score_desc', label: 'Score (high → low)' },
+  { key: 'score_asc', label: 'Score (low → high)' },
+  { key: 'match', label: 'Best match' },
+];
+
 export default function FollowingTitlesPanel() {
   const [allComics, setAllComics] = useState<FollowingComic[]>([]);
-  const [filteredComics, setFilteredComics] = useState<FollowingComic[]>([]);
   const [folders, setFolders] = useState<UserFollowingCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [viewMode] = useState<'grid' | 'list'>('list');
-  const [subTab, setSubTab] = useState<'updated' | 'added' | 'read'>('updated');
+  
+  // Khởi tạo trạng thái sort mặc định là 'updated_desc' (Recently updated)
+  const [subTab, setSubTab] = useState<string>('updated_desc');
+  
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isAdvancedOpen] = useState<boolean>(true);
   const [isEditFoldersOpen, setIsEditFoldersOpen] = useState<boolean>(false);
   const [isSortMenuOpen, setIsSortMenuOpen] = useState<boolean>(false);
 
-  // --- States mới cho các bộ lọc bổ sung ---
+  // --- States mở dropdown ---
   const [isTypesOpen, setIsTypesOpen] = useState(false);
   const [isGenresOpen, setIsGenresOpen] = useState(false);
   const [isDemographicOpen, setIsDemographicOpen] = useState(false);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
 
+  // --- States bộ lọc đã chọn ---
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [selectedDemographics, setSelectedDemographics] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-
-  // Genres và Formats hỗ trợ 3 trạng thái: 'include' (chọn), 'exclude' (loại trừ), 'off' (không chọn)
-  const [selectedGenres, setSelectedGenres] = useState<Record<string, 'include' | 'exclude'>>({});
-  const [selectedFormats, setSelectedFormats] = useState<Record<string, 'include' | 'exclude'>>({});
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [selectedFormats, setSelectedFormats] = useState<string[]>([]);
+  
   const [genreMatchMode, setGenreMatchMode] = useState<'AND' | 'OR'>('AND');
   const [genreSearch, setGenreSearch] = useState('');
 
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
 
-  // --- Refs mới để ẩn dropdown khi click ra ngoài ---
+  // --- Refs quản lý click ra ngoài dropdown ---
   const editFoldersRef = useRef<HTMLDivElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const typesRef = useRef<HTMLDivElement>(null);
@@ -64,34 +83,16 @@ export default function FollowingTitlesPanel() {
   const demographicRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLDivElement>(null);
 
-  const sortOptions = [
-    { key: 'updated', label: 'Recently updated' },
-    { key: 'added', label: 'Recently added' },
-    { key: 'read', label: 'Recently read' },
-  ];
-
-  // Xử lý sự kiện click ngoài cho tất cả dropdowns
+  // Xử lý click ngoài dropdown
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       const target = event.target as Node;
-      if (editFoldersRef.current && !editFoldersRef.current.contains(target)) {
-        setIsEditFoldersOpen(false);
-      }
-      if (sortMenuRef.current && !sortMenuRef.current.contains(target)) {
-        setIsSortMenuOpen(false);
-      }
-      if (typesRef.current && !typesRef.current.contains(target)) {
-        setIsTypesOpen(false);
-      }
-      if (genresRef.current && !genresRef.current.contains(target)) {
-        setIsGenresOpen(false);
-      }
-      if (demographicRef.current && !demographicRef.current.contains(target)) {
-        setIsDemographicOpen(false);
-      }
-      if (statusRef.current && !statusRef.current.contains(target)) {
-        setIsStatusOpen(false);
-      }
+      if (editFoldersRef.current && !editFoldersRef.current.contains(target)) setIsEditFoldersOpen(false);
+      if (sortMenuRef.current && !sortMenuRef.current.contains(target)) setIsSortMenuOpen(false);
+      if (typesRef.current && !typesRef.current.contains(target)) setIsTypesOpen(false);
+      if (genresRef.current && !genresRef.current.contains(target)) setIsGenresOpen(false);
+      if (demographicRef.current && !demographicRef.current.contains(target)) setIsDemographicOpen(false);
+      if (statusRef.current && !statusRef.current.contains(target)) setIsStatusOpen(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -100,9 +101,11 @@ export default function FollowingTitlesPanel() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [comics, categories] = await Promise.all([userApi.getFollowingList(), userApi.getFollowingCategories()]);
+      const [comics, categories] = await Promise.all([
+        userApi.getFollowingList(), 
+        userApi.getFollowingCategories()
+      ]);
       setAllComics(comics || []);
-      setFilteredComics(comics || []);
       setFolders(categories || []);
     } catch (err: any) {
       setError(err.message || 'Unable to load your library');
@@ -115,12 +118,17 @@ export default function FollowingTitlesPanel() {
     void fetchData();
   }, []);
 
-  // --- Logic lọc và sắp xếp chính ---
+  // Tự động reset về trang 1 khi thay đổi bộ lọc
   useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, activeFolderId, selectedTypes, selectedDemographics, selectedStatuses, selectedGenres, selectedFormats, genreMatchMode, subTab]);
+
+  // --- Logic lọc và sắp xếp chính ---
+  const filteredComics = useMemo(() => {
     let result = [...allComics];
     const query = searchQuery.trim().toLowerCase();
 
-    // 1. Lọc theo thanh tìm kiếm tên truyện
+    // 1. Tìm kiếm theo tên
     if (query) {
       result = result.filter((item) => {
         const title = `${item.comic.name || (item.comic as any).title || ''}`.toLowerCase();
@@ -128,7 +136,7 @@ export default function FollowingTitlesPanel() {
       });
     }
 
-    // 2. Lọc theo thư mục (Folder)
+    // 2. Lọc theo Folder
     if (activeFolderId) {
       result = result.filter((item) => item.category?.id === activeFolderId);
     }
@@ -160,21 +168,17 @@ export default function FollowingTitlesPanel() {
       });
     }
 
-    // 6. Lọc theo GENRES & FORMATS (Bao gồm logic AND / OR và Loại trừ)
-    const hasGenreFilters = Object.keys(selectedGenres).length > 0 || Object.keys(selectedFormats).length > 0;
+    // 6. Lọc theo GENRES & FORMATS (AND / OR)
+    const hasGenreFilters = selectedGenres.length > 0 || selectedFormats.length > 0;
     if (hasGenreFilters) {
-      const incGenres = Object.entries(selectedGenres).filter(([_, val]) => val === 'include').map(([k]) => k.toLowerCase());
-      const excGenres = Object.entries(selectedGenres).filter(([_, val]) => val === 'exclude').map(([k]) => k.toLowerCase());
-      const incFormats = Object.entries(selectedFormats).filter(([_, val]) => val === 'include').map(([k]) => k.toLowerCase());
-      const excFormats = Object.entries(selectedFormats).filter(([_, val]) => val === 'exclude').map(([k]) => k.toLowerCase());
+      const lowerSelectedGenres = selectedGenres.map((g) => g.toLowerCase());
+      const lowerSelectedFormats = selectedFormats.map((f) => f.toLowerCase());
 
       result = result.filter((item) => {
-        // Lấy danh sách thể loại (genres) của truyện hiện tại
         const comicGenres: string[] = Array.isArray(item.comic.genres)
           ? item.comic.genres.map((g: any) => (typeof g === 'string' ? g.toLowerCase() : (g.name || '').toLowerCase()))
           : [];
 
-        // Lấy danh sách định dạng (formats) của truyện hiện tại (hỗ trợ formats mảng string, format mảng string hoặc format đơn lẻ)
         const rawFormats = (item.comic as any).formats || item.comic.formats || [];
         const comicFormats: string[] = Array.isArray(rawFormats)
           ? rawFormats.map((f: any) => (typeof f === 'string' ? f.toLowerCase() : (f.name || '').toLowerCase()))
@@ -182,96 +186,118 @@ export default function FollowingTitlesPanel() {
           ? [rawFormats.toLowerCase()]
           : [];
 
-        // Kiểm tra loại trừ trước (Nếu dính một thể loại/định dạng bị loại trừ thì bỏ qua ngay)
-        const isExcludedGenre = comicGenres.some((g) => excGenres.includes(g));
-        const isExcludedFormat = comicFormats.some((f) => excFormats.includes(f));
-        if (isExcludedGenre || isExcludedFormat) return false;
+        const matchedGenres = lowerSelectedGenres.filter((g) => comicGenres.includes(g));
+        const matchedFormats = lowerSelectedFormats.filter((f) => comicFormats.includes(f));
+        
+        const totalMatches = matchedGenres.length + matchedFormats.length;
+        const totalRequired = lowerSelectedGenres.length + lowerSelectedFormats.length;
 
-        // Kiểm tra điều kiện bao gồm
-        if (incGenres.length > 0 || incFormats.length > 0) {
-          const matchedGenres = incGenres.filter((g) => comicGenres.includes(g));
-          const matchedFormats = incFormats.filter((f) => comicFormats.includes(f));
-          
-          const totalMatches = matchedGenres.length + matchedFormats.length;
-          const totalRequired = incGenres.length + incFormats.length;
-
-          if (genreMatchMode === 'AND') {
-            return totalMatches === totalRequired;
-          } else {
-            return totalMatches > 0;
-          }
+        if (genreMatchMode === 'AND') {
+          return totalMatches === totalRequired;
+        } else {
+          return totalMatches > 0;
         }
-        return true;
       });
     }
 
-    // Sắp xếp danh sách kết quả
-    const compareDates = (a?: string | null, b?: string | null) => {
-      if (!a && !b) return 0;
-      if (!a) return 1;
-      if (!b) return -1;
-      return new Date(b).getTime() - new Date(a).getTime();
-    };
+    // 7. Sắp xếp danh sách (Hỗ trợ toàn bộ 13 thuật toán Sort)
+    const getDateVal = (d?: string | null) => (d ? new Date(d).getTime() : 0);
 
-    const getSortDate = (item: FollowingComic) => {
-      if (subTab === 'updated') return item.comic.updatedAt || item.updatedAt;
-      if (subTab === 'added') return item.updatedAt || item.comic.updatedAt;
-      if (subTab === 'read') return item.updatedAt || item.comic.updatedAt;
-      return item.comic.updatedAt || item.updatedAt;
-    };
+    return result.sort((a, b) => {
+      switch (subTab) {
+        case 'updated_desc': {
+          const dateA = getDateVal(a.comic.updatedAt || a.updatedAt);
+          const dateB = getDateVal(b.comic.updatedAt || b.updatedAt);
+          return dateB - dateA || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'updated_asc': {
+          const dateA = getDateVal(a.comic.updatedAt || a.updatedAt);
+          const dateB = getDateVal(b.comic.updatedAt || b.updatedAt);
+          if (dateA === 0) return 1;
+          if (dateB === 0) return -1;
+          return dateA - dateB || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'added_desc': {
+          const dateA = getDateVal(a.updatedAt || a.comic.updatedAt);
+          const dateB = getDateVal(b.updatedAt || b.comic.updatedAt);
+          return dateB - dateA || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'added_asc': {
+          const dateA = getDateVal(a.updatedAt || a.comic.updatedAt);
+          const dateB = getDateVal(b.updatedAt || b.comic.updatedAt);
+          if (dateA === 0) return 1;
+          if (dateB === 0) return -1;
+          return dateA - dateB || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'read_desc': {
+          const dateA = getDateVal(a.updatedAt || a.comic.updatedAt);
+          const dateB = getDateVal(b.updatedAt || b.comic.updatedAt);
+          return dateB - dateA || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'read_asc': {
+          const dateA = getDateVal(a.updatedAt || a.comic.updatedAt);
+          const dateB = getDateVal(b.updatedAt || b.comic.updatedAt);
+          if (dateA === 0) return 1;
+          if (dateB === 0) return -1;
+          return dateA - dateB || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'title_asc': {
+          return (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'title_desc': {
+          return (b.comic.name || '').localeCompare(a.comic.name || '');
+        }
+        case 'year_desc': {
+          const yearA = Number(a.comic.releasingYear || (a.comic as any).releaseYear || 0);
+          const yearB = Number(b.comic.releasingYear || (b.comic as any).releaseYear || 0);
+          return yearB - yearA || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'year_asc': {
+          const yearA = Number(a.comic.releasingYear || (a.comic as any).releaseYear || 9999);
+          const yearB = Number(b.comic.releasingYear || (b.comic as any).releaseYear || 9999);
+          return yearA - yearB || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'score_desc': {
+          const scoreA = Number((a.comic as any).score || (a.comic as any).rating || 0);
+          const scoreB = Number((b.comic as any).score || (b.comic as any).rating || 0);
+          return scoreB - scoreA || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'score_asc': {
+          const scoreA = Number((a.comic as any).score || (a.comic as any).rating || 0);
+          const scoreB = Number((b.comic as any).score || (b.comic as any).rating || 0);
+          return scoreA - scoreB || (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+        case 'match':
+        default: {
+          return (a.comic.name || '').localeCompare(b.comic.name || '');
+        }
+      }
+    });
+  }, [allComics, searchQuery, activeFolderId, selectedTypes, selectedDemographics, selectedStatuses, selectedGenres, selectedFormats, genreMatchMode, subTab]);
 
-    result.sort((a, b) => compareDates(getSortDate(a), getSortDate(b)) || (a.comic.name || '').localeCompare(b.comic.name || ''));
-    setFilteredComics(result);
-    setCurrentPage(1);
-  }, [
-    searchQuery,
-    activeFolderId,
-    allComics,
-    subTab,
-    selectedTypes,
-    selectedDemographics,
-    selectedStatuses,
-    selectedGenres,
-    selectedFormats,
-    genreMatchMode
-  ]);
-
-  // Khôi phục tất cả bộ lọc về trạng thái ban đầu
+  // Khôi phục bộ lọc
   const handleResetFilters = () => {
     setSearchQuery('');
     setActiveFolderId(null);
-    setSubTab('updated');
+    setSubTab('updated_desc');
     setIsSortMenuOpen(false);
     setSelectedTypes([]);
     setSelectedDemographics([]);
     setSelectedStatuses([]);
-    setSelectedGenres({});
-    setSelectedFormats({});
+    setSelectedGenres([]);
+    setSelectedFormats([]);
     setGenreMatchMode('AND');
     setGenreSearch('');
   };
 
   // --- Hàm hỗ trợ giao diện ---
-  const toggleCheckbox = (item: string, state: string[], setState: React.Dispatch<React.SetStateAction<string[]>>) => {
+  const toggleCheckbox = (item: string, setState: React.Dispatch<React.SetStateAction<string[]>>) => {
     setState((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
   };
 
   const toggleTag = (tag: string, isGenre: boolean) => {
-    const state = isGenre ? selectedGenres : selectedFormats;
     const setState = isGenre ? setSelectedGenres : setSelectedFormats;
-
-    setState((prev) => {
-      const current = prev[tag];
-      const updated = { ...prev };
-      if (!current) {
-        updated[tag] = 'include';
-      } else if (current === 'include') {
-        updated[tag] = 'exclude';
-      } else {
-        delete updated[tag];
-      }
-      return updated;
-    });
+    setState((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   };
 
   const getDisplayValue = (selected: string[]) => {
@@ -281,20 +307,14 @@ export default function FollowingTitlesPanel() {
   };
 
   const getGenresDisplayValue = () => {
-    const incCount = Object.values(selectedGenres).filter((v) => v === 'include').length + Object.values(selectedFormats).filter((v) => v === 'include').length;
-    const excCount = Object.values(selectedGenres).filter((v) => v === 'exclude').length + Object.values(selectedFormats).filter((v) => v === 'exclude').length;
-    if (incCount === 0 && excCount === 0) return 'Any';
-    const parts = [];
-    if (incCount > 0) parts.push(`+${incCount}`);
-    if (excCount > 0) parts.push(`-${excCount}`);
-    return parts.join(', ');
+    const totalSelected = selectedGenres.length + selectedFormats.length;
+    return totalSelected === 0 ? 'Any' : `${totalSelected} selected`;
   };
 
   const handleUnfollow = async (comicId: string) => {
     try {
       await comicApi.unfollow(comicId);
-      const updated = allComics.filter((item) => item.comic.id !== comicId);
-      setAllComics(updated);
+      setAllComics((prev) => prev.filter((item) => item.comic.id !== comicId));
     } catch (err) {
       console.error('Error during unfollow:', err);
       alert('Failed to unfollow comic. Please try again.');
@@ -349,10 +369,7 @@ export default function FollowingTitlesPanel() {
       setAllComics((prev) => prev.map((item) => {
         if (item.comic.id === comicId) {
           const matchedFolder = categoryId ? folders.find((folder) => folder.id === categoryId) || null : null;
-          return {
-            ...item,
-            category: matchedFolder as any
-          };
+          return { ...item, category: matchedFolder as any };
         }
         return item;
       }));
@@ -460,40 +477,51 @@ export default function FollowingTitlesPanel() {
 
           <div style={{ height: isAdvancedOpen ? 'auto' : '0', overflow: isAdvancedOpen ? 'visible' : 'hidden', transition: 'height 220ms' }}>
             <div className="filter-grid">
+              
               {/* SORT BY */}
-              <div className="fdrop" ref={sortMenuRef}>
+              <div className={`fdrop ${isSortMenuOpen ? 'is-open' : ''}`} ref={sortMenuRef}>
                 <label className="fdrop__label mono">SORT BY</label>
-                <button type="button" className="fdrop__btn" aria-haspopup="menu" aria-expanded={isSortMenuOpen} onClick={() => setIsSortMenuOpen((prev) => !prev)}>
-                  <span className="fdrop__value">{sortOptions.find((option) => option.key === subTab)?.label ?? 'Recently updated'}</span>
+                <button 
+                  type="button" 
+                  className="fdrop__btn" 
+                  aria-haspopup="listbox" 
+                  aria-expanded={isSortMenuOpen} 
+                  onClick={() => setIsSortMenuOpen((prev) => !prev)}
+                >
+                  <span className="fdrop__value">
+                    {SORT_OPTIONS.find((option) => option.key === subTab)?.label ?? 'Recently updated'}
+                  </span>
                   <svg className="fdrop__caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="6 9 12 15 18 9"></polyline>
                   </svg>
                 </button>
                 {isSortMenuOpen && (
-                  <div className="fdrop__pop fdrop__pop--menu" role="menu">
-                    {sortOptions.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={subTab === option.key}
-                        className={`fdrop__item ${subTab === option.key ? 'is-active' : ''}`}
-                        onClick={() => {
-                          setSubTab(option.key as 'updated' | 'added' | 'read');
-                          setIsSortMenuOpen(false);
-                        }}
-                      >
-                        <span className="fdrop__item-check" aria-hidden="true">
-                          {subTab === option.key ? (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M4 12l5 5L20 6"></path>
-                            </svg>
-                          ) : null}
-                        </span>
-                        <span>{option.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <ul className="fdrop__pop" role="listbox" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {SORT_OPTIONS.map((option) => {
+                      const isSelected = subTab === option.key;
+                      return (
+                        <li
+                          key={option.key}
+                          role="option"
+                          aria-selected={isSelected}
+                          className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
+                          onClick={() => {
+                            setSubTab(option.key);
+                            setIsSortMenuOpen(false);
+                          }}
+                        >
+                          <span className={`fdrop__check fdrop__check--radio ${isSelected ? 'is-checked' : ''}`} aria-hidden="true">
+                            {isSelected && (
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            )}
+                          </span>
+                          {option.label}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </div>
 
@@ -517,9 +545,15 @@ export default function FollowingTitlesPanel() {
                             role="option"
                             aria-selected={isSelected}
                             className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
-                            onClick={() => toggleCheckbox(type, selectedTypes, setSelectedTypes)}
+                            onClick={() => toggleCheckbox(type, setSelectedTypes)}
                           >
-                            <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true"></span>
+                            <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true">
+                              {isSelected && (
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                              )}
+                            </span>
                             {type}
                           </li>
                         );
@@ -558,7 +592,7 @@ export default function FollowingTitlesPanel() {
                           OR
                         </button>
                       </div>
-                      <span className="fdrop__toolbar-hint mono">Click to include · again to exclude</span>
+                      <span className="fdrop__toolbar-hint mono">Click to toggle tags</span>
                     </div>
                     <div className="fdrop__scroll">
                       <div className="fdrop__search-row fdrop__search-row--inline">
@@ -591,10 +625,8 @@ export default function FollowingTitlesPanel() {
                                 <h4 className="tagpop__heading mono">Genres</h4>
                                 <ul className="tagpop__list">
                                   {filteredG.map((genre) => {
-                                    const state = selectedGenres[genre];
-                                    let tagClass = 'tagpop__item--off';
-                                    if (state === 'include') tagClass = 'tagpop__item--on';
-                                    if (state === 'exclude') tagClass = 'tagpop__item--exclude';
+                                    const isSelected = selectedGenres.includes(genre);
+                                    const tagClass = isSelected ? 'tagpop__item--inc' : 'tagpop__item--off';
 
                                     return (
                                       <li key={genre}>
@@ -603,7 +635,13 @@ export default function FollowingTitlesPanel() {
                                           className={`tagpop__item ${tagClass}`}
                                           onClick={() => toggleTag(genre, true)}
                                         >
-                                          <span className="tagpop__check" aria-hidden="true"></span>
+                                          <span className="tagpop__check" aria-hidden="true">
+                                            {isSelected && (
+                                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <polyline points="20 6 9 17 4 12"></polyline>
+                                              </svg>
+                                            )}
+                                          </span>
                                           <span className="tagpop__name">{genre}</span>
                                         </button>
                                       </li>
@@ -618,10 +656,8 @@ export default function FollowingTitlesPanel() {
                                 <h4 className="tagpop__heading mono">Formats</h4>
                                 <ul className="tagpop__list">
                                   {filteredF.map((format) => {
-                                    const state = selectedFormats[format];
-                                    let tagClass = 'tagpop__item--off';
-                                    if (state === 'include') tagClass = 'tagpop__item--on';
-                                    if (state === 'exclude') tagClass = 'tagpop__item--exclude';
+                                    const isSelected = selectedFormats.includes(format);
+                                    const tagClass = isSelected ? 'tagpop__item--on' : 'tagpop__item--off';
 
                                     return (
                                       <li key={format}>
@@ -630,7 +666,13 @@ export default function FollowingTitlesPanel() {
                                           className={`tagpop__item ${tagClass}`}
                                           onClick={() => toggleTag(format, false)}
                                         >
-                                          <span className="tagpop__check" aria-hidden="true"></span>
+                                          <span className="tagpop__check" aria-hidden="true">
+                                            {isSelected && (
+                                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <polyline points="20 6 9 17 4 12"></polyline>
+                                              </svg>
+                                            )}
+                                          </span>
                                           <span className="tagpop__name">{format}</span>
                                         </button>
                                       </li>
@@ -667,9 +709,15 @@ export default function FollowingTitlesPanel() {
                             role="option"
                             aria-selected={isSelected}
                             className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
-                            onClick={() => toggleCheckbox(demo, selectedDemographics, setSelectedDemographics)}
+                            onClick={() => toggleCheckbox(demo, setSelectedDemographics)}
                           >
-                            <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true"></span>
+                            <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true">
+                              {isSelected && (
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                              )}
+                            </span>
                             {demo}
                           </li>
                         );
@@ -699,9 +747,15 @@ export default function FollowingTitlesPanel() {
                             role="option"
                             aria-selected={isSelected}
                             className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
-                            onClick={() => toggleCheckbox(status, selectedStatuses, setSelectedStatuses)}
+                            onClick={() => toggleCheckbox(status, setSelectedStatuses)}
                           >
-                            <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true"></span>
+                            <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true">
+                              {isSelected && (
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                              )}
+                            </span>
                             {status}
                           </li>
                         );
@@ -715,19 +769,38 @@ export default function FollowingTitlesPanel() {
           </div>
         </div>
 
+        {/* BOTTOM SORT TAB BAR */}
         <div className="uview__sort-tabs">
           <div className="useg useg--scroll">
-            <button type="button" className={`useg__btn ${subTab === 'updated' ? 'is-on' : ''}`} aria-pressed={subTab === 'updated'} title="Recently updated (desc)" onClick={() => setSubTab('updated')}>
+            <button 
+              type="button" 
+              className={`useg__btn ${subTab.startsWith('updated') ? 'is-on' : ''}`} 
+              aria-pressed={subTab.startsWith('updated')} 
+              title="Recently updated (desc)" 
+              onClick={() => setSubTab('updated_desc')}
+            >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M12 5v14"></path>
                 <path d="M19 12l-7 7-7-7"></path>
               </svg>
               <span>Recently updated</span>
             </button>
-            <button type="button" className={`useg__btn ${subTab === 'added' ? 'is-on' : ''}`} aria-pressed={subTab === 'added'} title="Recently added" onClick={() => setSubTab('added')}>
+            <button 
+              type="button" 
+              className={`useg__btn ${subTab.startsWith('added') ? 'is-on' : ''}`} 
+              aria-pressed={subTab.startsWith('added')} 
+              title="Recently added" 
+              onClick={() => setSubTab('added_desc')}
+            >
               <span>Recently added</span>
             </button>
-            <button type="button" className={`useg__btn ${subTab === 'read' ? 'is-on' : ''}`} aria-pressed={subTab === 'read'} title="Recently read" onClick={() => setSubTab('read')}>
+            <button 
+              type="button" 
+              className={`useg__btn ${subTab.startsWith('read') ? 'is-on' : ''}`} 
+              aria-pressed={subTab.startsWith('read')} 
+              title="Recently read" 
+              onClick={() => setSubTab('read_desc')}
+            >
               <span>Recently read</span>
             </button>
           </div>
@@ -757,6 +830,8 @@ export default function FollowingTitlesPanel() {
                 }}
                 onUnfollow={handleUnfollow}
                 categories={folders}
+                readedChapter={item.readedChapter}
+                totalChapters={item.totalChapters}
                 onMoveCategory={handleMoveCategory}
               />
             ))}

@@ -1,113 +1,76 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { formatTimeAgo } from '../helpers/formatDate';
 import { API_UPLOADS, comicApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import type { Chapter, Comic } from '../types/data';
-import '../assets/styles/MangaDetails.css';
-
-// Import separated comment component
+import type { Chapter, Comic } from '../types/types';
 import CommentsSection from '../components/CommentsSection';
-
-function normalizeComic(data: Partial<Comic> | null | undefined): Comic | null {
-  if (!data) return null;
-
-  const names = Array.isArray(data.names) && data.names.length > 0
-    ? data.names
-    : (data.name ? [{ name: data.name, country: 'global' }] : [{ name: 'Untitled', country: 'global' }]);
-
-  const toStringArray = (value: unknown): string[] => {
-    if (Array.isArray(value)) {
-      return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
-    }
-
-    if (typeof value === 'string') {
-      return value.split(',').map((item) => item.trim()).filter(Boolean);
-    }
-
-    return [];
-  };
-
-  const chapters = Array.isArray(data.chapters)
-    ? data.chapters.map((chapter) => ({
-        ...chapter,
-        chapterNumber: Number(chapter.chapterNumber || 0),
-        title: chapter.title || 'Untitled chapter',
-      }))
-    : [];
-
-  return {
-    ...data,
-    id: data.id || '',
-    name: names[0]?.name || '',
-    names,
-    description: data.description || '',
-    coverUrl: data.coverUrl || '',
-    types: data.types || 'MANGA',
-    rating: typeof data.rating === 'number' ? data.rating : 0,
-    view: typeof data.view === 'number' ? data.view : 0,
-    follow: typeof data.follow === 'number' ? data.follow : 0,
-    author: data.author || '',
-    artist: data.artist || '',
-    genres: toStringArray(data.genres),
-    tags: toStringArray(data.tags),
-    formats: toStringArray(data.formats),
-    url: data.url || '',
-    chapters,
-    latestChapters: Array.isArray(data.latestChapters) ? data.latestChapters : [],
-  } as Comic;
-}
+import AuthModal from './AuthModal';
 
 export default function MangaDetailLayout() {
   const navigate = useNavigate();
   const { comicUrl } = useParams<{ comicUrl: string }>();
   const { isLoggedIn } = useAuth();
 
-  // Comic data and chapters state
+  // Auth modal state
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  // Comic data state
   const [comic, setComic] = useState<Comic | null>(null);
   const [chaptersList, setChaptersList] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // UI state for user interactions
+  // Interaction state
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [ratingHover, setRatingHover] = useState<number>(0);
   const [userRating, setUserRating] = useState<number>(0);
   const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
 
-  // Collapsible sections state
+  // UI toggle state
   const [showAlts, setShowAlts] = useState<boolean>(false);
   const [showFullDesc, setShowFullDesc] = useState<boolean>(false);
   const [showDetailsShell, setShowDetailsShell] = useState<boolean>(false);
   const [chapterSearch, setChapterSearch] = useState<string>('');
 
-  // Calculate formatted follow count (converts to thousands format)
+  // Calculate formatted follow count (e.g., converts 1500 to 1.5K)
   const localFollowsCount = useMemo(() => {
     if (!comic) return 0;
-    const baseFollows = comic.follow || 1500;
-    return Math.max(1, Math.round(baseFollows / 100) / 10);
+    const baseFollows = comic.follow || 0;
+    if (baseFollows === 0) return 0;
+    return Math.max(0.1, Math.round(baseFollows / 100) / 10);
   }, [comic]);
 
   // Navigate to chapter reader
   const onRead = (chapterId: string) => navigate(`${chapterId}`);
 
-  // Fetch comic details and chapters list on component mount
+  // Fetch comic details and chapter list
   useEffect(() => {
     if (!comicUrl) return;
 
     const fetchComicData = async () => {
       try {
         setLoading(true);
-        const data = await comicApi.getByUrl(comicUrl);
-        const normalizedComic = normalizeComic(data as Partial<Comic> | null);
+        const [comicResult, chaptersResult] = await Promise.allSettled([
+          comicApi.getByUrl(comicUrl),
+          comicApi.getChaptersByUrl(comicUrl),
+        ]);
 
-        if (normalizedComic) {
-          setComic(normalizedComic);
-          setChaptersList(normalizedComic.chapters || []);
-          setUserRating(typeof normalizedComic.userRating === 'number' ? normalizedComic.userRating : 0);
+        if (comicResult.status === 'fulfilled' && comicResult.value) {
+          setComic(comicResult.value);
+          setUserRating(
+            typeof comicResult.value.userRating === 'number'
+              ? comicResult.value.userRating
+              : 0
+          );
         } else {
           setComic(null);
+          setUserRating(0);
+        }
+
+        if (chaptersResult.status === 'fulfilled') {
+          setChaptersList(chaptersResult.value || []);
+        } else {
           setChaptersList([]);
         }
       } catch (error) {
@@ -122,6 +85,7 @@ export default function MangaDetailLayout() {
     fetchComicData();
   }, [comicUrl]);
 
+  // Fetch follow state
   useEffect(() => {
     const fetchFollowState = async () => {
       if (!comic?.id || !isLoggedIn) {
@@ -140,38 +104,55 @@ export default function MangaDetailLayout() {
     fetchFollowState();
   }, [comic?.id, isLoggedIn]);
 
+  const requireAuth = () => {
+    if (!isLoggedIn) {
+      setIsAuthModalOpen(true);
+      return false;
+    }
+    return true;
+  };
+
   const handleFollowToggle = async () => {
     if (!comic?.id) return;
-    if (!isLoggedIn) {
-      alert('Please log in to follow this comic.');
-      return;
-    }
+    if (!requireAuth()) return;
 
     try {
       const nextState = !isFollowing;
-      const response = nextState ? await comicApi.follow(comic.id) : await comicApi.unfollow(comic.id);
+      const response = nextState
+        ? await comicApi.follow(comic.id)
+        : await comicApi.unfollow(comic.id);
       const resolved = response?.isFollowing ?? nextState;
       setIsFollowing(resolved);
-      setComic((prev) => prev ? { ...prev, follow: Math.max(0, (prev.follow || 0) + (resolved ? 1 : -1)) } : prev);
+      setComic((prev) =>
+        prev
+          ? {
+              ...prev,
+              follow: Math.max(0, (prev.follow || 0) + (resolved ? 1 : -1)),
+            }
+          : prev
+      );
     } catch (error) {
       console.error('Unable to update follow state:', error);
     }
   };
 
-  // Handle rating submission
   const handleRatingSubmit = async (rating: number) => {
     if (!comic?.id) return;
-
-    if (!isLoggedIn) {
-      alert('Please log in to rate this comic.');
-      return;
-    }
+    if (!requireAuth()) return;
 
     try {
       setIsSubmittingRating(true);
       const response = await comicApi.rate(comic.id, rating);
       setUserRating(response?.userRating ?? rating);
-      setComic((prev) => prev ? { ...prev, rating: response?.newAverageRating ?? prev.rating, userRating: response?.userRating ?? rating } : prev);
+      setComic((prev) =>
+        prev
+          ? {
+              ...prev,
+              rating: response?.newAverageRating ?? prev.rating,
+              userRating: response?.userRating ?? rating,
+            }
+          : prev
+      );
     } catch (error) {
       console.error('Unable to submit rating:', error);
       alert('Unable to submit your rating right now.');
@@ -180,7 +161,6 @@ export default function MangaDetailLayout() {
     }
   };
 
-  // Extract alternative titles (if available from API)
   const alternativeTitles = useMemo(() => {
     if (!comic) return [];
 
@@ -188,25 +168,22 @@ export default function MangaDetailLayout() {
       .map((entry) => entry?.name)
       .filter((name): name is string => Boolean(name));
 
-    if (names.length > 0) {
-      return names;
-    }
-
-    return comic.name ? [comic.name] : [];
+    return names.length > 0 ? names : comic.name ? [comic.name] : [];
   }, [comic]);
 
-  // Filter chapters by search term
+  // Filter chapters by search query
   const filteredChapters = useMemo(() => {
+    const term = chapterSearch.toLowerCase().trim();
+    if (!term) return chaptersList;
+
     return chaptersList.filter((ch) => {
-      const term = chapterSearch.toLowerCase().trim();
-      if (!term) return true;
       const numStr = String(ch.chapterNumber || '');
       const titleStr = (ch.title || '').toLowerCase();
       return numStr.includes(term) || titleStr.includes(term);
     });
   }, [chaptersList, chapterSearch]);
 
-  // Sort filtered chapters based on sort order
+  // Sort filtered chapters
   const sortedChapters = useMemo(() => {
     return [...filteredChapters].sort((a, b) => {
       const numA = a.chapterNumber || 0;
@@ -215,7 +192,14 @@ export default function MangaDetailLayout() {
     });
   }, [filteredChapters, sortOrder]);
 
-  // Loading state UI
+  // Memoize first chapter to avoid sorting inside render loop
+  const firstChapter = useMemo(() => {
+    if (chaptersList.length === 0) return null;
+    return [...chaptersList].sort(
+      (a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0)
+    )[0];
+  }, [chaptersList]);
+
   if (loading) {
     return (
       <div className="manga-details-container" style={{ padding: '80px', textAlign: 'center' }}>
@@ -224,7 +208,6 @@ export default function MangaDetailLayout() {
     );
   }
 
-  // Error state - comic not found
   if (!comic) {
     return (
       <div className="manga-details-container" style={{ padding: '40px', textAlign: 'center' }}>
@@ -240,21 +223,17 @@ export default function MangaDetailLayout() {
     );
   }
 
-  // Find first chapter for quick read button
-  const firstChapter = [...chaptersList]
-    .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0))[0];
   const primaryName = comic.name || comic.names?.[0]?.name || 'Untitled';
   const coverSrc = comic.coverUrl ? `${API_UPLOADS}${comic.coverUrl}` : '/images/placeholder.png';
 
   return (
-    <div className='layout layout--single'>
+    <div className="layout layout--single">
       <article className="mpage" id={`manga-detail-${comic.id}`}>
         <div id="mal-sync"></div>
 
         {/* HEADER HERO SECTION */}
         <header className="mpage__hero">
           <div className="mpage__hero-inner">
-
             {/* LEFT COLUMN: POSTER AND ACTIONS */}
             <div className="mpage__poster">
               <div className="poster">
@@ -266,19 +245,17 @@ export default function MangaDetailLayout() {
                 />
               </div>
               <div className="mpage__poster-actions">
-                <button
-                  type="button"
-                  className="btn btn--primary mpage__read"
-                  onClick={() => firstChapter && onRead(firstChapter.id)}
-                  disabled={!firstChapter}
+                <Link
+                  to={firstChapter ? `/chapter/${firstChapter.id}` : '#'}
+                  className={`btn btn--primary mpage__read ${!firstChapter ? 'disabled' : ''}`}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M2 4.5h7.5a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2zM22 4.5h-7.5a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"></path>
                   </svg>
                   <span>Start reading</span>
-                </button>
+                </Link>
 
-                {/* Follow */}
+                {/* Follow Button */}
                 <div className="fdrop mpage__follow">
                   <button
                     type="button"
@@ -303,7 +280,7 @@ export default function MangaDetailLayout() {
                       <button
                         key={star}
                         type="button"
-                        className={`mstars__btn ${(ratingHover || userRating) >= star ? 'is-active' : ''} ${userRating >= star ? 'is-rated' : ''}`}
+                        className={`mstars__btn ${(ratingHover || userRating) >= star ? 'is-on' : ''} ${userRating >= star ? 'is-rated' : ''}`}
                         aria-label={`Rate ${star} star`}
                         aria-checked={userRating === star}
                         role="radio"
@@ -312,18 +289,14 @@ export default function MangaDetailLayout() {
                         onMouseLeave={() => setRatingHover(0)}
                         disabled={isSubmittingRating}
                       >
-                        <svg className="mstars__svg mstars__svg--bg" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 3.2l2.78 5.63 6.22.9-4.5 4.39 1.06 6.18L12 17.4l-5.56 2.92 1.06-6.18L3 9.74l6.22-.9z"></path>
-                        </svg>
-                        <svg className="mstars__svg mstars__svg--fg" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 3.2l2.78 5.63 6.22.9-4.5 4.39 1.06 6.18L12 17.4l-5.56 2.92 1.06-6.18L3 9.74l6.22-.9z"></path>
-                        </svg>
+                        <svg className="mstars__svg mstars__svg--bg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2l2.78 5.63 6.22.9-4.5 4.39 1.06 6.18L12 17.4l-5.56 2.92 1.06-6.18L3 9.74l6.22-.9z"></path></svg>
+                        <svg className="mstars__svg mstars__svg--fg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2l2.78 5.63 6.22.9-4.5 4.39 1.06 6.18L12 17.4l-5.56 2.92 1.06-6.18L3 9.74l6.22-.9z"></path></svg>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Report */}
+                {/* Report Action */}
                 <div className="mpage__poster-aux">
                   <button type="button" className="mpage__action-link">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -406,7 +379,12 @@ export default function MangaDetailLayout() {
 
               {/* Mobile action buttons (CTA) */}
               <div className="mpage__cta">
-                <button type="button" className="btn btn--primary mpage__read" onClick={() => firstChapter && onRead(firstChapter.id)} disabled={!firstChapter}>
+                <button
+                  type="button"
+                  className="btn btn--primary mpage__read"
+                  onClick={() => firstChapter && onRead(firstChapter.id)}
+                  disabled={!firstChapter}
+                >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M2 4.5h7.5a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2zM22 4.5h-7.5a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"></path>
                   </svg>
@@ -443,54 +421,39 @@ export default function MangaDetailLayout() {
                 </button>
                 <div className="mpage__details-shell-body" style={{ height: showDetailsShell ? 'auto' : '0px', overflow: 'hidden', transition: 'height 220ms' }}>
                   <dl className="mpage__details">
-
                     {/* Genres */}
                     <div className="mpage__detail">
                       <dt className="mpage__detail-label">Genres</dt>
                       <dd className="mpage__detail-items">
                         <ul className="mpage__chips">
-                          {Array.isArray(comic.genres)
-                            ? comic.genres.map((genre, idx) => (
+                          {Array.isArray(comic.genres) ? (
+                            comic.genres.map((genre, idx) => (
                               <li key={idx}>
-                                <a className="mpage__chip" href='#'>{genre}</a>
+                                <span className="mpage__chip">{genre}</span>
                               </li>
                             ))
-                            : (<li><a className="mpage__chip" href='#'>Updating</a></li>)
-                          }
+                          ) : (
+                            <li><span className="mpage__chip">Updating</span></li>
+                          )}
                         </ul>
                       </dd>
                     </div>
 
-                    {/* Genres */}
-                    <div className="mpage__detail">
-                      <dt className="mpage__detail-label">Tags</dt>
-                      <dd className="mpage__detail-items">
-                        <ul className="mpage__chips">
-                          {Array.isArray(comic.tags)
-                            ? comic.tags.map((tag, idx) => (
-                              <li key={idx}>
-                                <a className="mpage__chip" href='#'>{tag}</a>
-                              </li>
-                            ))
-                            : (<li><a className="mpage__chip" href='#'>Updating</a></li>)
-                          }
-                        </ul>
-                      </dd>
-                    </div>
 
-                    {/* Genres */}
+                    {/* Formats */}
                     <div className="mpage__detail">
                       <dt className="mpage__detail-label">Formats</dt>
                       <dd className="mpage__detail-items">
                         <ul className="mpage__chips">
-                          {Array.isArray(comic.formats)
-                            ? comic.formats.map((format, idx) => (
+                          {Array.isArray(comic.formats) ? (
+                            comic.formats.map((format, idx) => (
                               <li key={idx}>
-                                <a className="mpage__chip" href='#'>{format}</a>
+                                <span className="mpage__chip">{format}</span>
                               </li>
                             ))
-                            : (<li><a className="mpage__chip" href='#'>Updating</a></li>)
-                          }
+                          ) : (
+                            <li><span className="mpage__chip">Updating</span></li>
+                          )}
                         </ul>
                       </dd>
                     </div>
@@ -501,28 +464,26 @@ export default function MangaDetailLayout() {
                       <dd className="mpage__detail-items">
                         <ul className="mpage__chips">
                           <li>
-                            <a className="mpage__chip" href='#'>{comic.author || 'Updating'}</a>
+                            <span className="mpage__chip">{comic.author || 'Updating'}</span>
                           </li>
                         </ul>
                       </dd>
                     </div>
 
-                    {/* Artist */}
+                    {/* Artists (Fixed Duplicate Label) */}
                     <div className="mpage__detail">
-                      <dt className="mpage__detail-label">Authors</dt>
+                      <dt className="mpage__detail-label">Artists</dt>
                       <dd className="mpage__detail-items">
                         <ul className="mpage__chips">
                           <li>
-                            <a className="mpage__chip" href='#'>{comic.artist || 'Updating'}</a>
+                            <span className="mpage__chip">{comic.artist || 'Updating'}</span>
                           </li>
                         </ul>
                       </dd>
                     </div>
-
                   </dl>
                 </div>
               </div>
-
             </div>
           </div>
         </header>
@@ -530,7 +491,6 @@ export default function MangaDetailLayout() {
         {/* BODY SECTION: CHAPTERS & COMMENTS */}
         <div className="mpage__body">
           <div className="mpage__main">
-
             {/* CHAPTER SECTION */}
             <section className="mpage__chapters">
               <header className="mpage__sec-head">
@@ -578,7 +538,6 @@ export default function MangaDetailLayout() {
               {/* CHAPTERS LIST */}
               <ul className="mchap-list">
                 {sortedChapters.map((ch: Chapter) => {
-                  // Use releaseAt date if available, otherwise use createdAt
                   const dateToFormat = ch.updatedAt || ch.createdAt;
                   const formattedDate = dateToFormat ? formatTimeAgo(dateToFormat) : 'Recently';
 
@@ -597,8 +556,6 @@ export default function MangaDetailLayout() {
                           {ch.title && <span className="mchap-row__title"> - {ch.title}</span>}
                         </a>
                         <div className="mchap-row__secondary">
-                          
-                          <span className="mchap-row__sep" aria-hidden="true">·</span>
                           <span className="mchap-row__likes">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9A2 2 0 0 0 19.72 9z"></path>
@@ -607,7 +564,7 @@ export default function MangaDetailLayout() {
                             12
                           </span>
                           <span className="mchap-row__sep" aria-hidden="true">·</span>
-                          <span className="mchap-row__time">{formattedDate || 'Recently'}</span>
+                          <span className="mchap-row__time">{formattedDate}</span>
                         </div>
                       </div>
                     </li>
@@ -621,7 +578,7 @@ export default function MangaDetailLayout() {
                 )}
               </ul>
 
-              {/* Static pagination matching HTML template */}
+              {/* Static pagination */}
               {sortedChapters.length > 0 && (
                 <div className="mchap-foot">
                   <span className="mchap-foot__hint">
@@ -634,12 +591,13 @@ export default function MangaDetailLayout() {
               )}
             </section>
 
-            {/* COMMENTS SECTION - Using separated component synchronized with API */}
+            {/* COMMENTS SECTION */}
             <CommentsSection targetId={comic.id} type="comic" />
-
           </div>
         </div>
       </article>
+
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </div>
   );
 }

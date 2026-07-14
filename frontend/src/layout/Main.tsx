@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
-import type { Comic } from '../types/data';
+import type { Comic } from '../types/types';
 import ComicCardList from '../components/ComicCard';
 import Pagination from '../components/Pagination';
 import PopularCard from '../components/PopularCard';
 import '../assets/styles/Main.css';
+import { comicApi, getStoredContentFilter, type ContentFilter } from '../services/api';
+import { LayoutGrid, List } from 'lucide-react';
 
-// Import the configured comicApi
-import { comicApi } from '../services/api'; // Adjust the import path as needed
 
-// Import icons from lucide-react
-import { Clock, LayoutGrid, List } from 'lucide-react';
 export default function Main() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [page, setPage] = useState(1);
@@ -19,10 +17,8 @@ export default function Main() {
   const [isLoading, setIsLoading] = useState(true);
   const [isChangingPage, setIsChangingPage] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const itemsPerPage = 12;
-
-  // Fetch standard comics on page change using comicApi
+  const [contentFilter, setContentFilter] = useState<ContentFilter>(() => getStoredContentFilter());
+  // Fetch standard comics on page change
   useEffect(() => {
     let cancelled = false;
 
@@ -35,15 +31,16 @@ export default function Main() {
       setError(null);
 
       try {
-        const data = await comicApi.list(page);
+        const data = await comicApi.list(page, contentFilter);
         if (!cancelled) {
           setComics(data.comics || []);
-          const totalPagesFromApi = data.pagination?.totalPages || 1;
+          const totalPagesFromApi = data.metadata?.totalPages || 1;
           setTotalPages(Math.max(1, totalPagesFromApi));
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!cancelled) {
-          setError(err.message || 'An error occurred while connecting to the server');
+          const errorMessage = err instanceof Error ? err.message : 'An error occurred while connecting to the server';
+          setError(errorMessage);
         }
       } finally {
         if (!cancelled) {
@@ -57,32 +54,51 @@ export default function Main() {
     return () => {
       cancelled = true;
     };
-  }, [page, itemsPerPage]);
+  }, [page, contentFilter]);
 
-  // Fetch popular comics using comicApi
+  // Fetch popular comics với cơ chế cleanup an toàn chống memory leak
   useEffect(() => {
+    let cancelled = false;
+
     const fetchPopularComics = async () => {
       try {
-        const data = await comicApi.getPopular();
-        setPopularComics(data || []);
+        const data = await comicApi.getPopular(contentFilter);
+        if (!cancelled) {
+          setPopularComics(data || []);
+        }
       } catch (err) {
         console.error('Could not fetch the popular comic list:', err);
       }
     };
 
     fetchPopularComics();
+    return () => {
+      cancelled = true;
+    };
+  }, [contentFilter]);
+
+  useEffect(() => {
+    const handleFilterChanged = () => {
+      setContentFilter(getStoredContentFilter());
+    };
+
+    window.addEventListener('content-filter-changed', handleFilterChanged);
+    window.addEventListener('storage', handleFilterChanged);
+
+    return () => {
+      window.removeEventListener('content-filter-changed', handleFilterChanged);
+      window.removeEventListener('storage', handleFilterChanged);
+    };
   }, []);
 
   return (
     <div className="main-layout-container">
-      {/* 1. LEFT CONTENT COLUMN */}
       <div className="main-content-column">
 
         {/* SECTION: LAST UPDATE */}
         <section className="manga-section">
           <div className="main-section-header">
             <div className="section-title-left">
-              <Clock className="section-title-icon" strokeWidth={2.5} size={20} />
               <h2>Last update</h2>
             </div>
 

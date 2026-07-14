@@ -2,20 +2,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { comicApi, chapterApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import type { Comment } from '../types/data';
+import AuthModal from '../layout/AuthModal';
+import type { Comment } from '../types/types';
 import '../assets/styles/CommentSection.css';
+import getAvatarBg from '../helpers/getAvatarBg';
 
-// Hàm helper sinh màu nền avatar ngẫu nhiên dựa trên tên người dùng (tương tự như Comick)
-const getAvatarBg = (name: string) => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const r = (hash & 0xFF0000) >> 16;
-  const g = (hash & 0x00FF00) >> 8;
-  const b = hash & 0x0000FF;
-  return `rgb(${Math.abs(r) % 150 + 50}, ${Math.abs(g) % 150 + 50}, ${Math.abs(b) % 150 + 50})`;
-};
 
 // ─── COMPONENT CON: RECURSIVE COMMENT NODE ───
 interface CommentNodeProps {
@@ -23,9 +14,13 @@ interface CommentNodeProps {
   depth?: number;
   onReplySubmit: (parentId: string, text: string) => Promise<void>;
   onReact: (commentId: string, reaction: 'like' | 'dislike' | 'none') => Promise<void>;
+  onDelete?: (commentId: string) => Promise<void>;
+  canInteract: boolean;
+  onRequireAuth: () => void;
+  currentUserId?: string;
 }
 
-function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNodeProps) {
+function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, canInteract, onRequireAuth, currentUserId }: CommentNodeProps) {
   const formattedDate = comment.createdAt ? new Date(comment.createdAt).toLocaleDateString() : '';
   const userAvatar = comment.avatar || comment.user?.avatar;
   const userName = comment.displayName || comment.user?.displayName || 'Khách';
@@ -56,6 +51,17 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
       .catch((err) => console.error('Không thể sao chép liên kết:', err));
   };
 
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    if (window.confirm('Bạn có chắc chắn muốn xóa bình luận này?')) {
+      try {
+        await onDelete(comment.id);
+      } catch (err) {
+        console.error('Lỗi khi xóa bình luận:', err);
+      }
+    }
+  };
+
   useEffect(() => {
     setCurrentReaction(comment.userReaction || 'none');
     setLikeCount(comment.like || 0);
@@ -64,7 +70,12 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
 
   const handleReplyFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!replyText.trim() || isSending) return;
+    if (!replyText.trim() || isSending || !canInteract) {
+      if (!canInteract) {
+        onRequireAuth();
+      }
+      return;
+    }
 
     setIsSending(true);
     try {
@@ -79,6 +90,11 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
   };
 
   const handleReaction = async (reaction: 'like' | 'dislike') => {
+    if (!canInteract) {
+      onRequireAuth();
+      return;
+    }
+
     const nextReaction = currentReaction === reaction ? 'none' : reaction;
     try {
       await onReact(comment.id, nextReaction);
@@ -99,8 +115,10 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
     }
   };
 
+  const isDeleted = !comment.content || comment.content.trim() === '';
+
   return (
-    <li className={`cm-item ${hasReplies ? 'cm-item--has-replies' : ''}`} id={`cm-${comment.id}`}>
+    <li className={`cm-item ${hasReplies ? 'cm-item--has-replies' : ''} ${isDeleted ? 'cm-item--highlight' : ''}`} id={`cm-${comment.id}`}>
       <div className="cm-item__main">
         <a className="cm-item__avatar" href={`/u/${comment.user?.displayName || 'guest'}`} aria-label={userName}>
           {userAvatar ? (
@@ -137,7 +155,11 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
           {!isCollapsed && (
             <>
               <div className="cm-item__content content-rendered">
-                {comment.content}
+                {isDeleted ? (
+                  <em>This comment has been deleted.</em>
+                ) : (
+                  comment.content
+                )}
               </div>
               <div className="cm-item__ctrls">
                 {/* Thích */}
@@ -161,7 +183,13 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
                   type="button" 
                   className={`cm-item__ctrl cm-item__ctrl--reply ${isReplying ? 'cm-item__ctrl--active' : ''}`} 
                   aria-expanded={isReplying ? "true" : "false"}
-                  onClick={() => setIsReplying(!isReplying)}
+                  onClick={() => {
+                    if (!canInteract) {
+                      onRequireAuth();
+                      return;
+                    }
+                    setIsReplying(!isReplying);
+                  }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1">
                     <polyline points="9 17 4 12 9 7"></polyline>
@@ -192,6 +220,16 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
                   </button>
                   {isMenuOpen && (
                     <div className="fdrop__pop fdrop__pop--menu" role="menu">
+                      {currentUserId === (comment.user?.id || comment.userId) && !isDeleted && (
+                        <>
+                          <button type="button" className="fdrop__item" role="menuitem" onClick={() => alert('Edit function coming soon')}>
+                            Edit
+                          </button>
+                          <button type="button" className="fdrop__item" role="menuitem" onClick={handleDelete}>
+                            Delete
+                          </button>
+                        </>
+                      )}
                       <button type="button" className="fdrop__item" role="menuitem" onClick={() => alert('Đã báo cáo bình luận.')}>
                         Report
                       </button>
@@ -265,7 +303,7 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact }: CommentNode
           )}
 
           {hasReplies && comment.childCommment!.map((child) => (
-            <CommentNode key={child.id} comment={child} depth={depth + 1} onReplySubmit={onReplySubmit} onReact={onReact} />
+            <CommentNode key={child.id} comment={child} depth={depth + 1} onReplySubmit={onReplySubmit} onReact={onReact} onDelete={onDelete} canInteract={canInteract} onRequireAuth={onRequireAuth} currentUserId={currentUserId} />
           ))}
         </ul>
       )}
@@ -283,47 +321,60 @@ interface CommentsSectionProps {
 export default function CommentsSection({ comicId, targetId, type = 'comic' }: CommentsSectionProps) {
   const [commentsList, setCommentsList] = useState<Comment[]>([]);
   const [comment, setComment] = useState<string>('');
-  const [username] = useState<string>('ReaderPro');
   const [sortBy, setSortBy] = useState<'best' | 'newest' | 'oldest'>('best');
-  const { isLoggedIn } = useAuth();
+  const [visibleCount, setVisibleCount] = useState(10);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const { isLoggedIn, user } = useAuth();
   const activeId = targetId || comicId || '';
+  const username = user?.displayName || user?.userName || 'ReaderPro';
 
-  const fetchComments = async (currentSort: 'best' | 'newest' | 'oldest' = sortBy) => {
+  const fetchComments = async (currentSort: 'best' | 'newest' | 'oldest' = sortBy, reset = true, offsetValue = 0) => {
     if (!activeId) return;
+
+    setIsLoading(true);
     try {
+      const limit = 10;
+      const offset = reset ? 0 : offsetValue;
       const data = type === 'comic'
-        ? await comicApi.getComments(activeId, 20, 0, currentSort)
-        : await chapterApi.getComments(activeId, 20, 0);
-        
-      if (data && data.comments) {
-        setCommentsList(data.comments);
+        ? await comicApi.getComments(activeId, limit, offset, currentSort)
+        : await chapterApi.getComments(activeId, limit, offset);
+
+      if (data && Array.isArray(data.comments)) {
+        const total = typeof (data as { total?: number }).total === 'number' ? (data as { total?: number }).total : 0;
+        setCommentsList((prev) => reset ? data.comments : [...prev, ...data.comments]);
+        setHasMore((data.comments?.length || 0) === limit && (total ? offset + data.comments.length < total : true));
       }
     } catch (err) {
       console.error(`Lỗi tải bình luận (${type}):`, err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchComments(sortBy);
+    setVisibleCount(10);
+    setHasMore(false);
+    void fetchComments(sortBy, true, 0);
   }, [activeId, type, sortBy]);
 
   const handleCommentSubmitLocal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!comment.trim() || !activeId) return;
     if (!isLoggedIn) {
-      alert('Please log in to comment.');
+      setIsAuthModalOpen(true);
       return;
     }
 
     try {
       if (type === 'comic') {
-        console.log({ activeId, comment })
         await comicApi.createComment(activeId, comment);
       } else {
         await chapterApi.createComment(activeId, comment);
       }
       setComment('');
-      await fetchComments(sortBy);
+      await fetchComments(sortBy, true, 0);
     } catch (err) {
       console.error('Không thể gửi bình luận:', err);
     }
@@ -340,7 +391,7 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
       } else {
         await chapterApi.createComment(activeId, text, parentId);
       }
-      await fetchComments(sortBy);
+      await fetchComments(sortBy, true, 0);
     } catch (err) {
       console.error('Không thể gửi phản hồi:', err);
       throw err;
@@ -349,6 +400,7 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
 
   const handleReaction = async (commentId: string, reaction: 'like' | 'dislike' | 'none') => {
     if (!isLoggedIn) {
+      setIsAuthModalOpen(true);
       throw new Error('Please log in to react.');
     }
     if (type === 'comic') {
@@ -356,7 +408,23 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
     } else {
       await chapterApi.reactComment(commentId, reaction);
     }
-    await fetchComments(sortBy);
+    await fetchComments(sortBy, true, 0);
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (type === 'comic') {
+      await comicApi.deleteComment(commentId);
+    } else {
+      await chapterApi.deleteComment(commentId);
+    }
+    await fetchComments(sortBy, true, 0);
+  };
+
+  const handleLoadMore = async () => {
+    if (isLoading || !hasMore) return;
+    const nextOffset = visibleCount;
+    setVisibleCount(nextOffset + 10);
+    await fetchComments(sortBy, false, nextOffset);
   };
 
   const sortedComments = useMemo(() => {
@@ -410,55 +478,64 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
               {username.charAt(0).toUpperCase()}
             </span>
           </span>
-          <div className="cm-item__detail">
-            <form className="cm-editor" onSubmit={handleCommentSubmitLocal}>
-              <textarea
-                className="input input--area cm-editor__input"
-                placeholder="Share your thoughts about this series…"
-                rows={2}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-              />
-              <div style={{ height: 'auto', overflow: 'visible', transition: 'height 220ms' }}>
-                <div className="cm-editor__bar">
-                  <div className="cm-editor__toolbar" role="toolbar" aria-label="Formatting">
-                    <button type="button" className="cm-editor__tool" aria-label="Bold" title="Bold (Ctrl+B)">
-                      <strong>B</strong>
-                    </button>
-                    <button type="button" className="cm-editor__tool" aria-label="Quote" title="Quote">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M7 7h4v4H8c0 2 0 3 2 4"></path>
-                        <path d="M15 7h4v4h-3c0 2 0 3 2 4"></path>
-                      </svg>
-                    </button>
-                    <button type="button" className="cm-editor__tool" aria-label="Spoiler" title="Spoiler (Ctrl+E)">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 3l18 18"></path>
-                        <path d="M10.6 6.1A9.7 9.7 0 0 1 12 6c7 0 11 7 11 7a17.6 17.6 0 0 1-3.2 4.4"></path>
-                        <path d="M6.6 6.6A17.7 17.7 0 0 0 1 13s4 7 11 7a9.7 9.7 0 0 0 5.4-1.6"></path>
-                        <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="cm-editor__actions">
-                    <button type="button" className="ubtn ubtn--ghost" onClick={() => setComment('')}>
-                      Cancel
-                    </button>
-                    <button type="submit" className="ubtn ubtn--primary" disabled={!comment.trim()}>
-                      Send
-                    </button>
+          {isLoggedIn ? (
+            <div className="cm-item__detail">
+              <form className="cm-editor" onSubmit={handleCommentSubmitLocal}>
+                <textarea
+                  className="input input--area cm-editor__input"
+                  placeholder="Share your thoughts about this series…"
+                  rows={2}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                />
+                <div style={{ height: 'auto', overflow: 'visible', transition: 'height 220ms' }}>
+                  <div className="cm-editor__bar">
+                    <div className="cm-editor__toolbar" role="toolbar" aria-label="Formatting">
+                      <button type="button" className="cm-editor__tool" aria-label="Bold" title="Bold (Ctrl+B)">
+                        <strong>B</strong>
+                      </button>
+                      <button type="button" className="cm-editor__tool" aria-label="Quote" title="Quote">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M7 7h4v4H8c0 2 0 3 2 4"></path>
+                          <path d="M15 7h4v4h-3c0 2 0 3 2 4"></path>
+                        </svg>
+                      </button>
+                      <button type="button" className="cm-editor__tool" aria-label="Spoiler" title="Spoiler (Ctrl+E)">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 3l18 18"></path>
+                          <path d="M10.6 6.1A9.7 9.7 0 0 1 12 6c7 0 11 7 11 7a17.6 17.6 0 0 1-3.2 4.4"></path>
+                          <path d="M6.6 6.6A17.7 17.7 0 0 0 1 13s4 7 11 7a9.7 9.7 0 0 0 5.4-1.6"></path>
+                          <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="cm-editor__actions">
+                      <button type="button" className="ubtn ubtn--ghost" onClick={() => setComment('')}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="ubtn ubtn--primary" disabled={!comment.trim()}>
+                        Send
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </form>
-          </div>
+              </form>
+            </div>
+          ) : (
+            <div className="cm-item__detail" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 0' }}>
+              <p style={{ margin: 0, opacity: 0.8 }}>Please sign in to join the discussion.</p>
+              <button type="button" className="ubtn ubtn--primary" style={{ width: 'fit-content' }} onClick={() => setIsAuthModalOpen(true)}>
+                Sign in
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Danh sách bình luận */}
       <ul className="cm-items">
         {sortedComments.map((comment) => (
-          <CommentNode key={comment.id} comment={comment} depth={0} onReplySubmit={handleReplySubmit} onReact={handleReaction} />
+          <CommentNode key={comment.id} comment={comment} depth={0} onReplySubmit={handleReplySubmit} onReact={handleReaction} onDelete={handleDeleteComment} canInteract={isLoggedIn} onRequireAuth={() => setIsAuthModalOpen(true)} currentUserId={user?.id} />
         ))}
 
         {sortedComments.length === 0 && (
@@ -469,13 +546,15 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
       </ul>
 
       {/* Chân trang tải thêm */}
-      {commentsList.length > 0 && (
+      {hasMore && (
         <div className="cm-foot">
-          <button type="button" className="ubtn ubtn--soft cm-foot__btn">
-            <span>Load more comments</span>
+          <button type="button" className="ubtn ubtn--soft cm-foot__btn" onClick={handleLoadMore} disabled={isLoading}>
+            <span>{isLoading ? 'Loading…' : 'Load more comments'}</span>
           </button>
         </div>
       )}
+
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
     </section>
   );
 }

@@ -1,7 +1,10 @@
-import { useNavigate } from 'react-router-dom';
-import type { Comic } from '../types/data';
+import React, { memo } from 'react';
+import { Link } from 'react-router-dom';
+import type { Comic, Chapter } from '../types/types';
 import { formatTimeAgo } from '../helpers/formatDate';
 import { API_UPLOADS } from '../services/api';
+import { getImage } from '../helpers/getImage';
+
 interface ComicCardProps {
     onComicSelect?: (comic: Comic) => void;
     comic: Comic;
@@ -14,48 +17,64 @@ interface ComicCardListProps {
     viewMode: 'grid' | 'list';
 }
 
-function ComicCard({ comic, viewMode }: ComicCardProps) {
+const ComicCard = memo(({ comic, viewMode, onComicSelect }: ComicCardProps) => {
     const isList = viewMode === 'list';
-    const title = comic.name || comic.name; // Đảm bảo tương thích với cả 2 trường tên
-    const image = comic.coverUrl || comic.coverUrl;
+
+    // Xử lý an toàn dữ liệu đầu vào dựa trên Interface Comic
+    const title = comic.name || comic.names?.[0]?.name || 'Unknown';
+    const image = comic.coverUrl;
     const url = comic.url;
     const latestChapters = comic.latestChapters ?? [];
-    const navigate = useNavigate();
 
-    // CHẾ ĐỘ XEM DANH SÁCH (LIST VIEW) - GIỮ NGUYÊN NHƯ CŨ
+    // Xử lý sự kiện khi có callback onComicSelect từ component cha
+    const handleCardClick = (e: React.MouseEvent) => {
+        if (onComicSelect) {
+            e.preventDefault(); // Chặn hành vi chuyển hướng của Link mặc định để chạy callback
+            onComicSelect(comic);
+        }
+    };
+
+    // CHẾ ĐỘ XEM DANH SÁCH (LIST VIEW)
     if (isList) {
         return (
-            <div
-                className="manga-card list-mode"
-                onClick={() => navigate(`/comics/${url}`)}
-                style={{ cursor: 'pointer' }}
-            >
+            <div className="manga-card list-mode" style={{ position: 'relative' }}>
+                {/* Overlay Link: Phủ toàn bộ diện tích Card để người dùng click chuyển trang */}
+                <Link 
+                    to={`/comics/${url}`}
+                    className="card-overlay-link"
+                    style={{ position: 'absolute', inset: 0, zIndex: 1 }}
+                    aria-label={title}
+                    onClick={handleCardClick}
+                />
+
                 <div className="comic-card-image-wrapper">
                     <img 
                         sizes="(max-width: 600px) 100px, 280px" 
-                        src={image ? `${API_UPLOADS}${image}` : '/images/placeholder.png'} 
+                        src={getImage(image)} 
                         alt={title} 
                         className="comic-card-img" 
                         loading="lazy"
                     />
                 </div>
 
-                <div className="card-info">
+                {/* zIndex: 2 giúp nội dung hiển thị nằm trên lớp Overlay Link */}
+                <div className="card-info" style={{ position: 'relative', zIndex: 2 }}>
                     <div>
                         <h3 className="card-title">{title}</h3>
                         <div className="card-latest-chapters">
-                            {latestChapters.slice(0, 3).map((item, index) => (
-                                <div key={index} className="latest-chapter-line">
-                                    <button 
+                            {latestChapters.slice(0, 3).map((item: Chapter) => (
+                                <div key={item.id} className="latest-chapter-line">
+                                    {/* Dùng Link thật thay vì button, zIndex: 3 để nằm đè lên Overlay cha */}
+                                    <Link 
                                         className="latest-chapter" 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            navigate(`/comics/${url}/chapter/${item.id}`);
-                                        }}
+                                        to={`/comics/${url}/${item.id}`}
+                                        style={{ position: 'relative', zIndex: 3 }}
                                     >
                                         Chapter {item.chapterNumber}
-                                    </button>
-                                    <span className="latest-upload">{formatTimeAgo(item.updatedAt)}</span>
+                                    </Link>
+                                    <span className="latest-upload">
+                                        {formatTimeAgo(item.updatedAt || item.createdAt || '')}
+                                    </span>
                                 </div>
                             ))}
                         </div>
@@ -65,20 +84,24 @@ function ComicCard({ comic, viewMode }: ComicCardProps) {
         );
     }
 
-    // CHẾ ĐỘ XEM LƯỚI (GRID VIEW) - SỬ DỤNG CẤU TRÚC HÌNH ẢNH, NÚT ADD VÀ THÔNG TIN THEO MẪU COMIX
+    // CHẾ ĐỘ XEM LƯỚI (GRID VIEW)
     const latestChapter = latestChapters[0];
     const chapterLabel = latestChapter ? `Ch.${latestChapter.chapterNumber}` : 'Ch.New';
-    const timeLabel = latestChapter ? formatTimeAgo(latestChapter.updatedAt) : 'Recently';
+    const timeLabel = latestChapter 
+        ? formatTimeAgo(latestChapter.updatedAt || latestChapter.createdAt || '') 
+        : 'Recently';
 
     return (
-        <a 
-            className="card" 
-            href={`/comics/${url}`}
-            onClick={(e) => {
-                e.preventDefault();
-                navigate(`/comics/${url}`);
-            }}
-        >
+        <div className="card" style={{ position: 'relative' }}>
+            {/* Overlay Link: Phủ toàn bộ Grid Card, hỗ trợ click chuột giữa mở tab mới tốt cho SEO */}
+            <Link 
+                to={`/comics/${url}`} 
+                className="card-overlay-link"
+                style={{ position: 'absolute', inset: 0, zIndex: 1 }}
+                aria-label={title}
+                onClick={handleCardClick}
+            />
+            
             <div className="card__poster-wrap">
                 <div className="poster poster--md">
                     <img 
@@ -88,32 +111,33 @@ function ComicCard({ comic, viewMode }: ComicCardProps) {
                         src={image ? `${API_UPLOADS}${image}` : '/images/placeholder.png'} 
                     />
                 </div>
-                
             </div>
-            <div className="card__body">
+            
+            <div className="card__body" style={{ position: 'relative', zIndex: 2 }}>
                 <div className="card__meta">
-                    <span 
-                        className="card__ch"
-                        onClick={(e) => {
-                            if (latestChapter) {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                navigate(`/comics/${url}/chapter/${latestChapter.id}`);
-                            }
-                        }}
-                    >
-                        {chapterLabel}
-                    </span>
+                    {latestChapter ? (
+                        /* Đè lên lớp phủ chính bằng zIndex: 3 để click riêng biệt được vào Chapter */
+                        <Link 
+                            to={`/comics/${url}/chapter/${latestChapter.id}`}
+                            className="card__ch"
+                            style={{ position: 'relative', zIndex: 3 }}
+                        >
+                            {chapterLabel}
+                        </Link>
+                    ) : (
+                        <span className="card__ch">{chapterLabel}</span>
+                    )}
                     <span className="card__time">{timeLabel}</span>
                 </div>
                 <div className="card__title" title={title}>{title}</div>
             </div>
-        </a>
+        </div>
     );
-}
+});
+
+ComicCard.displayName = 'ComicCard';
 
 export default function ComicCardList({ comics, viewMode, onComicSelect }: ComicCardListProps) {
-    // Nếu ở chế độ grid, đổi lớp layout thành 'grid-updates' để ăn khớp với CSS của Comix
     const layoutClass = viewMode === 'list' ? 'comic-list-layout' : 'grid-updates';
 
     return (

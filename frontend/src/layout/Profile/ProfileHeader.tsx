@@ -1,5 +1,6 @@
-import type { UserProfile } from '../../types/data';
+import type { UserProfile } from '../../types/types';
 import { API_UPLOADS } from '../../services/api';
+import getAvatarBg from '../../helpers/getAvatarBg';
 
 type ProfileHeaderProps = {
   user?: UserProfile | null;
@@ -22,25 +23,12 @@ function getInitials(displayName?: string | null, username?: string | null) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-// Hàm sinh mã màu ngẫu nhiên dựa trên chuỗi ký tự (cho Avatar mặc định)
-function getAvatarBgColor(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  // Giới hạn giá trị màu để tạo tông màu tối/ấm ấm dễ chịu giống mẫu
-  const r = Math.abs((hash & 0xff) % 120 + 60);
-  const g = Math.abs(((hash >> 8) & 0xff) % 120 + 60);
-  const b = Math.abs(((hash >> 16) & 0xff) % 120 + 60);
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 function resolveAvatarUrl(avatar?: string | null) {
   if (!avatar) {
     return null;
   }
 
-  if (/^https?:\/\//i.test(avatar) || avatar.startsWith('data:')) {
+  if (/^https?:\/\//i.test(avatar) || avatar.startsWith('data:') || avatar.startsWith('blob:')) {
     return avatar;
   }
 
@@ -51,12 +39,11 @@ export default function ProfileHeader({ user, loading = false }: ProfileHeaderPr
   const displayName = user?.displayName || user?.username || 'User';
   const avatarUrl = resolveAvatarUrl(user?.avatar);
   const initials = getInitials(user?.displayName, user?.username);
-  const avatarBgColor = getAvatarBgColor(displayName);
+  const avatarBgColor = getAvatarBg(displayName);
 
   // Thêm đầy đủ 6 chỉ số thống kê tương ứng với mẫu giao diện
   const stats = [
     { label: 'Comics', value: (user as any)?.stats?.titles ?? (user as any)?.titlesCount ?? 0 },
-    { label: 'Groups', value: (user as any)?.stats?.groups ?? (user as any)?.groupsCount ?? 0 },
     { label: 'Chapters', value: (user as any)?.stats?.chapters ?? (user as any)?.chaptersCount ?? 0 },
     { label: 'Comments', value: (user as any)?.stats?.comments ?? (user as any)?.commentsCount ?? 0 },
     { label: 'Likes', value: (user as any)?.stats?.likes ?? (user as any)?.likesCount ?? 0 },

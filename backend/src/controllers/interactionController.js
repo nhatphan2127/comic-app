@@ -1,6 +1,7 @@
 import db from '../config/database.js';
 import { v4 as uuidv4 } from 'uuid';
 
+// use /:comicId/follow
 export async function getFollowStatus(req, res, next) {
   try {
     const { comicId } = req.params;
@@ -16,6 +17,7 @@ export async function getFollowStatus(req, res, next) {
   }
 }
 
+//post('/:comicId/follow'
 export async function followComic(req, res, next) {
   try {
     const { comicId } = req.params;
@@ -52,6 +54,7 @@ export async function followComic(req, res, next) {
   }
 }
 
+// delete('/:comicId/follow'
 export async function unfollowComic(req, res, next) {
   try {
     const { comicId } = req.params;
@@ -90,6 +93,7 @@ export async function unbookmarkComic(req, res, next) {
   }
 }
 
+// router.post('/:comicId/rate',
 export async function rateComic(req, res, next) {
   try {
     const { comicId } = req.params;
@@ -121,11 +125,11 @@ export async function rateComic(req, res, next) {
   }
 }
 
+// router.post('/chapters/:chapterId/history',
 export async function saveReadingHistory(req, res, next) {
   try {
     const { chapterId } = req.params;
-    const { scrollPosition, currentPage } = req.body;
-    const position = Number(scrollPosition) || 0;
+    const { currentPage } = req.body;
     const page = Number(currentPage) || 1;
     const chapter = await db.get('SELECT id FROM chapters WHERE id = ?', [chapterId]);
     if (!chapter) {
@@ -133,11 +137,11 @@ export async function saveReadingHistory(req, res, next) {
     }
 
     await db.run(
-      `INSERT OR REPLACE INTO read_history (userId, chapterId, scrollPosition, currentPage, readAt) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-      [req.user.id, chapterId, position, page]
+      `INSERT OR REPLACE INTO read_history (userId, chapterId, currentPage, readAt) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+      [req.user.id, chapterId, page]
     );
 
-    return res.json({ status: 'success', data: { chapterId, scrollPosition: position, currentPage: page, readAt: new Date().toISOString() } });
+    return res.json({ status: 'success', data: { chapterId, currentPage: page, readAt: new Date().toISOString() } });
   } catch (error) {
     next(error);
   }

@@ -1,17 +1,18 @@
 import { useSearchParams } from 'react-router-dom';
 import ProfileHeader from './ProfileHeader';
 import ProfileSidebar from './ProfileSidebar';
-import type { UserProfile } from '../../types/data';
+import type { UserProfile } from '../../types/types';
 import EditProfilePanel from './panels/EditProfilePanel';
 import FollowingTitlesPanel from './panels/FollowingTitlesPanel';
 import ReadHistoryPanel from './panels/HistoryReadingPanel';
 import NotificationsPanel from './panels/NotificationsPanel';
 import CommentsPanel from './panels/CommentsPanel';
-import SettingsPanel from './panels/SettingsPanel';
 import '../../assets/styles/UserProfile.css';
 import '../../assets/styles/ComicForm.css';
 import UploadedChaptersPanel from './panels/UploadedChaptersPanel';
 import ComicSuggestionPanel from './panels/ComicSuggestionPanel';
+import ModerationPanel from './panels/ModerationPanel';
+import AdminDashboardPanel from './panels/AdminDashboardPanel';
 
 type UserProfilePageProps = {
   user?: UserProfile | null;
@@ -43,12 +44,14 @@ export default function UserProfilePage({ user, loading = false, error = null }:
         return <NotificationsPanel />;
       case 'comments':
         return <CommentsPanel />;
-      case 'settings':
-        return <SettingsPanel />;
       case 'chapter-uploads':
         return <UploadedChaptersPanel/>
       case 'comic-suggestions':
         return <ComicSuggestionPanel/>
+      case 'moderation-queue':
+        return <ModerationPanel />;
+      case 'admin-dashboard':
+        return <AdminDashboardPanel />;
       default:
         return (
           <div className="empty-state-container">

@@ -1,9 +1,211 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { userApi } from '../../../services/api';
-import { PROFILE_TEXTS, PROFILE_MESSAGES } from '../../../types/data.ts';
+import { userApi, API_UPLOADS } from '../../../services/api';
+import { PROFILE_TEXTS, PROFILE_MESSAGES } from '../../../types/types.ts';
+import getAvatarBg from '../../../helpers/getAvatarBg';
 
+// Hàm lấy chữ cái viết tắt của tên
+function getInitials(displayName?: string | null, username?: string | null) {
+  const source = displayName || username || 'User';
+  const parts = source.split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) {
+    return 'U';
+  }
+
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function resolveAvatarUrl(avatar?: string | null) {
+  if (!avatar) {
+    return null;
+  }
+
+  if (/^https?:\/\//i.test(avatar) || avatar.startsWith('data:') || avatar.startsWith('blob:')) {
+    return avatar;
+  }
+
+  return `${API_UPLOADS}${avatar.replace(/^\/+/, '')}`;
+}
+
+// 1. Định nghĩa kiểu dữ liệu rõ ràng để tránh dùng 'any'
+interface ProfileFormData {
+  avatar: string;
+  displayName: string;
+  username: string;
+  bio: string;
+  socialLinks: string;
+  email: string;
+  password?: string;
+  confirmPassword?: string;
+}
+
+// ==========================================
+// COMPONENT CON: IMAGE CROPPER MODAL
+// ==========================================
+interface ImageCropperModalProps {
+  imageSrc: string;
+  onClose: () => void;
+  onSave: (croppedBase64: string) => void;
+}
+
+function ImageCropperModal({ imageSrc, onClose, onSave }: ImageCropperModalProps) {
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+
+  const dragStart = useRef({ x: 0, y: 0 });
+  const imageRef = useRef<HTMLImageElement>(null);
+  const cropAreaRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    dragStart.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPosition({
+      x: e.clientX - dragStart.current.x,
+      y: e.clientY - dragStart.current.y
+    });
+  };
+
+  const handleMouseUpOrLeave = () => {
+    setIsDragging(false);
+  };
+
+  
+
+  // --- Tương tác cảm ứng di động ---
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      setIsDragging(true);
+      dragStart.current = {
+        x: e.touches[0].clientX - position.x,
+        y: e.touches[0].clientY - position.y
+      };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    if (e.touches.length === 1) {
+      setPosition({
+        x: e.touches[0].clientX - dragStart.current.x,
+        y: e.touches[0].clientY - dragStart.current.y
+      });
+    }
+  };
+
+  // --- Xử lý cắt ảnh với Canvas ---
+  const handleCropSave = () => {
+    if (!imageRef.current || !cropAreaRef.current) return;
+
+    const img = imageRef.current;
+    const cropArea = cropAreaRef.current;
+
+    const imgRect = img.getBoundingClientRect();
+    const cropRect = cropArea.getBoundingClientRect();
+
+    const scaleX = img.naturalWidth / imgRect.width;
+    const scaleY = img.naturalHeight / imgRect.height;
+
+    const sX = (cropRect.left - imgRect.left) * scaleX;
+    const sY = (cropRect.top - imgRect.top) * scaleY;
+    const sWidth = cropRect.width * scaleX;
+    const sHeight = cropRect.height * scaleY;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = 200;
+    canvas.height = 200;
+
+    ctx.drawImage(
+      img,
+      sX, sY, sWidth, sHeight,
+      0, 0, 200, 200
+    );
+
+    const croppedBase64 = canvas.toDataURL('image/jpeg', 0.9);
+    onSave(croppedBase64);
+  };
+
+  return (
+    <div className="cropper-modal-overlay">
+      <div className="cropper-modal-content">
+        <div className="cropper-header">
+          <h3>✓ Crop your avatar</h3>
+          <button type="button" className="cropper-close-btn" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <div
+          className="cropper-workspace"
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUpOrLeave}
+          onMouseLeave={handleMouseUpOrLeave}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleMouseUpOrLeave}
+        >
+          <img
+            ref={imageRef}
+            src={imageSrc}
+            alt="Source"
+            className="cropper-image"
+            style={{
+              transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+              userSelect: 'none'
+            }}
+          />
+          <div ref={cropAreaRef} className="crop-target-area" />
+        </div>
+
+        <div className="cropper-footer">
+          <div className="zoom-control">
+            <span className="zoom-label">ZOOM</span>
+            <input
+              type="range"
+              min="1"
+              max="4"
+              step="0.05"
+              value={zoom}
+              onChange={(e) => setZoom(parseFloat(e.target.value))}
+              className="zoom-slider"
+            />
+          </div>
+          <div className="cropper-buttons-row">
+            <button type="button" className="btn-cropper-cancel" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="button" className="btn-cropper-save" onClick={handleCropSave}>
+              Set Avatar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ==========================================
+// COMPONENT CHÍNH: EDIT PROFILE PANEL
+// ==========================================
 export default function EditProfilePanel() {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ProfileFormData>({
     avatar: '',
     displayName: '',
     username: '',
@@ -16,16 +218,13 @@ export default function EditProfilePanel() {
 
   const [tempImageSrc, setTempImageSrc] = useState<string | null>(null);
   const [showCropper, setShowCropper] = useState(false);
-  
-  // State phục vụ việc kéo thả & zoom
-  const [zoom, setZoom] = useState(1);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  
-  const dragStart = useRef({ x: 0, y: 0 });
-  const imageRef = useRef<HTMLImageElement>(null);
-  const cropAreaRef = useRef<HTMLDivElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Ngăn double submission
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const resolvedAvatarUrl = resolveAvatarUrl(formData.avatar);
+  const initials = getInitials(formData.displayName, formData.username);
+  const avatarBgColor = getAvatarBg(formData.displayName || formData.username || 'User');
 
   useEffect(() => {
     async function fetchProfile() {
@@ -63,131 +262,60 @@ export default function EditProfilePanel() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setTempImageSrc(reader.result);
-        setZoom(1);
-        setPosition({ x: 0, y: 0 });
-        setShowCropper(true);
-      }
-    };
-    reader.readAsDataURL(file);
+    // Tối ưu: Dùng Object URL nhanh hơn và tốn ít RAM hơn FileReader
+    const objectUrl = URL.createObjectURL(file);
+    setTempImageSrc(objectUrl);
+    setShowCropper(true);
   };
 
-  //--- Logic kéo thả tương tác chuột ---
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-    dragStart.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y
-    };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    setPosition({
-      x: e.clientX - dragStart.current.x,
-      y: e.clientY - dragStart.current.y
-    });
-  };
-
-  const handleMouseUpOrLeave = () => {
-    setIsDragging(false);
-  };
-
-  //--- Tương thích với các thiết bị cảm ứng điện thoại ---
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      setIsDragging(true);
-      dragStart.current = {
-        x: e.touches[0].clientX - position.x,
-        y: e.touches[0].clientY - position.y
-      };
+  // Reset các thông số và dọn dẹp bộ nhớ tạm
+  const handleCloseCropper = () => {
+    if (tempImageSrc) {
+      URL.revokeObjectURL(tempImageSrc); // Giải phóng bộ nhớ của blob URL
     }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    if (e.touches.length === 1) {
-      setPosition({
-        x: e.touches[0].clientX - dragStart.current.x,
-        y: e.touches[0].clientY - dragStart.current.y
-      });
-    }
-  };
-
-  //--- Cắt ảnh thực tế bằng HTML5 Canvas ---
-  const handleCropSave = () => {
-    if (!imageRef.current || !cropAreaRef.current) return;
-
-    const img = imageRef.current;
-    const cropArea = cropAreaRef.current;
-
-    // Lấy tọa độ thực tế trên khung màn hình hiển thị
-    const imgRect = img.getBoundingClientRect();
-    const cropRect = cropArea.getBoundingClientRect();
-
-    // Tính toán tỉ lệ thực tế của ảnh gốc so với kích thước render hiện tại
-    const scaleX = img.naturalWidth / imgRect.width;
-    const scaleY = img.naturalHeight / imgRect.height;
-
-    // Xác định toạ độ và kích thước cần cắt dựa trên vùng khoanh tròn
-    const sX = (cropRect.left - imgRect.left) * scaleX;
-    const sY = (cropRect.top - imgRect.top) * scaleY;
-    const sWidth = cropRect.width * scaleX;
-    const sHeight = cropRect.height * scaleY;
-
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Đặt kích thước ảnh avatar xuất ra cố định (vd: 200x200px)
-    canvas.width = 200;
-    canvas.height = 200;
-
-    ctx.drawImage(
-      img,
-      sX, sY, sWidth, sHeight,  // Vùng cắt nguồn
-      0, 0, 200, 200           // Vùng vẽ đích
-    );
-
-    const croppedBase64 = canvas.toDataURL('image/jpeg', 0.9);
-    setFormData(prev => ({ ...prev, avatar: croppedBase64 }));
-    setShowCropper(false);
     setTempImageSrc(null);
+    setShowCropper(false);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''; // Reset input để cho phép chọn lại cùng 1 ảnh
+    }
+  };
+
+  const handleSaveCroppedImage = (croppedBase64: string) => {
+    setFormData(prev => ({ ...prev, avatar: croppedBase64 }));
+    handleCloseCropper();
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Password confirmation check
     if (formData.password && formData.password !== formData.confirmPassword) {
       alert(PROFILE_MESSAGES.passwordMismatch);
       return;
     }
 
-    // Build profile payload excluding password and email (email is immutable)
-    const { password, confirmPassword, email, ...profilePayload } = formData as any;
+    setIsSubmitting(true);
+
+    // TypeScript tự động suy luận loại bỏ trường không cần thiết mà không cần ép kiểu "any"
+    const { password, confirmPassword, email, ...profilePayload } = formData;
 
     try {
-      // Update profile info first
       await userApi.updateProfile(profilePayload);
 
-      // If user provided a new password, call the password API separately
       if (password) {
         if (password.length < 6) {
           alert(PROFILE_MESSAGES.passwordTooShort);
+          setIsSubmitting(false);
           return;
         }
-        await userApi.updatePassword(password, confirmPassword);
+        await userApi.updatePassword(password, confirmPassword || '');
       }
 
       alert(PROFILE_MESSAGES.success);
       setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
     } catch (err) {
       alert(PROFILE_MESSAGES.updateError);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -220,6 +348,7 @@ export default function EditProfilePanel() {
                   className="uavatar-edit" 
                   aria-label="Change avatar"
                   onClick={() => fileInputRef.current?.click()}
+                  disabled={isSubmitting}
                 >
                   <span 
                     className="uavatar uavatar-edit__inner" 
@@ -228,13 +357,20 @@ export default function EditProfilePanel() {
                       width: '80px', 
                       height: '80px', 
                       fontSize: '34px', 
-                      background: 'rgb(122, 82, 56)',
-                      backgroundImage: formData.avatar ? `url(${formData.avatar})` : 'none',
-                      backgroundSize: 'cover',
-                      backgroundPosition: 'center',
+                      backgroundColor: resolvedAvatarUrl ? undefined : avatarBgColor,
                     }}
                   >
-                    {!formData.avatar && (formData.displayName ? formData.displayName[0].toUpperCase() : 'N')}
+                    {resolvedAvatarUrl ? (
+                      <img 
+                        alt="" 
+                        loading="lazy" 
+                        decoding="async" 
+                        src={resolvedAvatarUrl} 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      />
+                    ) : (
+                      initials
+                    )}
                   </span>
                   <span className="uavatar-edit__overlay" aria-hidden="true">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -244,6 +380,20 @@ export default function EditProfilePanel() {
                     <span className="uavatar-edit__hint">Edit</span>
                   </span>
                 </button>
+                {formData.avatar && (
+                  <button 
+                    type="button" 
+                    className="uavatar-edit__remove" 
+                    aria-label="Remove avatar" 
+                    title="Remove avatar"
+                    onClick={() => setFormData(prev => ({ ...prev, avatar: '' }))}
+                    disabled={isSubmitting}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6l-12 12"></path>
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -266,6 +416,7 @@ export default function EditProfilePanel() {
                   maxLength={16} 
                   value={formData.displayName}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                 />
                 <span className="ufield__hint">{formData.displayName.length} / 16</span>
               </label>
@@ -280,6 +431,7 @@ export default function EditProfilePanel() {
                     maxLength={32} 
                     value={formData.username}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                   />
                 </div>
                 <span className="ufield__hint">{PROFILE_TEXTS.identity.usernameHint}</span>
@@ -306,6 +458,7 @@ export default function EditProfilePanel() {
                   placeholder={PROFILE_TEXTS.bio.placeholder}
                   value={formData.bio}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                 />
                 <span className="ufield__hint">{formData.bio.length} / 500</span>
               </label>
@@ -330,6 +483,7 @@ export default function EditProfilePanel() {
                   placeholder={PROFILE_TEXTS.social.placeholder}
                   value={formData.socialLinks}
                   onChange={handleChange}
+                  disabled={isSubmitting}
                 />
               </label>
             </div>
@@ -394,6 +548,7 @@ export default function EditProfilePanel() {
                     autoComplete="new-password" 
                     value={formData.password}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                   />
                 </div>
               </label>
@@ -414,6 +569,7 @@ export default function EditProfilePanel() {
                     autoComplete="new-password" 
                     value={formData.confirmPassword}
                     onChange={handleChange}
+                    disabled={isSubmitting}
                   />
                 </div>
               </label>
@@ -421,83 +577,24 @@ export default function EditProfilePanel() {
           </section>
 
           <div className="uform__actions">
-            <button type="submit" className="ubtn ubtn--primary">{PROFILE_TEXTS.buttonSave}</button>
+            <button 
+              type="submit" 
+              className="ubtn ubtn--primary" 
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Saving...' : PROFILE_TEXTS.buttonSave}
+            </button>
           </div>
         </form>
       </div>
 
-      {/* CROPPER MODAL */}
-      {showCropper && (
-        <div className="cropper-modal-overlay">
-          <div className="cropper-modal-content">
-            <div className="cropper-header">
-              <h3>✓ Crop your avatar</h3>
-              <button 
-                type="button" 
-                className="cropper-close-btn"
-                onClick={() => setShowCropper(false)}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Vùng workspace cho phép kéo thả ảnh */}
-            <div 
-              className="cropper-workspace"
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUpOrLeave}
-              onMouseLeave={handleMouseUpOrLeave}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleMouseUpOrLeave}
-            >
-              <img
-                ref={imageRef}
-                src={tempImageSrc ?? undefined}
-                alt="Source"
-                className="cropper-image"
-                style={{
-                  transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`
-                }}
-              />
-              {/* Vòng tròn mặt nạ cắt ảnh */}
-              <div ref={cropAreaRef} className="crop-target-area" />
-            </div>
-
-            {/* Phần điều khiển slider Zoom và các nút lệnh */}
-            <div className="cropper-footer">
-              <div className="zoom-control">
-                <span className="zoom-label">ZOOM</span>
-                <input
-                  type="range"
-                  min="1"
-                  max="4"
-                  step="0.05"
-                  value={zoom}
-                  onChange={(e) => setZoom(parseFloat(e.target.value))}
-                  className="zoom-slider"
-                />
-              </div>
-              <div className="cropper-buttons-row">
-                <button 
-                  type="button" 
-                  className="btn-cropper-cancel" 
-                  onClick={() => setShowCropper(false)}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="button" 
-                  className="btn-cropper-save" 
-                  onClick={handleCropSave}
-                >
-                  Set Avatar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* CROPPER MODAL (Chỉ render khi cần thiết và giữ logic kéo thả độc lập) */}
+      {showCropper && tempImageSrc && (
+        <ImageCropperModal
+          imageSrc={tempImageSrc}
+          onClose={handleCloseCropper}
+          onSave={handleSaveCroppedImage}
+        />
       )}
     </div>
   );

@@ -6,7 +6,6 @@ interface PaginationProps {
 }
 
 export default function Pagination({ currentPage, totalPages, onPageChange, isLoading = false }: PaginationProps) {
-  // Limit page numbers displayed for better mobile experience
   const getPageNumbers = () => {
     const maxVisible = window.innerWidth < 480 ? 3 : window.innerWidth < 768 ? 5 : 7;
     const halfVisible = Math.floor(maxVisible / 2);
@@ -14,7 +13,6 @@ export default function Pagination({ currentPage, totalPages, onPageChange, isLo
     let start = Math.max(1, currentPage - halfVisible);
     let end = Math.min(totalPages, currentPage + halfVisible);
     
-    // Adjust if near the edges
     if (start === 1) {
       end = Math.min(totalPages, end + (maxVisible - (end - start + 1)));
     }

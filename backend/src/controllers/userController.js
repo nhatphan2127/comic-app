@@ -86,11 +86,12 @@ export async function updatePreferences(req, res, next) {
   }
 }
 
+// router.get('/following
 export async function getFollowingList(req, res, next) {
   try {
     const userId = req.user.id;
 
-    // 1. Lấy thông tin cơ bản của truyện được theo dõi và mối quan hệ 1-1 (Category, Author, Artist, UserRating)
+    // 1. Lấy thông tin cơ bản, tính tổng số chương và chương đọc gần nhất qua Subquery
     const list = await db.all(
       `SELECT 
          f.userId,
@@ -113,7 +114,21 @@ export async function getFollowingList(req, res, next) {
          c.follow AS comicFollow,
          au.name AS authorName,
          ar.name AS artistName,
-         (SELECT rating FROM rating_history WHERE userId = f.userId AND comicId = c.id) AS userRating
+         (SELECT rating FROM rating_history WHERE userId = f.userId AND comicId = c.id) AS userRating,
+         
+         -- Tính tổng số chapter chưa bị xóa soft-delete
+         (SELECT COUNT(*) 
+          FROM chapters 
+          WHERE comicId = c.id AND deletedAt IS NULL) AS totalChapters,
+          
+         -- Lấy chapterNumber của chương có thời gian đọc (readAt) mới nhất của người dùng
+         (SELECT ch.chapterNumber 
+          FROM read_history rh 
+          JOIN chapters ch ON rh.chapterId = ch.id 
+          WHERE ch.comicId = c.id AND rh.userId = f.userId AND ch.deletedAt IS NULL
+          ORDER BY rh.readAt DESC 
+          LIMIT 1) AS readedChapter
+
        FROM following f
        JOIN comics c ON f.comicId = c.id
        LEFT JOIN following_categories fc ON f.followingCategoryId = fc.id
@@ -153,30 +168,18 @@ export async function getFollowingList(req, res, next) {
       comicIds
     );
 
-    const chaptersList = await db.all(
-      `SELECT id, comicId, title, chapterNumber, url, createdAt, updatedAt 
-       FROM chapters 
-       WHERE comicId IN (${comicIds.map(() => '?').join(',')}) 
-         AND deletedAt IS NULL
-       ORDER BY chapterNumber DESC`,
-      comicIds
-    );
-
     // 3. Khởi tạo các từ điển (Maps) để tra cứu nhanh thông tin
     const otherNamesMap = {};
     const genresMap = {};
     const formatsMap = {};
-    const chaptersMap = {};
 
     comicIds.forEach((id) => {
       otherNamesMap[id] = [];
       genresMap[id] = [];
       formatsMap[id] = [];
-      chaptersMap[id] = [];
     });
 
     otherNames.forEach((row) => {
-      // Vì DB không có cột quốc gia, tạm thời đặt mặc định hoặc chuỗi rỗng để khớp kiểu { name: string, country: string }
       otherNamesMap[row.comicId].push({ name: row.name, country: 'Unknown' });
     });
 
@@ -188,23 +191,9 @@ export async function getFollowingList(req, res, next) {
       formatsMap[row.comicId].push(row.name);
     });
 
-    chaptersList.forEach((row) => {
-      chaptersMap[row.comicId].push({
-        id: row.id,
-        comicId: row.comicId,
-        title: row.title,
-        chapterNumber: row.chapterNumber,
-        url: row.url,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      });
-    });
-
-    // 4. Ánh xạ dữ liệu thô sang cấu trúc đối tượng lồng nhau chuẩn của TypeScript Interface
+    // 4. Ánh xạ dữ liệu thô sang cấu trúc đối tượng lồng nhau chuẩn của TypeScript Interface FollowingComic
     const responseData = list.map((item) => {
       const comicId = item.comicId;
-      const allChapters = chaptersMap[comicId] || [];
-      const latestChapters = allChapters.slice(0, 1); // Lấy 1 chương mới nhất
 
       return {
         userId: item.userId,
@@ -224,19 +213,21 @@ export async function getFollowingList(req, res, next) {
           tags: [],
           formats: formatsMap[comicId] || [],
           releaseStatus: item.comicReleaseStatus || undefined,
-          releasingYear: item.comicReleasingYear ? String(item.releasingYear) : undefined,
+          releasingYear: item.comicReleasingYear ? String(item.comicReleasingYear) : undefined,
           userRating: item.userRating || undefined,
           rating: item.comicRating || 0,
           view: item.comicView || 0,
           follow: item.comicFollow || 0,
           author: item.authorName || undefined,
           artist: item.artistName || undefined,
-          latestChapters: latestChapters,
+          latestChapters: [],
         },
         category: {
           id: item.categoryId || '',
           category: item.categoryName || 'Default',
         },
+        readedChapter: item.readedChapter !== null ? item.readedChapter : 0, // Trả về 0 nếu chưa từng đọc chương nào
+        totalChapters: item.totalChapters || 0,
       };
     });
 
@@ -246,6 +237,7 @@ export async function getFollowingList(req, res, next) {
   }
 }
 
+//router.get('/following/categories',
 export async function getFollowingCategories(req, res, next) {
   try {
     const categories = await db.all(
@@ -262,6 +254,7 @@ export async function getFollowingCategories(req, res, next) {
   }
 }
 
+// router.post('/following/categories'
 export async function createFollowingCategory(req, res, next) {
   try {
     const { category } = req.body;
@@ -289,6 +282,7 @@ export async function createFollowingCategory(req, res, next) {
   }
 }
 
+// router.put('/following/categories/:categoryId'
 export async function updateFollowingCategory(req, res, next) {
   try {
     const { categoryId } = req.params;

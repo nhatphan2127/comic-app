@@ -219,7 +219,8 @@ export async function deleteChapterComment(req, res, next) {
             return res.status(403).json({ status: 'fail', message: 'You can only delete your own comment' });
         }
 
-        await db.run('DELETE FROM chapter_comments WHERE id = ?', [commentId]);
+        // Soft delete: clear content and set deletedAt
+        await db.run('UPDATE chapter_comments SET content = "", deletedAt = CURRENT_TIMESTAMP WHERE id = ?', [commentId]);
         return res.json({ status: 'success', message: 'Comment deleted successfully' });
     } catch (error) {
         next(error);
@@ -325,7 +326,8 @@ export async function deleteComment(req, res, next) {
             return res.status(403).json({ status: 'fail', message: 'You can only delete your own comment' });
         }
 
-        await db.run(`DELETE FROM comic_comments WHERE id = ?`, [commentId]);
+        // Soft delete: clear content and set deletedAt
+        await db.run(`UPDATE comic_comments SET content = "", deletedAt = CURRENT_TIMESTAMP WHERE id = ?`, [commentId]);
         return res.json({ status: 'success', message: 'Comment deleted successfully' });
     } catch (error) {
         next(error);
@@ -392,6 +394,54 @@ export async function removeCommentReaction(req, res, next) {
         }
         await db.run('DELETE FROM comic_comment_reactions WHERE userId = ? AND commentId = ?', [req.user.id, commentId]);
         return res.json({ status: 'success', data: { commentId, userReaction: 'none' } });
+    } catch (error) {
+        next(error);
+    }
+}
+
+export async function getUserComments(req, res, next) {
+    try {
+        const userId = req.user.id;
+        let { sortBy } = req.query;
+        const safeSortBy = ['recent', 'most-liked', 'most-replies'].includes(sortBy) ? sortBy : 'recent';
+
+        // Query both comic and chapter comments
+        // Note: For 'most-replies', we'll need a subquery to count children
+        const query = `
+            SELECT * FROM (
+                SELECT 
+                    cc.id, cc.content, cc.createdAt, cc.likes, cc.dislikes,
+                    c.name AS targetName, c.url AS targetUrl, c.coverUrl AS targetCoverUrl,
+                    'comic' as type,
+                    (SELECT COUNT(*) FROM comic_comments WHERE parentCommentId = cc.id) as replyCount
+                FROM comic_comments cc
+                JOIN comics c ON cc.comicId = c.id
+                WHERE cc.userId = ? AND cc.deletedAt IS NULL
+
+                UNION ALL
+
+                SELECT 
+                    cc.id, cc.content, cc.createdAt, cc.likes, cc.dislikes,
+                    c.name AS targetName, c.url AS targetUrl, c.coverUrl AS targetCoverUrl,
+                    'chapter' as type,
+                    (SELECT COUNT(*) FROM chapter_comments WHERE parentCommentId = cc.id) as replyCount
+                FROM chapter_comments cc
+                JOIN chapters ch ON cc.chapterId = ch.id
+                JOIN comics c ON ch.comicId = c.id
+                WHERE cc.userId = ? AND cc.deletedAt IS NULL
+            ) AS combined_comments
+            ORDER BY 
+                CASE WHEN ? = 'recent' THEN createdAt END DESC,
+                CASE WHEN ? = 'most-liked' THEN likes END DESC,
+                CASE WHEN ? = 'most-replies' THEN replyCount END DESC
+        `;
+
+        const comments = await db.all(query, [userId, userId, safeSortBy, safeSortBy, safeSortBy]);
+
+        return res.json({
+            status: 'success',
+            data: comments
+        });
     } catch (error) {
         next(error);
     }

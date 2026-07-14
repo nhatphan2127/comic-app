@@ -64,3 +64,39 @@ export const buildCommentTree = (flatComments, sortBy = 'best') => {
   roots.forEach(processNode);
   return roots;
 };
+
+export function normalizeContentRatings(input) {
+  const values = [];
+  const pushValues = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(pushValues);
+      return;
+    }
+
+    if (typeof value === 'string') {
+      value.split(',').forEach((item) => {
+        const trimmed = item.trim().toLowerCase();
+        if (trimmed) {
+          values.push(trimmed);
+        }
+      });
+    }
+  };
+
+  pushValues(input);
+
+  return [...new Set(values)];
+}
+
+export function buildContentRatingFilter(input) {
+  const ratings = normalizeContentRatings(input);
+
+  if (!ratings.length) {
+    return { clause: '', params: [] };
+  }
+
+  return {
+    clause: `LOWER(contentRating) IN (${ratings.map(() => '?').join(',')})`,
+    params: ratings,
+  };
+}

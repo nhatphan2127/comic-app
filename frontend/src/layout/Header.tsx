@@ -1,13 +1,16 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, type FormEvent, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Settings from './Settings';
 import AuthModal from './AuthModal';
-import '../assets/styles/Header.css';
+import { comicApi, notificationApi, API_UPLOADS, type ComicSearchResult } from '../services/api';
+import type { Notification } from '../types/types';
+import { formatTimeAgo } from '../helpers/formatDate';
 
 // Import các icon bổ sung nếu cần dùng trong dropdown
 import {
-  User, Globe, Bookmark, History, Bell, Settings as SettingsIcon, LogOut
+  User, Bookmark, History, Bell, Settings as SettingsIcon, MessageSquare,  LogOut,
+  Search, X, ChevronRight, Menu, Check
 } from 'lucide-react';
 
 export default function Header() {
@@ -17,11 +20,19 @@ export default function Header() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
-  const [isNotification, setNotification] = useState(false)
+  const [searchResults, setSearchResults] = useState<ComicSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [isNotification, setNotification] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationTab, setNotificationTab] = useState<'comic' | 'system'>('comic');
+  const [isNotificationsLoading, setIsNotificationsLoading] = useState(false);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchFormRef = useRef<HTMLFormElement>(null);
   const avatarLetter = useMemo(() => {
     return user?.displayName?.[0] || user?.userName?.[0] || 'U';
   }, [user]);
@@ -30,6 +41,85 @@ export default function Header() {
     setIsDropdownOpen(false);
     navigate(`/profile?tab=${tabId}`);
   };
+
+  const getNotificationType = (type: string): 'comic' | 'system' => {
+    const t = (type || '').toString().toLowerCase();
+    return t.includes('system') ? 'system' : 'comic';
+  };
+
+  const isUnread = (noti: Notification): boolean => noti.isRead === 0;
+
+  const loadNotifications = useCallback(async () => {
+    if (!isLoggedIn) return;
+
+    setIsNotificationsLoading(true);
+    setNotificationsError(null);
+    try {
+      const items = await notificationApi.list();
+      setNotifications(items);
+    } catch (error) {
+      setNotificationsError(error instanceof Error ? error.message : 'Unable to load notifications');
+    } finally {
+      setIsNotificationsLoading(false);
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    if (isLoggedIn && isNotification) {
+      loadNotifications();
+    }
+  }, [isLoggedIn, isNotification, loadNotifications]);
+
+  useEffect(() => {
+    const trimmed = searchVal.trim();
+
+    if (!trimmed || !isSearchOpen) {
+      setSearchResults([]);
+      setIsSearching(false);
+      setSearchError(null);
+      return;
+    }
+
+    let ignore = false;
+    setIsSearching(true);
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const results = await comicApi.search(trimmed);
+        if (!ignore) {
+          setSearchResults(results);
+          setIsSearching(false);
+          setSearchError(null);
+        }
+      } catch (error) {
+        if (!ignore) {
+          setSearchResults([]);
+          setIsSearching(false);
+          setSearchError(error instanceof Error ? error.message : 'Unable to load search results');
+        }
+      }
+    }, 250);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [isSearchOpen, searchVal]);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+
+    function handleClickOutside(event: MouseEvent) {
+      if (searchFormRef.current && !searchFormRef.current.contains(event.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSearchOpen]);
 
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
@@ -61,11 +151,52 @@ export default function Header() {
   }, []);
 
   // Xử lý gửi form tìm kiếm
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  const handleSearchSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (searchVal.trim()) {
-      navigate(`/browse?search=${encodeURIComponent(searchVal.trim())}`);
+    const query = searchVal.trim();
+    if (query) {
+      navigate(`/browse?search=${encodeURIComponent(query)}`);
       setIsSearchOpen(false);
+    }
+  };
+
+  const comicUnreadCount = notifications.filter((n) => isUnread(n) && getNotificationType(n.type) === 'comic').length;
+  const systemUnreadCount = notifications.filter((n) => isUnread(n) && getNotificationType(n.type) === 'system').length;
+  const unreadCount = comicUnreadCount + systemUnreadCount;
+  const currentTabUnreadCount = notificationTab === 'comic' ? comicUnreadCount : systemUnreadCount;
+  const visibleNotifications = notifications
+    .filter((n) => getNotificationType(n.type) === notificationTab && isUnread(n))
+    .slice(0, 6);
+
+  const handleMarkVisibleRead = async () => {
+    const unreadInCurrentTab = notifications.filter(
+      (n) => isUnread(n) && getNotificationType(n.type) === notificationTab
+    );
+
+    if (unreadInCurrentTab.length === 0) return;
+
+    setNotifications((prev) => prev.map((n) => (getNotificationType(n.type) === notificationTab ? { ...n, isRead: 1 } : n)));
+
+    try {
+      await Promise.all(unreadInCurrentTab.map((n) => notificationApi.markRead(n.id)));
+      await loadNotifications();
+    } catch (error) {
+      console.error('Unable to mark notifications as read', error);
+    }
+  };
+
+  const handleNotificationClick = async (noti: Notification) => {
+    setNotifications((prev) => prev.map((item) => (item.id === noti.id ? { ...item, isRead: 1 } : item)));
+
+    try {
+      await notificationApi.markRead(noti.id);
+    } catch (error) {
+      console.error('Unable to mark notification as read', error);
+    }
+
+    setNotificationTab(getNotificationType(noti.type));
+    if (noti.redirectPath && noti.redirectPath !== '#') {
+      window.location.assign(noti.redirectPath);
     }
   };
 
@@ -106,20 +237,18 @@ export default function Header() {
               aria-label="Open search"
               onClick={() => setIsSearchOpen(true)}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="7"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
+              <Search size={18} strokeWidth={2} />
             </button>
-            <form className="search__form" onSubmit={handleSearchSubmit}>
-              <svg className="search__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="7"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
+            <form ref={searchFormRef} className="search__form" onSubmit={handleSearchSubmit}>
+              <Search className="search__icon" size={16} strokeWidth={2} />
               <input
                 placeholder="Search any title..."
                 value={searchVal}
-                onChange={(e) => setSearchVal(e.target.value)}
+                onFocus={() => setIsSearchOpen(true)}
+                onChange={(e) => {
+                  setSearchVal(e.target.value);
+                  setIsSearchOpen(true);
+                }}
               />
               <a
                 href="/browse"
@@ -138,13 +267,95 @@ export default function Header() {
                 aria-label="Clear search"
                 onClick={() => {
                   setSearchVal('');
+                  setSearchResults([]);
+                  setSearchError(null);
                   setIsSearchOpen(false);
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 6l12 12M18 6l-12 12"></path>
-                </svg>
+                <X size={16} strokeWidth={2} />
               </button>
+
+              {isSearchOpen && searchVal.trim() && (
+                <div className="search-pop" role="listbox">
+                  <div className="search-pop__section">
+                    <div className="search-pop__label">
+                      <span>Results</span>
+                    </div>
+
+                    {isSearching ? (
+                      <div className="search-pop__empty">
+                        <div className="search-pop__empty-title">Searching…</div>
+                      </div>
+                    ) : searchError ? (
+                      <div className="search-pop__empty">
+                        <div className="search-pop__empty-title">Unable to load results</div>
+                        <div className="search-pop__empty-sub">{searchError}</div>
+                      </div>
+                    ) : searchResults.length > 0 ? (
+                      <>
+                        <ul className="search-pop__list">
+                          {searchResults.map((result) => (
+                            <li key={result.id} className="search-pop__item search-pop__item--result">
+                              <a
+                                href={`/comics/${result.url}`}
+                                className="search-pop__item-link"
+                                onClick={() => {
+                                  setSearchVal('');
+                                  setSearchResults([]);
+                                  setIsSearchOpen(false);
+                                }}
+                              >
+                                <span className="search-pop__thumb">
+                                  <div className="poster poster--xs">
+                                    <img
+                                      alt=""
+                                      loading="lazy"
+                                      src={result.coverUrl || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=280&q=80'}
+                                    />
+                                  </div>
+                                </span>
+                                <span className="search-pop__item-body">
+                                  <span className="search-pop__item-title">{result.name}</span>
+                                  <span className="search-pop__item-sub">
+                                    <span className="search-pop__type">{(result.types || 'OTHER').toUpperCase()}</span>
+                                    {result.latestChapter ? (
+                                      <>
+                                        <span className="search-pop__sep">·</span>
+                                        <span>Ch.{result.latestChapter}</span>
+                                      </>
+                                    ) : null}
+                                  </span>
+                                </span>
+                                {typeof result.rating === 'number' && result.rating > 0 ? (
+                                  <span className="search-pop__item-meta mono">★ {result.rating.toFixed(1)}</span>
+                                ) : null}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+
+                        <a
+                          className="search-pop__more"
+                          href={`/browse?search=${encodeURIComponent(searchVal.trim())}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            navigate(`/browse?search=${encodeURIComponent(searchVal.trim())}`);
+                            setIsSearchOpen(false);
+                          }}
+                        >
+                          <span>View all results for <strong>"{searchVal.trim()}"</strong></span>
+                          <ChevronRight size={14} strokeWidth={2.25} />
+                        </a>
+                      </>
+                    ) : (
+                      <div className="search-pop__empty">
+                        <div className="search-pop__empty-title">No matches for "{searchVal.trim()}"</div>
+                        <div className="search-pop__empty-sub">Try a different title, author, or genre.</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </form>
           </div>
 
@@ -160,10 +371,7 @@ export default function Header() {
                 title="Settings"
                 onClick={() => setIsSettingsOpen(true)}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3"></circle>
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
+                <SettingsIcon size={18} strokeWidth={2} />
               </button>
             </div>
 
@@ -178,11 +386,7 @@ export default function Header() {
                     title="Browse"
                     onClick={() => navigate('/browse')}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="3" y1="6" x2="21" y2="6"></line>
-                      <line x1="3" y1="12" x2="21" y2="12"></line>
-                      <line x1="3" y1="18" x2="21" y2="18"></line>
-                    </svg>
+                    <Menu size={18} strokeWidth={2} />
                   </button>
                 </div>
 
@@ -195,21 +399,9 @@ export default function Header() {
                     title="Notifications"
                     onClick={() => setNotification(!isNotification)}
                   >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                    </svg>
+                    <Bell size={18} strokeWidth={2} />
 
-                    <span className="notifbell__dot" aria-hidden="true" />
+                    {unreadCount > 0 ? <span className="notifbell__dot" aria-hidden="true" /> : null}
                   </button>
 
                   {isNotification && (
@@ -221,27 +413,17 @@ export default function Header() {
                       <div className="notifpop__head">
                         <div className="notifpop__head-text">
                           <h3 className="notifpop__title">Notifications</h3>
+                          <span className="notifpop__head-sub">{unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}</span>
                         </div>
 
                         <button
                           type="button"
                           className="notifpop__mark"
-                          disabled
+                          disabled={currentTabUnreadCount === 0}
                           title="Mark visible as read"
+                          onClick={handleMarkVisibleRead}
                         >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
-                          >
-                            <path d="M4 12l5 5L20 6" />
-                          </svg>
+                          <Check size={12} strokeWidth={1.8} aria-hidden="true" />
 
                           <span>Mark as read</span>
                         </button>
@@ -250,63 +432,99 @@ export default function Header() {
                       <div className="notifpop__tabs" role="tablist">
                         <button
                           role="tab"
-                          aria-selected="true"
-                          className="notifpop__tab is-on"
+                          aria-selected={notificationTab === 'comic'}
+                          className={`notifpop__tab ${notificationTab === 'comic' ? 'is-on' : ''}`}
+                          onClick={() => setNotificationTab('comic')}
                         >
-                          <span>Comics</span>
+                          <span>Comic</span>
+                          {comicUnreadCount > 0 ? <span className="notifpop__count">{comicUnreadCount}</span> : null}
                         </button>
 
                         <button
                           role="tab"
-                          aria-selected="false"
-                          className="notifpop__tab"
+                          aria-selected={notificationTab === 'system'}
+                          className={`notifpop__tab ${notificationTab === 'system' ? 'is-on' : ''}`}
+                          onClick={() => setNotificationTab('system')}
                         >
-                          <span>Community</span>
+                          <span>System</span>
+                          {systemUnreadCount > 0 ? <span className="notifpop__count">{systemUnreadCount}</span> : null}
                         </button>
                       </div>
 
                       <ul className="notifpop__list">
-                        <li className="notifpop__empty">
-                          <svg
-                            width="22"
-                            height="22"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
-                          >
-                            <path d="M6 16V10a6 6 0 0 1 12 0v6l2 3H4l2-3z" />
-                            <path d="M10 20a2 2 0 0 0 4 0" />
-                          </svg>
+                        {isNotificationsLoading ? (
+                          <li className="notifpop__empty">
+                            <div className="notifpop__empty-title">Loading…</div>
+                          </li>
+                        ) : notificationsError ? (
+                          <li className="notifpop__empty">
+                            <div className="notifpop__empty-title">Unable to load notifications</div>
+                            <div className="notifpop__empty-sub">{notificationsError}</div>
+                          </li>
+                        ) : visibleNotifications.length > 0 ? (
+                          visibleNotifications.map((noti) => {
+                            const unread = isUnread(noti);
+                            if(!unread) {
+                              return (<></>)
+                            }
+                            const notificationType = getNotificationType(noti.type);
+                            const iconClass = notificationType === 'system' ? 'notifpop__icon--mod' : 'notifpop__icon--reply';
 
-                          <div className="notifpop__empty-title">
-                            No comics notifications
-                          </div>
+                            return (
+                              <li
+                                key={noti.id}
+                                className={`notifpop__item ${unread ? 'is-unread' : ''}`}
+                                role="link"
+                                tabIndex={0}
+                                onClick={() => handleNotificationClick(noti)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    handleNotificationClick(noti);
+                                  }
+                                }}
+                              >
+                                <span className={`notifpop__icon ${iconClass}`}>
+                                  <Bell size={13} strokeWidth={1.8} aria-hidden="true" />
+                                </span>
 
-                          <div className="notifpop__empty-sub">
-                            You're all caught up.
-                          </div>
-                        </li>
+                                <div className="notifpop__body">
+                                  <div className="notifpop__text">
+                                    <b>{noti.title}</b>
+                                  </div>
+                                  <div className="notifpop__time mono">
+                                    <span>{formatTimeAgo(noti.createdAt)}</span>
+                                    {noti.redirectPath && noti.redirectPath.includes('/chapter') ? <span> · Chapter</span> : null}
+                                  </div>
+                                </div>
+
+                                <a className="notifpop__poster" href={noti.redirectPath || '#'} aria-hidden="true" onClick={(event) => event.preventDefault()}>
+                                  <div className="poster poster--xs">
+                                    <img alt="" loading="lazy" src={API_UPLOADS + 'comic/default-cover.jpg'} />
+                                  </div>
+                                </a>
+                              </li>
+                            );
+                          })
+                        ) : (
+                          <li className="notifpop__empty">
+                            <Bell size={22} strokeWidth={1.8} aria-hidden="true" />
+
+                            <div className="notifpop__empty-title">
+                              {notificationTab === 'comic' ? 'No comic notifications' : 'No system notifications'}
+                            </div>
+
+                            <div className="notifpop__empty-sub">
+                              You&apos;re all caught up.
+                            </div>
+                          </li>
+                        )}
                       </ul>
 
                       <a className="notifpop__all" href="/user?tab=notifs">
                         <span>View all notifications</span>
 
-                        <svg
-                          width="12"
-                          height="12"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.25"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <polyline points="9 18 15 12 9 6" />
-                        </svg>
+                        <ChevronRight size={12} strokeWidth={2.25} />
                       </a>
                     </div>
                   )}
@@ -328,65 +546,74 @@ export default function Header() {
                   </button>
 
                   {isDropdownOpen && (
-                    <div className="profile-dropdown">
-                      <div className="dropdown-user-info" onClick={() => handleTabClick('edit-profile')}>
-                        <div className="dropdown-user-avatar" style={{ background: avatarBg }}>
+                    <div className="usermenu__pop" role="menu">
+                      <div className="usermenu__head" onClick={() => handleTabClick('edit-profile')}>
+                        <span className="uavatar" aria-hidden="true" style={{ width: 40, height: 40, fontSize: 17, background: avatarBg }}>
                           {avatarLetter}
-                        </div>
-                        <div className="dropdown-user-text">
-                          <div className="dropdown-display-name">
+                        </span>
+                        <div className="usermenu__id">
+                          <div className="usermenu__name">
                             {user?.displayName || 'Nhật PM'}
                           </div>
-                          <div className="dropdown-username">
+                          <div className="usermenu__handle mono">
                             @{user?.userName || 'dengu2127'}
                           </div>
                         </div>
                       </div>
 
-                      <div className="dropdown-menu-list">
-                        <button className="dropdown-item" onClick={() => handleTabClick('edit-profile')}>
-                          <User className="dropdown-icon" strokeWidth={2} size={18} />
-                          My Profile
-                        </button>
+                      <div className="usermenu__sep"></div>
 
-                        <button className="dropdown-item" onClick={() => handleTabClick('public-profile')}>
-                          <Globe className="dropdown-icon" strokeWidth={2} size={18} />
-                          Public profile
-                        </button>
+                      <ul className="usermenu__list">
+                        <li>
+                          <a href="/user?tab=edit" className="usermenu__item" role="menuitem" onClick={(e) => { e.preventDefault(); handleTabClick('edit-profile'); }}>
+                            <User size={14} strokeWidth={1.8} />
+                            <span>My Profile</span>
+                          </a>
+                        </li>
 
-                        <button className="dropdown-item" onClick={() => handleTabClick('following-titles')}>
-                          <Bookmark className="dropdown-icon" strokeWidth={2} size={18} />
-                          Following Titles
-                        </button>
+                        <li>
+                          <a href="/user?tab=titles" className="usermenu__item" role="menuitem" onClick={(e) => { e.preventDefault(); handleTabClick('following-titles'); }}>
+                            <Bookmark size={14} strokeWidth={1.8} />
+                            <span>Following Titles</span>
+                          </a>
+                        </li>
 
-                        <button className="dropdown-item" onClick={() => handleTabClick('read-history')}>
-                          <History className="dropdown-icon" strokeWidth={2} size={18} />
-                          Read History
-                        </button>
+                        <li>
+                          <a href="/user?tab=history" className="usermenu__item" role="menuitem" onClick={(e) => { e.preventDefault(); handleTabClick('read-history'); }}>
+                            <History size={14} strokeWidth={1.8} />
+                            <span>Read History</span>
+                          </a>
+                        </li>
 
-                        <button className="dropdown-item" onClick={() => handleTabClick('notifications')}>
-                          <Bell className="dropdown-icon" strokeWidth={2} size={18} />
-                          Notifications
-                        </button>
+                        <li>
+                          <a href="/user?tab=notifications" className="usermenu__item" role="menuitem" onClick={(e) => { e.preventDefault(); handleTabClick('notifications'); }}>
+                            <Bell size={14} strokeWidth={1.8} />
+                            <span>Notifications</span>
+                          </a>
+                        </li>
 
-                        <button className="dropdown-item" onClick={() => setIsSettingsOpen(true)}>
-                          <SettingsIcon className="dropdown-icon" strokeWidth={2} size={18} />
-                          Settings
-                        </button>
+                        <li>
+                          <a href="/user?tab=comments" className="usermenu__item" role="menuitem" onClick={(e) => { e.preventDefault(); setIsSettingsOpen(true); }}>
+                            <MessageSquare size={14} strokeWidth={1.8} />
+                            <span>My Comments</span>
+                          </a>
+                        </li>
+                      </ul>
 
-                        <div className="dropdown-divider"></div>
+                      <div className="usermenu__sep"></div>
 
-                        <button
-                          className="dropdown-item signout-btn"
-                          onClick={() => {
-                            logout();
-                            setIsDropdownOpen(false);
-                          }}
-                        >
-                          <LogOut className="dropdown-icon" strokeWidth={2} size={18} />
-                          Sign out
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        className="usermenu__item usermenu__item--signout"
+                        role="menuitem"
+                        onClick={() => {
+                          logout();
+                          setIsDropdownOpen(false);
+                        }}
+                      >
+                        <LogOut size={14} strokeWidth={1.8} />
+                        <span>Sign out</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -395,10 +622,8 @@ export default function Header() {
               <div className="usermenu">
                 <button
                   type="button"
-                  className="usermenu__btn login-btn"
-                  onClick={() => setIsAuthOpen(true)}
-                  style={{ fontSize: '13px', padding: '0 12px', height: '28px', borderRadius: '4px' }}
-                >
+                  className="login-btn"
+                  onClick={() => setIsAuthOpen(true)}                >
                   Log in
                 </button>
               </div>

@@ -256,7 +256,7 @@ async function seedDatabase() {
 
     // ========== 3. NẠP DANH MỤC THỰC THỂ (Authors, Artists, Genres, Formats) ==========
     console.log('🏷️  Đang nạp danh mục chuẩn hóa...');
-    
+
     const authors = [
       { id: uuidv4(), name: 'Ngã Cật Tây Hồng Thị', bio: 'Tác giả tiên hiệp hàng đầu Trung Quốc.' },
       { id: uuidv4(), name: 'Đường Gia Tam Thiếu', bio: 'Tác giả của bộ Đấu La Đại Lục nổi tiếng.' },
@@ -322,7 +322,7 @@ async function seedDatabase() {
       // Lưu file ảnh tượng trưng
       try {
         fs.writeFileSync(path.join(comicCoversDir, `${comicId}.png`), dummyImageBuffer);
-      } catch (err) {}
+      } catch (err) { }
 
       // Thêm truyện
       await db.run(
@@ -361,8 +361,8 @@ async function seedDatabase() {
 
       // Tên thay thế phụ
       await db.run(
-        `INSERT INTO comic_other_names (id, comicId, name) VALUES (?, ?, ?)`,
-        [uuidv4(), comicId, `Tên Khác Của ${comic.name}`]
+        `INSERT INTO comic_other_names (id, comicId, name, country) VALUES (?, ?, ?, ?)`,
+        [uuidv4(), comicId, `Tên Khác Của ${comic.name}`, 'vi']
       );
 
       // Người đăng đóng góp
@@ -398,7 +398,7 @@ async function seedDatabase() {
 
           try {
             fs.writeFileSync(path.join(chapterImagesDir, `${imageId}.png`), dummyImageBuffer);
-          } catch (err) {}
+          } catch (err) { }
 
           await db.run(
             `INSERT INTO chapter_images (id, chapterId, urlPath, pageNumber)
@@ -442,7 +442,7 @@ async function seedDatabase() {
         // Tỷ lệ Bookmark: 30%
         if (Math.random() > 0.7) {
           await db.run(
-            `INSERT INTO bookmarks (userId, comicId) VALUES (?, ?)` ,
+            `INSERT INTO bookmarks (userId, comicId) VALUES (?, ?)`,
             [userId, comicId]
           );
         }
@@ -450,7 +450,7 @@ async function seedDatabase() {
         // Tỷ lệ Đánh giá: 40% (Từ 1 đến 5 sao)
         if (Math.random() > 0.6) {
           await db.run(
-            `INSERT INTO rating_history (userId, comicId, rating) VALUES (?, ?, ?)` ,
+            `INSERT INTO rating_history (userId, comicId, rating) VALUES (?, ?, ?)`,
             [userId, comicId, Math.floor(Math.random() * 5) + 1]
           );
         }
@@ -499,7 +499,7 @@ async function seedDatabase() {
         const replyId = uuidv4();
         const replyAuthorId = listUserIds.find(id => id !== authorId) || authorId;
         const replyContent = comicReplyTemplates[Math.floor(Math.random() * comicReplyTemplates.length)];
-        
+
         await db.run(
           `INSERT INTO comic_comments (id, comicId, userId, content, parentCommentId, likes, dislikes)
            VALUES (?, ?, ?, ?, ?, ?, 0)`,
@@ -561,12 +561,12 @@ async function seedDatabase() {
     console.log(`   - Tác giả & Họa sĩ chuẩn hóa: ${authors.length} tác giả, ${artists.length} họa sĩ`);
     console.log(`   - Tổng bộ truyện độc lập: ${sampleComics.length} bộ truyện`);
     console.log(`   - Toàn bộ bình luận, biểu cảm, thông báo, mối quan hệ thực thể đã liên kết mượt mà.`);
-    
+
     process.exit(0);
   } catch (error) {
     try {
       await db.run('ROLLBACK');
-    } catch (e) {}
+    } catch (e) { }
     console.error('❌ Đã xảy ra lỗi nghiêm trọng khi nạp dữ liệu:', error);
     process.exit(1);
   }

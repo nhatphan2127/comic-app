@@ -1,17 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import type { ComicContributor } from '../types/data';
+import type { ComicContributor } from '../types/types';
 import { formatTimeAgo } from '../helpers/formatDate';
-import { API_UPLOADS } from '../services/api';
+import { getImage } from '../helpers/getImage';
 
-// Helper xử lý đường dẫn ảnh bìa
-const getImageUrl = (coverUrl?: string) => {
-  if (!coverUrl) return 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?q=80&w=200';
-  if (coverUrl.startsWith('http://') || coverUrl.startsWith('https://')) {
-    return coverUrl;
-  }
-  return `${API_UPLOADS}${coverUrl}`;
-};
+
 
 // Helper tạo badge hiển thị trạng thái duyệt đóng góp (dùng cho ComicCard overlay)
 const getStatusBadge = (status: 'pending' | 'accept' | 'reject') => {
@@ -33,7 +26,7 @@ interface ComicCardProps {
 export function ComicCard({ contributor }: ComicCardProps) {
   const comicData = contributor.comic;
   const title = comicData?.name || 'Unknown Comic';
-  const image = getImageUrl(comicData?.coverUrl);
+  const image = getImage(comicData?.coverUrl);
   const url = comicData?.url || contributor.comicId;
 
   return (
@@ -44,7 +37,6 @@ export function ComicCard({ contributor }: ComicCardProps) {
         </div>
         <div className="card__poster-overlay">
           {getStatusBadge(contributor.status)}
-          {contributor.unread > 0 && <span className="unread-pill">{contributor.unread} unread</span>}
         </div>
       </div>
       <div className="card__body">
@@ -74,12 +66,14 @@ export function ComicCard({ contributor }: ComicCardProps) {
 
 interface ComicRowProps {
   contributor: ComicContributor;
+  onClick?: () => void | Promise<void>;
+  onEdit?: () => void | Promise<void>;
 }
 
-export function ComicRow({ contributor }: ComicRowProps) {
+export function ComicRow({ contributor, onClick, onEdit }: ComicRowProps) {
   const comicData = contributor.comic;
   const title = comicData?.name || 'Unknown Comic';
-  const image = getImageUrl(comicData?.coverUrl);
+  const image = getImage(comicData?.coverUrl);
   const url = comicData?.url || contributor.comicId;
 
   // Lọc và chuẩn bị danh sách meta hiển thị kèm dấu chấm tròn xen kẽ
@@ -121,7 +115,7 @@ export function ComicRow({ contributor }: ComicRowProps) {
     : '';
 
   return (
-    <li className="ulrow">
+    <li className="ulrow" onClick={onClick}>
       <Link className="ulrow__poster" to={`/comics/${url}`} aria-label={title}>
         <div className="poster poster--sm">
           <img alt={title} loading="lazy" src={image} />
@@ -143,6 +137,21 @@ export function ComicRow({ contributor }: ComicRowProps) {
       </div>
       
       <div className="ulrow__actions">
+        {onEdit && (
+          <button
+            type="button"
+            className="ubtn ubtn--ghost ubtn--sm"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void onEdit();
+            }}
+            style={{ marginRight: '8px' }}
+          >
+            Edit
+          </button>
+        )}
+
         {/* 1. Trạng thái duyệt đóng góp hiển thị dạng Folder Pill */}
         <span className={`ulrow__folder status-${contributor.status}`}>
           {contributor.status === 'pending' ? 'Pending' : contributor.status === 'accept' ? 'Accepted' : 'Rejected'}
@@ -157,10 +166,6 @@ export function ComicRow({ contributor }: ComicRowProps) {
           </div>
         )}
 
-        {/* Thông báo tin chưa đọc */}
-        {contributor.unread > 0 && (
-          <span className="unread-pill">{contributor.unread} unread</span>
-        )}
       </div>
     </li>
   );

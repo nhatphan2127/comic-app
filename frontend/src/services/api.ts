@@ -1,8 +1,55 @@
 // src/services/api.ts
-import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor } from '../types/data';
+import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter } from '../types/types';
 
 export const API_BASE_URL = 'http://localhost:5000';
 export const API_UPLOADS = 'http://localhost:5000/storage/';
+export type ContentFilter = 'Safe' | 'Suggestive' | 'Erotica' | 'Pornographic';
+export const CONTENT_FILTER_STORAGE_KEY = 'comic-content-filter';
+export const DEFAULT_CONTENT_FILTER: ContentFilter = 'Suggestive';
+
+export interface ComicSearchResult {
+  id: string;
+  name: string;
+  url: string;
+  coverUrl: string | null;
+  types?: string;
+  rating?: number;
+  latestChapter?: number | null;
+}
+
+export function getStoredContentFilter(): ContentFilter {
+  if (typeof window === 'undefined') {
+    return DEFAULT_CONTENT_FILTER;
+  }
+
+  const stored = window.localStorage.getItem(CONTENT_FILTER_STORAGE_KEY);
+  const validValues: ContentFilter[] = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'];
+  return stored && validValues.includes(stored as ContentFilter) ? (stored as ContentFilter) : DEFAULT_CONTENT_FILTER;
+}
+
+export function setStoredContentFilter(filter: ContentFilter) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(CONTENT_FILTER_STORAGE_KEY, filter);
+  window.dispatchEvent(new Event('content-filter-changed'));
+}
+
+export function getContentRatingValues(filter: ContentFilter | string): string[] {
+  switch (String(filter || '').toLowerCase()) {
+    case 'safe':
+      return ['safe'];
+    case 'suggestive':
+      return ['safe', 'suggestive'];
+    case 'erotica':
+      return ['safe', 'suggestive', 'erotica'];
+    case 'pornographic':
+      return ['safe', 'suggestive', 'erotica', 'pornographic'];
+    default:
+      return ['safe', 'suggestive'];
+  }
+}
 
 // Generic request handler with standardized response parsing
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -67,21 +114,46 @@ async function multipartRequest<T>(path: string, formData: FormData, init?: Requ
 
 // Comic-related API endpoints
 export const comicApi = {
-  // Fetch paginated list of comics with optional filters
-  list: (page?: number) =>
-    request<{ comics: Comic[]; pagination: { page: number; totalPages: number } }>(
-      `/comics${page ? `?page=${page}` : ''}`
-    ),
+  // use Main.tsx
+  list: (page?: number, contentFilter?: ContentFilter | string) => {
+    const params = new URLSearchParams();
+    if (page) params.set('page', String(page));
 
-  // Fetch top 10 most popular comics
-  getPopular: () =>
-    request<Comic[]>('/comics/popular'),
+    getContentRatingValues(contentFilter ?? getStoredContentFilter()).forEach((rating) => {
+      params.append('contentRating', rating);
+    });
 
-  // Fetch detailed comic information by URL (includes full chapters list)
+    const queryString = params.toString();
+    return request<{ comics: Comic[]; metadata: { page: number; totalPages: number } }>(
+      `/comics${queryString ? `?${queryString}` : ''}`
+    );
+  },
+
+  // use Main.tsx
+  getPopular: (contentFilter?: ContentFilter | string) => {
+    const params = new URLSearchParams();
+    getContentRatingValues(contentFilter ?? getStoredContentFilter()).forEach((rating) => {
+      params.append('contentRating', rating);
+    });
+
+    const queryString = params.toString();
+    return request<Comic[]>(`/comics/popular${queryString ? `?${queryString}` : ''}`);
+  },
+
+  search: (query: string) =>
+    request<ComicSearchResult[]>(`/comics/search?q=${encodeURIComponent(query)}`),
+
+  // use MangaDetailLayout.tsx
   getByUrl: (url: string) =>
-  request<Comic>(`/comics/${url}`, {
-    headers: getAuthHeaders(),
-  }),
+    request<Comic>(`/comics/${url}`, {
+      headers: getAuthHeaders(),
+    }),
+
+  // use MangaDetailLayout.tsx
+  getChaptersByUrl: (url: string) =>
+    request<Chapter[]>(`/comics/${url}/chapters`, {
+      headers: getAuthHeaders(),
+    }),
 
   // Fetch all comments for a specific comic
   getComments: (comicId: string, limit: number, offset: number, sortBy: 'best' | 'newest' | 'oldest' = 'best') =>
@@ -98,15 +170,27 @@ export const comicApi = {
   reactComment: (commentId: string, reactionType: 'like' | 'dislike' | 'none') =>
     reactionType === 'none'
       ? request<any>(`/comments/comics/${commentId}/react`, {
-          method: 'DELETE',
-          headers: getAuthHeaders(),
-        })
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      })
       : request<any>(`/comments/comics/${commentId}/react`, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ reactionType }),
-        }),
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ reactionType }),
+      }),
 
+  deleteComment: (commentId: string) =>
+    request<any>(`/comments/comics/${commentId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    }),
+
+  getUserComments: (sortBy: 'recent' | 'most-liked' | 'most-replies' = 'recent') =>
+    request<any[]>(`/comments/user?sortBy=${sortBy}`, {
+      headers: getAuthHeaders(),
+    }),
+
+  // use MangaDetailLayout.tsx
   getFollowStatus: (comicId: string) =>
     request<{ isFollowing: boolean }>(`/comics/${comicId}/follow`, {
       headers: getAuthHeaders(),
@@ -119,12 +203,14 @@ export const comicApi = {
       body: JSON.stringify({ rating }),
     }),
 
+  // use MangaDetailLayout.tsx
   follow: (comicId: string) =>
     request<{ isFollowing: boolean }>(`/comics/${comicId}/follow`, {
       method: 'POST',
       headers: getAuthHeaders(),
     }),
 
+  // use MangaDetailLayout.tsx
   unfollow: (comicId: string) =>
     request<{ isFollowing: boolean }>(`/comics/${comicId}/follow`, {
       method: 'DELETE',
@@ -132,14 +218,21 @@ export const comicApi = {
     }),
 
   // Create a new comic (multipart form - requires FormData)
-  create: (formData: FormData) => 
+  create: (formData: FormData) =>
     multipartRequest<any>(`/comics`, formData, {
       method: 'POST',
       headers: getAuthHeaders(),
     }),
 
+  // Update an existing comic and reset it back to pending review
+  update: (comicId: string, formData: FormData) =>
+    multipartRequest<any>(`/comics/${comicId}`, formData, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+    }),
+
   // Create a new chapter for a comic (multipart form - requires FormData)
-  createChapter: (comicId: string, formData: FormData) => 
+  createChapter: (comicId: string, formData: FormData) =>
     multipartRequest<any>(`/comics/${comicId}/chapters`, formData, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -149,15 +242,15 @@ export const comicApi = {
 // Chapter-related API endpoints
 export const chapterApi = {
   // Fetch detailed chapter information (includes images and reading history if authenticated)
-  getDetails: (chapterId: string) => 
-    request<any>(`/comics/chapters/${chapterId}`, {
+  getDetails: (chapterId: string) =>
+    request<Chapter>(`/comics/chapters/${chapterId}`, {
       headers: getAuthHeaders(),
     }),
-  saveReadingHistory: (chapterId: string, currentPage: number, scrollPosition: number) =>
+  saveReadingHistory: (chapterId: string, currentPage: number) =>
     request<any>(`/comics/chapters/${chapterId}/history`, {
       method: 'PUT',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ currentPage, scrollPosition }),
+      body: JSON.stringify({ currentPage }),
     }),
 
   // Fetch all comments for a specific chapter
@@ -175,14 +268,20 @@ export const chapterApi = {
   reactComment: (commentId: string, reactionType: 'like' | 'dislike' | 'none') =>
     reactionType === 'none'
       ? request<any>(`/comments/chapters/${commentId}/react`, {
-          method: 'DELETE',
-          headers: getAuthHeaders(),
-        })
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      })
       : request<any>(`/comments/chapters/${commentId}/react`, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ reactionType }),
-        }),
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ reactionType }),
+      }),
+
+  deleteComment: (commentId: string) =>
+    request<any>(`/comments/chapters/${commentId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    }),
 };
 
 // Get authorization header with JWT token from localStorage
@@ -194,71 +293,80 @@ const getAuthHeaders = (): Record<string, string> => {
 // User profile and settings API endpoints
 export const userApi = {
   // Fetch current user's profile information
-  getProfile: () => 
-    request<UserProfile>('/api/user/profile', {
+  // EditProfilePanel.tsx
+  getProfile: () =>
+    request<UserProfile>('/user/profile', {
       headers: getAuthHeaders(),
     }),
 
   // Update current user's profile information (excludes password)
-  updateProfile: (profileData: Omit<any, 'password' | 'confirmPassword'>) => 
-    request<UserProfile>('/api/user/profile', {
+  // EditProfilePanel.tsx
+  updateProfile: (profileData: Omit<any, 'password' | 'confirmPassword'>) =>
+    request<UserProfile>('/user/profile', {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(profileData),
     }),
 
   // Update user's password
+  // EditProfilePanel.tsx
   updatePassword: (newPassword: string, confirmPassword: string) =>
-    request<{ message: string }>('/api/user/password-reset', {
+    request<{ message: string }>('/user/password-reset', {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ newPassword, confirmPassword }),
     }),
-
+  
+  // FollowingTitlesPanel.tsx
   getFollowingList: () =>
-    request<FollowingComic[]>('/api/user/following', {
+    request<FollowingComic[]>('/user/following', {
       headers: getAuthHeaders(),
     }),
 
+  // FollowingTitlesPanel.tsx
   getFollowingCategories: () =>
-    request<UserFollowingCategory[]>('/api/user/following/categories', {
+    request<UserFollowingCategory[]>('/user/following/categories', {
       headers: getAuthHeaders(),
     }),
-
+  
+  // FollowingTitlesPanel.tsx
   createFollowingCategory: (category: string) =>
-    request<UserFollowingCategory>('/api/user/following/categories', {
+    request<UserFollowingCategory>('/user/following/categories', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ category }),
     }),
-
+  
+  // FollowingTitlesPanel.tsx
   updateFollowingCategory: (categoryId: string, category: string) =>
-    request<UserFollowingCategory>(`/api/user/following/categories/${categoryId}`, {
+    request<UserFollowingCategory>(`/user/following/categories/${categoryId}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ category }),
     }),
 
+  // FollowingTitlesPanel.tsx
   deleteFollowingCategory: (categoryId: string) =>
-    request<{ message: string }>(`/api/user/following/categories/${categoryId}`, {
+    request<{ message: string }>(`/user/following/categories/${categoryId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     }),
 
+  // FollowingTitlesPanel.tsx
   updateFollowingComicCategory: (comicId: string, categoryId: string | null) =>
-    request<{ comicId: string; followingCategoryId: string | null }>(`/api/user/following/${comicId}/category`, {
+    request<{ comicId: string; followingCategoryId: string | null }>(`/user/following/${comicId}/category`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ categoryId }),
     }),
 
   getReadingHistory: () =>
-    request<HistoryItem[]>('/api/user/history', {
+    request<HistoryItem[]>('/user/history', {
       headers: getAuthHeaders(),
     }),
 
   deleteHistoryItem: (chapterId: string) =>
-    request<{ message: string }>(`/api/user/history/${chapterId}`, {
+    request<{ message: string }>(`/user/history/${chapterId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     }),
@@ -282,31 +390,21 @@ export const notificationApi = {
 
 // Comic Contributors API
 export const comicContributorApi = {
-  // Get list of comics I've contributed to with status
   listMyContributions: () =>
     request<ComicContributor[]>('/api/user/comic-contributions', {
       headers: getAuthHeaders(),
     }),
 
-  // Get contributors for a specific comic
   getByComic: (comicId: string) =>
     request<ChapterContributor[]>(`/comics/${comicId}/contributors`, {
       headers: getAuthHeaders(),
     }),
 
-  // Update contributor status (for moderators/admins)
   updateStatus: (comicId: string, userId: string, status: 'accept' | 'reject') =>
     request<any>(`/comics/${comicId}/contributors/${userId}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
-    }),
-
-  // Mark contributor notification as read
-  markRead: (comicId: string, userId: string) =>
-    request<any>(`/comics/${comicId}/contributors/${userId}/read`, {
-      method: 'PATCH',
-      headers: getAuthHeaders(),
     }),
 };
 
@@ -331,11 +429,68 @@ export const chapterContributorApi = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     }),
+};
 
-  // Mark contributor notification as read
-  markRead: (chapterId: string, userId: string) =>
-    request<any>(`/chapters/${chapterId}/contributors/${userId}/read`, {
+export const moderationApi = {
+  getQueue: (comicStatus?: 'pending' | 'accept' | 'reject', chapterStatus?: 'pending' | 'accept' | 'reject') => {
+    const params = new URLSearchParams();
+    if (comicStatus) params.append('comicStatus', comicStatus);
+    if (chapterStatus) params.append('chapterStatus', chapterStatus);
+    const queryString = params.toString();
+    const path = `/api/admin/moderation/queue${queryString ? '?' + queryString : ''}`;
+    return request<{ comics: any[]; chapters: any[] }>(path, {
+      headers: getAuthHeaders(),
+    });
+  },
+  review: (targetType: 'comic' | 'chapter', targetId: string, status: 'accept' | 'reject') =>
+    request<any>(`/api/admin/moderation/${targetType}/${targetId}`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    }),
+};
+
+export const adminApi = {
+  getDashboard: () =>
+    request<any>('/api/admin/dashboard', {
+      headers: getAuthHeaders(),
+    }),
+  setAutoAccept: (enabled: boolean) =>
+    request<any>('/api/admin/settings/auto-accept', {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ enabled }),
+    }),
+  toggleUserBan: (userId: string, isBanned: boolean) =>
+    request<any>(`/api/admin/users/${userId}/ban`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ isBanned }),
+    }),
+  toggleCommentBan: (targetType: 'comic' | 'chapter', commentId: string, isBanned: boolean) =>
+    request<any>(`/api/admin/comments/${targetType}/${commentId}/ban`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ isBanned }),
+    }),
+  getComics: (visibility?: string) =>
+    request<any>(`/api/admin/comics-dashboard${visibility ? `?visibility=${visibility}` : ''}`, {
+      headers: getAuthHeaders(),
+    }),
+  getChapters: (visibility?: string) =>
+    request<any>(`/api/admin/chapters-dashboard${visibility ? `?visibility=${visibility}` : ''}`, {
+      headers: getAuthHeaders(),
+    }),
+  updateComicVisibility: (comicId: string, visibility: 'public' | 'hidden') =>
+    request<any>(`/api/admin/comics/${comicId}/visibility`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ visibility }),
+    }),
+  updateChapterVisibility: (chapterId: string, visibility: 'public' | 'hidden') =>
+    request<any>(`/api/admin/chapters/${chapterId}/visibility`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ visibility }),
     }),
 };

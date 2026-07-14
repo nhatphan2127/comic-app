@@ -39,6 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('user', JSON.stringify(newUser));
     setToken(newToken);
     setUser(newUser);
+    window.location.reload();
+
   };
 
   const logout = async () => {
@@ -59,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem('user');
       setToken(null);
       setUser(null);
+      window.location.reload();
     }
   };
 

@@ -6,10 +6,11 @@ const router = express.Router();
 router.get('/:comicId/follow', authenticateToken, getFollowStatus);
 router.post('/:comicId/follow', authenticateToken, followComic);
 router.delete('/:comicId/follow', authenticateToken, unfollowComic);
-router.post('/:comicId/bookmark', authenticateToken, bookmarkComic);
-router.delete('/:comicId/bookmark', authenticateToken, unbookmarkComic);
 router.post('/:comicId/rate', authenticateToken, rateComic);
 router.post('/chapters/:chapterId/history', authenticateToken, saveReadingHistory);
+
+router.post('/:comicId/bookmark', authenticateToken, bookmarkComic);
+router.delete('/:comicId/bookmark', authenticateToken, unbookmarkComic);
 router.put('/chapters/:chapterId/history', authenticateToken, saveReadingHistory);
 
 export default router;

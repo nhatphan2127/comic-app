@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import HistoryCard from '../../../components/HistoryCard';
 import { userApi, API_UPLOADS } from '../../../services/api';
-import type { HistoryItem } from '../../../types/data';
+import type { HistoryItem } from '../../../types/types';
 import { formatTimeAgo } from '../../../helpers/formatDate';
+import { getImage } from '../../../helpers/getImage';
 
 export default function ReadHistoryPanel() {
   const [items, setItems] = useState<HistoryItem[]>([]);
@@ -65,7 +66,7 @@ export default function ReadHistoryPanel() {
             {items.map((item) => {
               const href = `/comics/${item.comicUrl}/${item.chapterId}`;
               const title = `${item.comicName} · Ch. ${item.chapterNumber ?? '-'}${item.chapterTitle ? ` — ${item.chapterTitle}` : ''}`;
-              const imageSrc = item.coverUrl ? `${API_UPLOADS}${item.coverUrl}` : '/images/placeholder.png';
+              const imageSrc = getImage(item.coverUrl || '#');
               const progressPercent = item.totalPage ? Math.round((item.currentPage / item.totalPage) * 100) : 0;
 
               return (

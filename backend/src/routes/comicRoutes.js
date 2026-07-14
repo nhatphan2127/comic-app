@@ -2,10 +2,13 @@ import express from 'express';
 import { authenticateTokenOptional, authenticateToken, requireRole } from '../middlewares/authMiddleware.js';
 import { 
   listComics, 
-  popularComics, 
-  getComicDetail, 
+  popularComics,
+  searchComics,
+  getComicDetail,
+  getComicChapters,
   getChapterDetail, 
-  createComic, 
+  createComic,
+  updateComic,
   createChapter,
   getMyComicContributions,
   getMyChapterContributions,
@@ -20,9 +23,13 @@ import upload from '../middlewares/uploadMiddleware.js';
 const router = express.Router();
 router.get('/', listComics);
 router.get('/popular', popularComics);
+router.get('/search', searchComics);
+router.get('/:comicUrl/chapters', authenticateTokenOptional, getComicChapters);
 router.get('/:comicUrl', authenticateTokenOptional, getComicDetail);
 router.get('/chapters/:chapterId', authenticateTokenOptional, getChapterDetail);
+
 router.post('/', authenticateToken, requireRole('contributor', 'moderator', 'admin'), upload.single('coverImage'), createComic);
+router.patch('/:comicId', authenticateToken, requireRole('contributor', 'moderator', 'admin'), upload.single('coverImage'), updateComic);
 router.post('/:comicId/chapters', authenticateToken, requireRole('contributor', 'moderator', 'admin'), upload.array('images', 50), createChapter);
 
 // Contributor routes

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { Notification } from '../../../types/data';
+import type { Notification } from '../../../types/types';
 import { notificationApi, API_UPLOADS } from '../../../services/api';
 import { formatTimeAgo } from '../../../helpers/formatDate';
 

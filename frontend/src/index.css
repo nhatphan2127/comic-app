@@ -11273,6 +11273,9 @@ aside.umenu>.umenu__trigger {
     margin-top: 4px
 }
 
+.bg-sf-2 {
+    background: var(--surface-2);
+}
 .mrec-item__by:hover {
     color: var(--accent)
 }

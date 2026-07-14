@@ -13,9 +13,11 @@ import {
   deleteChapterComment,
   reactChapterComment,
   removeChapterCommentReaction,
+  getUserComments,
 } from '../controllers/commentController.js';
 
 const router = express.Router();
+router.get('/user', authenticateToken, getUserComments);
 router.get('/comics/:comicId', authenticateTokenOptional, getComicComments);
 router.post('/comics/:comicId', authenticateToken, postComicComment);
 router.patch('/comics/:commentId', authenticateToken, editComment);

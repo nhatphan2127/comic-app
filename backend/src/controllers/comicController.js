@@ -1,5 +1,11 @@
 import db from '../config/database.js';
 import { v4 as uuidv4 } from 'uuid';
+import { buildContentRatingFilter } from '../helpers/helpers.js';
+
+async function getAutoAcceptEnabled() {
+  const row = await db.get('SELECT value FROM admin_settings WHERE key = ?', ['auto_accept']);
+  return row?.value === 'true';
+}
 
 async function getOrCreateEntity(table, name) {
   const trimmed = String(name || '').trim();
@@ -44,10 +50,77 @@ async function normalizeValues(values, table) {
   return ids;
 }
 
+
+
+export async function searchComics(req, res, next) {
+  try {
+    const query = String(req.query.q || '').trim();
+
+    if (!query) {
+      return res.json({ status: 'success', data: [] });
+    }
+
+    const likeQuery = `%${query}%`;
+    const comics = await db.all(
+      `
+      SELECT c.id, c.name, c.url, c.coverUrl, c.types, c.rating
+      FROM comics c
+      WHERE c.visibility = 'public' AND (
+        lower(c.name) LIKE lower(?) OR
+        lower(c.url) LIKE lower(?) OR
+        EXISTS (
+          SELECT 1
+          FROM comic_other_names con
+          WHERE con.comicId = c.id AND lower(con.name) LIKE lower(?)
+        )
+      )
+      ORDER BY CASE WHEN lower(c.name) = lower(?) THEN 0 ELSE 1 END, c.view DESC, c.createdAt DESC
+      LIMIT 6
+      `,
+      [likeQuery, likeQuery, likeQuery, query]
+    );
+
+    const comicIds = comics.map((comic) => comic.id);
+    let chapters = [];
+
+    if (comicIds.length > 0) {
+      chapters = await db.all(
+        `
+        SELECT comicId, chapterNumber
+        FROM chapters
+        WHERE comicId IN (${comicIds.map(() => '?').join(',')}) AND visibility = 'public'
+        ORDER BY comicId, chapterNumber DESC
+        `,
+        comicIds
+      );
+    }
+
+    const latestByComic = {};
+    chapters.forEach((chapter) => {
+      if (!latestByComic[chapter.comicId]) {
+        latestByComic[chapter.comicId] = chapter.chapterNumber;
+      }
+    });
+
+    const data = comics.map((comic) => ({
+      ...comic,
+      rating: Number(comic.rating || 0),
+      latestChapter: latestByComic[comic.id] ?? null,
+    }));
+
+    return res.json({ status: 'success', data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Use /comics
 export async function listComics(req, res, next) {
   try {
     const { page = 1 } = req.query;
-    const { contentRating } = req.body;
+    const { contentRating: bodyContentRating } = req.body || {};
+    const queryContentRating = req.query.contentRating;
+    const { clause: contentRatingClause, params: contentRatingParams } = buildContentRatingFilter([queryContentRating, bodyContentRating]);
 
     const limit = 20;
     const offset = (Number(page) - 1) * limit;
@@ -56,11 +129,9 @@ export async function listComics(req, res, next) {
     const params = [];
 
     // Filter content rating
-    if (Array.isArray(contentRating) && contentRating.length > 0) {
-      filters.push(
-        `contentRating IN (${contentRating.map(() => "?").join(",")})`
-      );
-      params.push(...contentRating);
+    if (contentRatingClause) {
+      filters.push(contentRatingClause);
+      params.push(...contentRatingParams);
     }
 
     const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
@@ -70,7 +141,7 @@ export async function listComics(req, res, next) {
       `
       SELECT id, name, types, coverUrl, view, follow, url
       FROM comics
-      ${whereClause}
+      ${whereClause} AND visibility = 'public'
       ORDER BY createdAt DESC
       LIMIT ? OFFSET ?
       `,
@@ -87,7 +158,7 @@ export async function listComics(req, res, next) {
         `
         SELECT comicId, id, chapterNumber, title, updatedAt
         FROM chapters
-        WHERE comicId IN (${comicIds.map(() => "?").join(",")})
+        WHERE comicId IN (${comicIds.map(() => "?").join(",")}) AND visibility = 'public'
         ORDER BY comicId, chapterNumber DESC
         `,
         comicIds
@@ -132,7 +203,7 @@ export async function listComics(req, res, next) {
       status: "success",
       data: {
         comics: result,
-        pagination: {
+        metadata: {
           page: Number(page),
           totalPages,
         },
@@ -143,46 +214,118 @@ export async function listComics(req, res, next) {
   }
 }
 
+// Use /popular
 export async function popularComics(req, res, next) {
   try {
-    const list = await db.all(`SELECT * FROM comics ORDER BY view DESC LIMIT 10`);
-    return res.json({ status: 'success', data: list });
+    const queryContentRating = req.query.contentRating;
+    const { clause: contentRatingClause, params: contentRatingParams } = buildContentRatingFilter(queryContentRating);
+    const whereClause = contentRatingClause ? `WHERE ${contentRatingClause}` : '';
+    
+    // 1. Lấy danh sách comics
+    const list = await db.all(
+      `SELECT * FROM comics ${whereClause} AND visibility = 'public' ORDER BY view DESC LIMIT 10`, 
+      contentRatingParams
+    );
+
+    // 2. Duyệt qua từng comic để lấy genres tương ứng và gộp vào object
+    const data = await Promise.all(
+      list.map(async (comic) => {
+        const genres = await db.all(
+          `SELECT g.name FROM genres g JOIN comic_genres cg ON g.id = cg.genreId WHERE cg.comicId = ?`, 
+          [comic.id]
+        );
+        
+        return {
+          ...comic,
+          genres: genres.map(g => g.name) // Chuyển đổi thành mảng dạng ["Action", "Romance", ...]
+        };
+      })
+    );
+
+    // 3. Phản hồi kết quả đã được thêm genres
+    return res.json({ status: 'success', data: data });
   } catch (error) {
     next(error);
   }
 }
 
+export async function getComicChapters(req, res, next) {
+  try {
+    const { comicUrl } = req.params;
+    const comic = await db.get('SELECT id FROM comics WHERE url = ?', [comicUrl]);
+
+    if (!comic) {
+      return res.status(404).json({ status: 'fail', message: 'Comic not found' });
+    }
+
+    const chapters = await db.all(
+      `SELECT id, chapterNumber, title, url, createdAt, updatedAt 
+      FROM chapters WHERE comicId = ? AND visibility = 'public' 
+      ORDER BY chapterNumber ASC`,
+      [comic.id]
+    );
+
+    return res.json({
+      status: 'success',
+      data: chapters.map((chapter) => ({
+        id: chapter.id,
+        chapterNumber: chapter.chapterNumber,
+        title: chapter.title,
+        url: chapter.url,
+        createdAt: chapter.createdAt,
+        updatedAt: chapter.updatedAt,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// use comic/comicUrl
 export async function getComicDetail(req, res, next) {
   try {
     const { comicUrl } = req.params;
     const comic = await db.get(
-      `SELECT c.id, c.name, c.description, c.types, c.contentRating, c.demographic, c.rating, c.coverUrl, c.view, c.follow, c.releaseStatus, c.status, c.visibility, c.url, c.releasingYear, c.source, a.name AS authorName, ar.name AS artistName
+      `SELECT c.id, c.name, c.description, c.types, c.contentRating,
+              c.demographic, c.rating, c.coverUrl, c.view, c.follow, 
+              c.releaseStatus, c.visibility, c.url, c.releasingYear, 
+              c.source, a.name AS authorName, ar.name AS artistName
        FROM comics c
        LEFT JOIN author a ON c.authorId = a.id
        LEFT JOIN artist ar ON c.artistId = ar.id
-       WHERE c.url = ?`,
+       WHERE c.url = ? AND c.visibility = 'public'`,
       [comicUrl]
     );
 
     if (!comic) {
       return res.status(404).json({ status: 'fail', message: 'Comic not found' });
     }
-    console.log([req.user.id, comic.id])
-    const [genres, formats, chapters, userRatingRow] = await Promise.all([
+
+    // Thêm truy vấn comic_other_names vào Promise.all
+    const [genres, formats, otherNames, userRatingRow] = await Promise.all([
       db.all(`SELECT g.name FROM genres g JOIN comic_genres cg ON g.id = cg.genreId WHERE cg.comicId = ?`, [comic.id]),
       db.all(`SELECT f.name FROM formats f JOIN comic_formats cf ON f.id = cf.formatId WHERE cf.comicId = ?`, [comic.id]),
-      db.all(`SELECT id, chapterNumber, title, url, createdAt, updatedAt FROM chapters WHERE comicId = ? ORDER BY chapterNumber ASC`, [comic.id]),
+      db.all(`SELECT name, country FROM comic_other_names WHERE comicId = ?`, [comic.id]),
       req.user?.id
         ? db.get('SELECT rating FROM rating_history WHERE userId = ? AND comicId = ?', [req.user.id, comic.id])
         : Promise.resolve(null),
     ]);
+
+    // Gộp tên mặc định và các tên khác từ database
+    const allNames = [
+      { name: comic.name, country: 'global' },
+      ...otherNames.map((item) => ({
+        name: item.name,
+        country: item.contry // Ánh xạ từ 'contry' sang 'country'
+      }))
+    ];
 
     return res.json({
       status: 'success',
       data: {
         id: comic.id,
         name: comic.name,
-        names: [{ name: comic.name, country: 'global' }],
+        names: allNames,
         description: comic.description,
         coverUrl: comic.coverUrl,
         source: comic.source,
@@ -201,17 +344,7 @@ export async function getComicDetail(req, res, next) {
         author: comic.authorName,
         artist: comic.artistName,
         genres: genres.map((g) => g.name),
-        tags: [],
         formats: formats.map((f) => f.name),
-        chapters: chapters.map((chapter) => ({
-          id: chapter.id,
-          chapterNumber: chapter.chapterNumber,
-          title: chapter.title,
-          url: chapter.url,
-          createdAt: chapter.createdAt,
-          updatedAt: chapter.updatedAt,
-        })),
-
       },
     });
   } catch (error) {
@@ -219,6 +352,7 @@ export async function getComicDetail(req, res, next) {
   }
 }
 
+//router.get('/chapters/:chapterId',
 export async function getChapterDetail(req, res, next) {
   try {
     const { chapterId } = req.params;
@@ -232,14 +366,97 @@ export async function getChapterDetail(req, res, next) {
 
     if (req.user) {
       await db.run(
-        `INSERT OR REPLACE INTO read_history (userId, chapterId, scrollPosition, currentPage, readAt) VALUES (?, ?, COALESCE((SELECT scrollPosition FROM read_history WHERE userId = ? AND chapterId = ?), 0), COALESCE((SELECT currentPage FROM read_history WHERE userId = ? AND chapterId = ?), 1), CURRENT_TIMESTAMP)`,
+        `
+        INSERT OR REPLACE INTO read_history
+        (userId, chapterId, scrollPosition, currentPage, readAt)
+        VALUES (
+            ?,
+            ?,
+            COALESCE(
+                (SELECT scrollPosition
+                FROM read_history
+                WHERE userId = ? AND chapterId = ?),
+                0
+            ),
+            COALESCE(
+                (SELECT currentPage
+                FROM read_history
+                WHERE userId = ? AND chapterId = ?),
+                1
+            ),
+            CURRENT_TIMESTAMP
+        );
+        `,
         [req.user.id, chapter.id, req.user.id, chapter.id, req.user.id, chapter.id]
       );
     }
 
-    const readHistory = req.user ? await db.get(`SELECT scrollPosition, currentPage FROM read_history WHERE userId = ? AND chapterId = ?`, [req.user.id, chapter.id]) : null;
+    const metadata = req.user ? await db.get(`SELECT currentPage FROM read_history WHERE userId = ? AND chapterId = ?`, [req.user.id, chapter.id]) : {};
+    metadata.totalPages = images.length || 0
+    return res.json({ status: 'success', data: { id: chapter.id, chapterNumber: chapter.chapterNumber, title: chapter.title, images, metadata } });
+  } catch (error) {
+    next(error);
+  }
+}
 
-    return res.json({ status: 'success', data: { id: chapter.id, chapterNumber: chapter.chapterNumber, title: chapter.title, images, readHistory } });
+export async function updateComic(req, res, next) {
+  try {
+    const { comicId } = req.params;
+    const {
+      name,
+      source,
+      types,
+      contentRating = 'safe',
+      demographic,
+      description,
+      url,
+      author,
+      artist,
+      genres,
+      formats,
+      releaseStatus = 'releasing',
+      releasingYear,
+    } = req.body;
+    const coverImage = req.file;
+
+    const existingComic = await db.get('SELECT id, url, coverUrl FROM comics WHERE id = ?', [comicId]);
+    if (!existingComic) {
+      return res.status(404).json({ status: 'fail', message: 'Comic not found' });
+    }
+
+    if (!name || !types || !demographic || !url) {
+      return res.status(400).json({ status: 'fail', message: 'Missing required comic fields' });
+    }
+
+    const duplicate = await db.get('SELECT id FROM comics WHERE url = ? AND id != ?', [url, comicId]);
+    if (duplicate) {
+      return res.status(409).json({ status: 'fail', message: 'Comic URL already exists' });
+    }
+
+    const authorId = author ? await getOrCreateEntity('author', author) : null;
+    const artistId = artist ? await getOrCreateEntity('artist', artist) : null;
+    const genreIds = await normalizeValues(genres, 'genres');
+    const formatIds = await normalizeValues(formats, 'formats');
+
+    const coverUrl = coverImage ? `comics/${coverImage.filename}` : existingComic.coverUrl;
+    await db.run(
+      `UPDATE comics SET name = ?, source = ?, types = ?, contentRating = ?, demographic = ?, description = ?, coverUrl = ?, url = ?, authorId = ?, artistId = ?, status = 'pending', releaseStatus = ?, releasingYear = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [name, source || null, types.toLowerCase(), contentRating, demographic.toLowerCase(), description || null, coverUrl, url, authorId || null, artistId || null, releaseStatus.toLowerCase(), releasingYear ? Number(releasingYear) : null, comicId]
+    );
+
+    await db.run('DELETE FROM comic_genres WHERE comicId = ?', [comicId]);
+    await db.run('DELETE FROM comic_formats WHERE comicId = ?', [comicId]);
+
+    for (const genreId of genreIds) {
+      await db.run(`INSERT OR IGNORE INTO comic_genres (comicId, genreId) VALUES (?, ?)`, [comicId, genreId]);
+    }
+    for (const formatId of formatIds) {
+      await db.run(`INSERT OR IGNORE INTO comic_formats (comicId, formatId) VALUES (?, ?)`, [comicId, formatId]);
+    }
+
+    await db.run(`UPDATE comic_contributors SET status = 'pending', updatedAt = CURRENT_TIMESTAMP WHERE comicId = ? AND userId = ?`, [comicId, req.user.id]);
+
+    return res.json({ status: 'success', data: { id: comicId, name, coverUrl, status: 'pending' } });
   } catch (error) {
     next(error);
   }
@@ -280,9 +497,11 @@ export async function createComic(req, res, next) {
 
     const id = uuidv4();
     const coverUrl = `comics/${coverImage.filename}`;
+    const autoAccept = await getAutoAcceptEnabled();
+    const initialStatus = autoAccept ? 'accept' : 'pending';
     await db.run(
-      `INSERT INTO comics (id, name, source, types, contentRating, demographic, description, coverUrl, url, authorId, artistId, status, visibility, releaseStatus, releasingYear) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', 'public', ?, ?)`,
-      [id, name, source || null, types.toLowerCase(), contentRating, demographic.toLowerCase(), description || null, coverUrl, url, authorId || null, artistId || null, releaseStatus.toLowerCase(), releasingYear ? Number(releasingYear) : null]
+      `INSERT INTO comics (id, name, source, types, contentRating, demographic, description, coverUrl, url, authorId, artistId, status, visibility, releaseStatus, releasingYear) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', ?, ?)`,
+      [id, name, source || null, types.toLowerCase(), contentRating, demographic.toLowerCase(), description || null, coverUrl, url, authorId || null, artistId || null, initialStatus, releaseStatus.toLowerCase(), releasingYear ? Number(releasingYear) : null]
     );
 
     for (const genreId of genreIds) {
@@ -291,9 +510,9 @@ export async function createComic(req, res, next) {
     for (const formatId of formatIds) {
       await db.run(`INSERT OR IGNORE INTO comic_formats (comicId, formatId) VALUES (?, ?)`, [id, formatId]);
     }
-    await db.run(`INSERT OR IGNORE INTO comic_contributors (comicId, userId, role) VALUES (?, ?, 'uploader')`, [id, req.user.id]);
+    await db.run(`INSERT OR IGNORE INTO comic_contributors (comicId, userId, role, status) VALUES (?, ?, 'uploader', ?)`, [id, req.user.id, initialStatus]);
 
-    return res.status(201).json({ status: 'success', data: { id, name, coverUrl, status: 'approved' } });
+    return res.status(201).json({ status: 'success', data: { id, name, coverUrl, status: initialStatus === 'accept' ? 'accept' : 'pending' } });
   } catch (error) {
     next(error);
   }
@@ -320,9 +539,11 @@ export async function createChapter(req, res, next) {
     }
 
     const chapterId = uuidv4();
+    const autoAccept = await getAutoAcceptEnabled();
+    const initialStatus = autoAccept ? 'accept' : 'pending';
     await db.run(
-      `INSERT INTO chapters (id, comicId, title, chapterNumber, url, status, visibility) VALUES (?, ?, ?, ?, ?, 'approved', 'public')`,
-      [chapterId, comicId, title, Number(chapterNumber), url]
+      `INSERT INTO chapters (id, comicId, title, chapterNumber, url, status, visibility) VALUES (?, ?, ?, ?, ?, ?, 'public')`,
+      [chapterId, comicId, title, Number(chapterNumber), url, initialStatus]
     );
 
     let pageNumber = 1;
@@ -333,9 +554,9 @@ export async function createChapter(req, res, next) {
       pageNumber += 1;
     }
 
-    await db.run(`INSERT OR IGNORE INTO chapter_contributors (chapterId, userId, role) VALUES (?, ?, 'uploader')`, [chapterId, req.user.id]);
+    await db.run(`INSERT OR IGNORE INTO chapter_contributors (chapterId, userId, role, status) VALUES (?, ?, 'uploader', ?)`, [chapterId, req.user.id, initialStatus]);
 
-    return res.status(201).json({ status: 'success', data: { chapterId, chapterNumber: Number(chapterNumber), title, imagesCount: files.length, status: 'approved' } });
+    return res.status(201).json({ status: 'success', data: { chapterId, chapterNumber: Number(chapterNumber), title, imagesCount: files.length, status: initialStatus === 'accept' ? 'accept' : 'pending' } });
   } catch (error) {
     next(error);
   }
@@ -349,7 +570,7 @@ export async function getMyComicContributions(req, res, next) {
     const contributions = await db.all(
       `
       SELECT 
-        cc.comicId, cc.userId, cc.role, cc.status, cc.unread, cc.createdAt, cc.updatedAt,
+        cc.comicId, cc.userId, cc.role, cc.status, cc.createdAt, cc.updatedAt,
         c.id, c.name, c.coverUrl, c.url, c.types, c.demographic
       FROM comic_contributors cc
       JOIN comics c ON cc.comicId = c.id
@@ -391,7 +612,7 @@ export async function getMyChapterContributions(req, res, next) {
     const contributions = await db.all(
       `
       SELECT 
-        sch.chapterId, sch.userId, sch.role, sch.status, sch.unread, sch.createdAt, sch.updatedAt,
+        sch.chapterId, sch.userId, sch.role, sch.status, sch.createdAt, sch.updatedAt,
         ch.id, ch.chapterNumber, ch.title, ch.url, ch.comicId,
         c.name as comicName, c.coverUrl as comicCoverUrl
       FROM chapter_contributors sch
@@ -453,6 +674,10 @@ export async function updateComicContributorStatus(req, res, next) {
       'UPDATE comic_contributors SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE comicId = ? AND userId = ?',
       [status, comicId, userId]
     );
+    await db.run(
+      'UPDATE comics SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?',
+      [status, comicId]
+    );
 
     return res.json({ status: 'success', data: { comicId, userId, status, updatedAt: new Date().toISOString() } });
   } catch (error) {
@@ -460,29 +685,8 @@ export async function updateComicContributorStatus(req, res, next) {
   }
 }
 
-// Mark comic contributor as read
 export async function markComicContributorRead(req, res, next) {
-  try {
-    const { comicId, userId } = req.params;
-
-    const contributor = await db.get(
-      'SELECT * FROM comic_contributors WHERE comicId = ? AND userId = ?',
-      [comicId, userId]
-    );
-
-    if (!contributor) {
-      return res.status(404).json({ status: 'fail', message: 'Contributor not found' });
-    }
-
-    await db.run(
-      'UPDATE comic_contributors SET unread = 0 WHERE comicId = ? AND userId = ?',
-      [comicId, userId]
-    );
-
-    return res.json({ status: 'success', data: { comicId, userId, unread: 0 } });
-  } catch (error) {
-    next(error);
-  }
+  return res.status(410).json({ status: 'fail', message: 'This endpoint is no longer supported' });
 }
 
 // Update chapter contributor status (accept/reject)
@@ -508,6 +712,10 @@ export async function updateChapterContributorStatus(req, res, next) {
       'UPDATE chapter_contributors SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE chapterId = ? AND userId = ?',
       [status, chapterId, userId]
     );
+    await db.run(
+      'UPDATE chapters SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?',
+      [status, chapterId]
+    );
 
     return res.json({ status: 'success', data: { chapterId, userId, status, updatedAt: new Date().toISOString() } });
   } catch (error) {
@@ -515,29 +723,8 @@ export async function updateChapterContributorStatus(req, res, next) {
   }
 }
 
-// Mark chapter contributor as read
 export async function markChapterContributorRead(req, res, next) {
-  try {
-    const { chapterId, userId } = req.params;
-
-    const contributor = await db.get(
-      'SELECT * FROM chapter_contributors WHERE chapterId = ? AND userId = ?',
-      [chapterId, userId]
-    );
-
-    if (!contributor) {
-      return res.status(404).json({ status: 'fail', message: 'Contributor not found' });
-    }
-
-    await db.run(
-      'UPDATE chapter_contributors SET unread = 0 WHERE chapterId = ? AND userId = ?',
-      [chapterId, userId]
-    );
-
-    return res.json({ status: 'success', data: { chapterId, userId, unread: 0 } });
-  } catch (error) {
-    next(error);
-  }
+  return res.status(410).json({ status: 'fail', message: 'This endpoint is no longer supported' });
 }
 
 // Get contributors for a specific chapter (admin / moderator view)

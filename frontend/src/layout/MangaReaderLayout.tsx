@@ -5,41 +5,42 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { comicApi, chapterApi, API_UPLOADS } from '../services/api';
 
 import CommentsSection from '../components/CommentsSection';
-import type { Comic } from '../types/data';
-import '../assets/styles/MangaReader.css';
+import { useAuth } from '../context/AuthContext';
+import type { Comic, Chapter } from '../types/types';
 
 export default function MangaReaderLayout() {
   const { comicUrl, chapterId } = useParams<{ comicUrl: string; chapterId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const { isLoggedIn } = useAuth();
 
   const [comic, setComic] = useState<Comic | null>(null);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
   const [chapterDetails, setChapterDetails] = useState<any | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [zoomLevel, setZoomLevel] = useState<number>(50); // Mặc định 50% theo HTML mẫu
+  const [zoomLevel, setZoomLevel] = useState<number>(50); // Mặc định 50%
   const [readMode, setReadMode] = useState<'scroll' | 'page'>('scroll');
-  const lastScrollPositionRef = useRef<number>(0);
   const currentPageRef = useRef<number>(1);
-  const saveHistoryTimeoutRef = useRef<number | null>(null);
+  const saveHistoryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
   const [showControls, setShowControls] = useState<boolean>(true);
   const [showHelpKeys, setShowHelpKeys] = useState<boolean>(false);
 
-  // Biến đánh dấu để chỉ tự động cuộn tới trang đang đọc dở khi vừa mới load truyện xong
+  // Biến đánh dấu tự động cuộn tới trang đang đọc dở khi vừa load xong
   const isInitialMountRef = useRef<boolean>(true);
 
   // Dialog hoạt động: 'settings' | 'chapters' | 'comments' | null
   const [activeDialog, setActiveDialog] = useState<'settings' | 'chapters' | 'comments' | null>(null);
 
-  // Trạng thái cài đặt từ HTML mẫu
+  // Trạng thái cài đặt
   const [readingDirection, setReadingDirection] = useState<'ltr' | 'rtl' | 'ttb'>('ttb');
-  const [stripMargin, setStripMargin] = useState<number>(0); // Khung lề lề dọc (0-8)
+  const [stripMargin, setStripMargin] = useState<number>(0); 
   const [scrollMode, setScrollMode] = useState<'fast' | 'smooth'>('fast');
   const [progressBarPosition, setProgressBarPosition] = useState<'left' | 'top' | 'bottom' | 'right' | 'off'>('left');
   const [preloadImages, setPreloadImages] = useState<'some' | 'all'>('some');
   const [greyscale, setGreyscale] = useState<boolean>(false);
-  const [dimAmount, setDimAmount] = useState<number>(0); // Độ tối (0% - 100%)
+  const [dimAmount, setDimAmount] = useState<number>(0);
 
   // Trạng thái danh sách chương
   const [chapterSearchQuery, setChapterSearchQuery] = useState<string>('');
@@ -50,42 +51,55 @@ export default function MangaReaderLayout() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Đổi hướng đọc dựa trên readingDirection
+  // Đồng bộ hướng đọc tự động
   useEffect(() => {
-    if (readingDirection === 'ttb') {
-      setReadMode('scroll');
-    } else {
-      setReadMode('page');
-    }
+    setReadMode(readingDirection === 'ttb' ? 'scroll' : 'page');
   }, [readingDirection]);
 
-  const saveReadingProgress = useCallback(async (chapterToSave: string, page: number, scrollPosition: number) => {
-    if (!chapterToSave) return;
+  // Đưa currentPage vào Ref để tránh re-render phụ thuộc không cần thiết
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
+  // Hàm gọi API lưu lịch sử đọc gốc (truyền 0 làm mặc định cho scrollPosition)
+  const saveReadingProgress = useCallback(async (chapterToSave: string, page: number) => {
+    if (!chapterToSave || !isLoggedIn) return;
     try {
-      await chapterApi.saveReadingHistory(chapterToSave, page, scrollPosition);
+      await chapterApi.saveReadingHistory(chapterToSave, page);
     } catch (err) {
       console.debug('Unable to save reading history', err);
     }
-  }, []);
+  }, [isLoggedIn]);
 
-  // Hàm cuộn trang chủ động khi click (Tránh xung đột với cuộn tự nhiên)
+  // Hàm debounce lưu lịch sử tập trung
+  const debouncedSaveHistory = useCallback((chapId: string, page: number) => {
+    if (!chapId || !isLoggedIn) return;
+    if (saveHistoryTimeoutRef.current) {
+      clearTimeout(saveHistoryTimeoutRef.current);
+    }
+    saveHistoryTimeoutRef.current = setTimeout(() => {
+      saveReadingProgress(chapId, page);
+    }, 800);
+  }, [isLoggedIn, saveReadingProgress]);
+
+  // Hàm cuộn trang chủ động khi click
   const scrollToPage = useCallback((pageNum: number, smooth = true) => {
     setCurrentPage(pageNum);
     currentPageRef.current = pageNum;
     const pageElement = document.querySelector<HTMLElement>(`.rpage-page[data-page="${pageNum}"]`);
     if (pageElement) {
       pageElement.scrollIntoView({
-        behavior: smooth ? 'smooth' : 'instant',
+        behavior: smooth ? 'smooth' : 'auto',
         block: 'start'
       });
     }
   }, []);
 
-  // Hàm chuyển chương và cập nhật thanh địa chỉ URL
+  // Hàm chuyển chương và cập nhật URL
   const changeChapter = useCallback((newChapterId: string) => {
     if (!newChapterId) return;
     if (chapterId && chapterId !== newChapterId) {
-      saveReadingProgress(chapterId, currentPage, lastScrollPositionRef.current || 0);
+      saveReadingProgress(chapterId, currentPage);
     }
 
     if (chapterId) {
@@ -100,51 +114,77 @@ export default function MangaReaderLayout() {
     navigate(`${location.pathname}/${newChapterId}`);
   }, [chapterId, currentPage, location.pathname, navigate, saveReadingProgress]);
 
+  // Tự động lưu lịch sử khi người dùng đổi trang (debounced)
   useEffect(() => {
-    currentPageRef.current = currentPage;
-  }, [currentPage]);
+    if (!chapterId || !isLoggedIn || isInitialMountRef.current) return;
+    debouncedSaveHistory(chapterId, currentPage);
+  }, [currentPage, chapterId, isLoggedIn, debouncedSaveHistory]);
 
+  // Lưu lịch sử định kỳ (Heartbeat) mỗi 15 giây
   useEffect(() => {
-    if (!chapterId) return;
+    if (!chapterId || !isLoggedIn) return;
 
     const intervalId = window.setInterval(() => {
-      saveReadingProgress(chapterId, currentPageRef.current, lastScrollPositionRef.current || 0);
+      saveReadingProgress(chapterId, currentPageRef.current);
     }, 15000);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [chapterId, saveReadingProgress]);
+  }, [chapterId, isLoggedIn, saveReadingProgress]);
 
-  // Lấy dữ liệu truyện qua API service
+  // Dọn dẹp timeout lưu lịch sử khi component unmount
+  useEffect(() => {
+    return () => {
+      if (saveHistoryTimeoutRef.current) {
+        clearTimeout(saveHistoryTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Lấy dữ liệu thông tin truyện và danh sách chương (Có chống rò rỉ bộ nhớ)
   useEffect(() => {
     if (!comicUrl) return;
+    let isMounted = true;
 
-    const fetchComic = async () => {
+    const fetchComicData = async () => {
       try {
-        const data = await comicApi.getByUrl(comicUrl);
-        if (data) {
-          setComic(data);
+        const [comicData, chaptersData] = await Promise.all([
+          comicApi.getByUrl(comicUrl),
+          comicApi.getChaptersByUrl(comicUrl),
+        ]);
+        if (isMounted) {
+          if (comicData) setComic(comicData);
+          if (chaptersData) setChapters(chaptersData);
         }
       } catch (err) {
-        setComic(null);
-        console.error("Lỗi khi lấy thông tin truyện:", err);
+        if (isMounted) {
+          setComic(null);
+          setChapters([]);
+          console.error("Lỗi khi lấy thông tin truyện hoặc danh sách chương:", err);
+        }
       }
     };
 
-    fetchComic();
+    fetchComicData();
+    return () => {
+      isMounted = false;
+    };
   }, [comicUrl]);
 
-  // Lấy chi tiết chương hiện tại qua API service
+  // Lấy chi tiết chương hiện tại (Có chống rò rỉ bộ nhớ)
   useEffect(() => {
     if (!chapterId) return;
+    let isMounted = true;
 
     const fetchChapterData = async () => {
       setLoading(true);
       setError(null);
-      isInitialMountRef.current = true; // Đánh dấu bắt đầu load chương mới
+      isInitialMountRef.current = true;
       try {
         const data = await chapterApi.getDetails(chapterId);
+        if (!isMounted) return;
+
         setChapterDetails(data);
 
         if (data.images && Array.isArray(data.images)) {
@@ -154,20 +194,26 @@ export default function MangaReaderLayout() {
           setImages([]);
         }
 
-        const startingPage = data.readHistory?.currentPage ? Number(data.readHistory.currentPage) : 1;
+        const startingPage = data.metadata?.currentPage ? Number(data.metadata.currentPage) : 1;
         setCurrentPage(startingPage);
-        lastScrollPositionRef.current = data.readHistory?.scrollPosition ? Number(data.readHistory.scrollPosition) : 0;
       } catch (err: any) {
-        setError(err.message || 'Lỗi tải trang truyện.');
+        if (isMounted) {
+          setError(err.message || 'Lỗi tải trang truyện.');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchChapterData();
+    return () => {
+      isMounted = false;
+    };
   }, [chapterId]);
 
-  const comicChapters = comic?.chapters;
+  const comicChapters = chapters;
 
   const currentChapterIndex = useMemo(() => {
     if (!comicChapters || !chapterId) return -1;
@@ -185,35 +231,59 @@ export default function MangaReaderLayout() {
   const totalPages = images.length || 1;
   const currentImage = images[currentPage - 1] || '';
 
-  const handlePrevPage = () => {
+  const handlePrevPage = useCallback(() => {
     if (currentPage > 1) {
       if (readMode === 'page') {
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        window.scrollTo(0, 0);
         setCurrentPage(prev => prev - 1);
       } else {
         scrollToPage(currentPage - 1);
       }
     } else if (hasPrevChapter && prevChapterId) {
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      window.scrollTo(0, 0);
       changeChapter(prevChapterId);
     }
-  };
+  }, [currentPage, readMode, scrollToPage, hasPrevChapter, prevChapterId, changeChapter]);
 
-  const handleNextPage = () => {
+  const handleNextPage = useCallback(() => {
     if (currentPage < totalPages) {
       if (readMode === 'page') {
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        window.scrollTo(0, 0);
         setCurrentPage(prev => prev + 1);
       } else {
         scrollToPage(currentPage + 1);
       }
     } else if (hasNextChapter && nextChapterId) {
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      window.scrollTo(0, 0);
       changeChapter(nextChapterId);
     }
-  };
+  }, [currentPage, totalPages, readMode, scrollToPage, hasNextChapter, nextChapterId, changeChapter]);
 
-  // Lắng nghe sự kiện bàn phím
+  // Tạo refs lưu giữ state và actions mới nhất nhằm tối ưu keydown event listener
+  const stateRef = useRef({
+    readingDirection,
+    hasPrevChapter,
+    hasNextChapter,
+    prevChapterId,
+    nextChapterId,
+  });
+
+  useEffect(() => {
+    stateRef.current = {
+      readingDirection,
+      hasPrevChapter,
+      hasNextChapter,
+      prevChapterId,
+      nextChapterId,
+    };
+  }, [readingDirection, hasPrevChapter, hasNextChapter, prevChapterId, nextChapterId]);
+
+  const actionsRef = useRef({ handlePrevPage, handleNextPage, changeChapter });
+  useEffect(() => {
+    actionsRef.current = { handlePrevPage, handleNextPage, changeChapter };
+  });
+
+  // Lắng nghe sự kiện bàn phím (Được tối ưu hóa hoàn toàn, chỉ đăng ký 1 lần duy nhất)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -223,33 +293,41 @@ export default function MangaReaderLayout() {
         return;
       }
 
+      const {
+        readingDirection: currentDir,
+        hasPrevChapter: hasPrev,
+        hasNextChapter: hasNext,
+        prevChapterId: prevId,
+        nextChapterId: nextId,
+      } = stateRef.current;
+
       switch (e.key.toLowerCase()) {
         case 'arrowleft':
         case 'a':
-          if (readingDirection === 'rtl') {
-            handleNextPage();
+          if (currentDir === 'rtl') {
+            actionsRef.current.handleNextPage();
           } else {
-            handlePrevPage();
+            actionsRef.current.handlePrevPage();
           }
           break;
         case 'arrowright':
         case 'd':
-          if (readingDirection === 'rtl') {
-            handlePrevPage();
+          if (currentDir === 'rtl') {
+            actionsRef.current.handlePrevPage();
           } else {
-            handleNextPage();
+            actionsRef.current.handleNextPage();
           }
           break;
         case 'b':
         case '[':
-          if (hasPrevChapter && prevChapterId) {
-            changeChapter(prevChapterId);
+          if (hasPrev && prevId) {
+            actionsRef.current.changeChapter(prevId);
           }
           break;
         case 'n':
         case ']':
-          if (hasNextChapter && nextChapterId) {
-            changeChapter(nextChapterId);
+          if (hasNext && nextId) {
+            actionsRef.current.changeChapter(nextId);
           }
           break;
         case 'h':
@@ -263,6 +341,13 @@ export default function MangaReaderLayout() {
         case 'c':
           setActiveDialog(prev => prev === 'comments' ? null : 'comments');
           break;
+        case 'f':
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          } else {
+            document.exitFullscreen().catch(() => {});
+          }
+          break;
         case 'escape':
           setShowHelpKeys(false);
           setActiveDialog(null);
@@ -274,9 +359,9 @@ export default function MangaReaderLayout() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPage, totalPages, hasPrevChapter, hasNextChapter, prevChapterId, nextChapterId, readMode, readingDirection, changeChapter]);
+  }, []);
 
-  // Chỉ thực hiện tự động cuộn ở lần đầu tiên load chương truyện
+  // Cuộn tới vị trí trang dở dang ở lần tải đầu tiên
   useEffect(() => {
     if (loading || error || images.length === 0 || !isInitialMountRef.current) {
       return;
@@ -284,52 +369,27 @@ export default function MangaReaderLayout() {
 
     const pageElement = document.querySelector<HTMLElement>(`.rpage-page[data-page="${currentPage}"]`);
     if (pageElement) {
-      pageElement.scrollIntoView({ behavior: 'instant', block: 'start' });
-      isInitialMountRef.current = false; // Tắt cờ sau khi đã định vị xong
+      pageElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+      isInitialMountRef.current = false;
     }
   }, [currentPage, loading, error, images.length]);
 
-  // Đồng bộ lịch sử đọc sách khi trang thay đổi (debounce)
-  useEffect(() => {
-    const saveHistory = async () => {
-      if (!chapterId) return;
-      try {
-        await chapterApi.saveReadingHistory(chapterId, currentPage, lastScrollPositionRef.current || 0);
-      } catch (err) {
-        console.debug('Unable to save reading history', err);
-      }
-    };
-
-    if (saveHistoryTimeoutRef.current) {
-      window.clearTimeout(saveHistoryTimeoutRef.current);
-    }
-    saveHistoryTimeoutRef.current = window.setTimeout(saveHistory, 600);
-
-    return () => {
-      if (saveHistoryTimeoutRef.current) {
-        window.clearTimeout(saveHistoryTimeoutRef.current);
-      }
-    };
-  }, [chapterId, currentPage]);
-
-  // SỬ DỤNG INTERSECTION OBSERVER ĐỂ THEO DÕI ẢNH ĐANG ĐỌC (TỐI ƯU NHẤT)
+  // Sử dụng Intersection Observer để phát hiện trang đang xem (Tập trung ở giữa màn hình)
   useEffect(() => {
     if (loading || error || images.length === 0 || readMode !== 'scroll') {
       return;
     }
 
     const observerOptions = {
-      root: null, // theo dõi khung hình viewport của trình duyệt
-      rootMargin: '-25% 0px -40% 0px', // Khoanh vùng tiêu điểm ở phần giữa màn hình
+      root: null,
+      rootMargin: '-25% 0px -40% 0px',
       threshold: 0.1,
     };
 
     const observerCallback = (entries: IntersectionObserverEntry[]) => {
-      // Tìm các ảnh đang thực sự hiển thị trong vùng tiêu điểm
       const visibleEntries = entries.filter(entry => entry.isIntersecting);
       if (visibleEntries.length === 0) return;
 
-      // Tìm ảnh gần phía trên cùng nhất của màn hình nhất
       let bestEntry = visibleEntries[0];
       let minTop = Math.abs(bestEntry.boundingClientRect.top);
 
@@ -361,40 +421,6 @@ export default function MangaReaderLayout() {
     };
   }, [images, loading, error, readMode]);
 
-  // THEO DÕI VỊ TRÍ CUỘN ĐỂ LƯU LẠI TIẾN TRÌNH (Tối giản hoàn toàn tính toán nặng)
-  useEffect(() => {
-    const handleScroll = () => {
-      const container = mainRef.current?.querySelector('.rpage-main__inner') as HTMLElement | null || mainRef.current;
-      const scrollY = container ? container.scrollTop : window.scrollY;
-      lastScrollPositionRef.current = scrollY;
-
-      if (saveHistoryTimeoutRef.current) {
-        window.clearTimeout(saveHistoryTimeoutRef.current);
-      }
-      saveHistoryTimeoutRef.current = window.setTimeout(async () => {
-        if (!chapterId) return;
-        try {
-          await chapterApi.saveReadingHistory(chapterId, currentPageRef.current, lastScrollPositionRef.current);
-        } catch (err) {
-          console.debug('Unable to save reading history on scroll', err);
-        }
-      }, 800);
-    };
-
-    const container = mainRef.current?.querySelector('.rpage-main__inner') as HTMLElement | null || mainRef.current;
-    const target: any = container || window;
-
-    target.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      try {
-        target.removeEventListener('scroll', handleScroll);
-      } catch (e) {}
-      if (saveHistoryTimeoutRef.current) {
-        window.clearTimeout(saveHistoryTimeoutRef.current);
-      }
-    };
-  }, [chapterId]); // Bỏ currentPage ra khỏi dependency để ko render lại listener vô ích
-
   // Bộ lọc và phân trang danh sách chương
   const CHAPTERS_PER_PAGE = 10;
   const filteredChapters = useMemo(() => {
@@ -423,15 +449,16 @@ export default function MangaReaderLayout() {
       style={{
         '--rpage-dim': (100 - dimAmount) / 100,
         '--rpage-strip-gap': `${stripMargin}rem`,
-        filter: greyscale ? 'grayscale(100%)' : 'none'
+        filter: greyscale ? 'grayscale(100%)' : 'none',
+        scrollBehavior: scrollMode === 'smooth' ? 'smooth' : 'auto'
       } as React.CSSProperties}
     >
-      {/* 1. Thanh tiến trình */}
+      {/* 1. Progress Bar */}
       {progressBarPosition !== 'off' && (
         <div className={`rpage-progress rpage-progress--${progressBarPosition}`} aria-label="Page progress">
           {images.map((_, index) => {
             const pageNum = index + 1;
-            const isVisited = pageNum <= currentPage; // Tô tím tất cả các trang nhỏ hơn hoặc bằng trang hiện tại
+            const isVisited = pageNum <= currentPage;
             const isActive = pageNum === currentPage;
             return (
               <button
@@ -440,7 +467,7 @@ export default function MangaReaderLayout() {
                 className={`rpage-progress__seg ${isVisited ? 'is-visited' : ''} ${isActive ? 'is-active' : ''}`}
                 title={`Page ${pageNum}`}
                 aria-label={`Go to page ${pageNum}`}
-                onClick={() => scrollToPage(pageNum)} // Cuộn mượt khi click chủ động
+                onClick={() => scrollToPage(pageNum)}
               />
             );
           })}
@@ -451,10 +478,9 @@ export default function MangaReaderLayout() {
       <div className="rpage-hoverzone rpage-hoverzone--bottom" aria-hidden="true" onClick={handleNextPage}></div>
       <div className="rpage-hoverzone rpage-hoverzone--right" aria-hidden="true" onClick={() => setShowControls(!showControls)}></div>
 
-      {/* 2. Hộp điều khiển chính (Float Control Toolbar) */}
+      {/* 2. Controls */}
       {showControls && (
         <div className="rpage-floatctl" role="toolbar" aria-label="Reader controls">
-
           <div className="rpage-floatctl__col">
             <a href="/" className="rpage-floatctl__btn" aria-label="Home" title="Home">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -502,7 +528,7 @@ export default function MangaReaderLayout() {
               title="Settings"
               onClick={() => setActiveDialog(activeDialog === 'settings' ? null : 'settings')}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path>
               </svg>
@@ -514,7 +540,7 @@ export default function MangaReaderLayout() {
               title="Help (?)"
               onClick={() => setShowHelpKeys(!showHelpKeys)}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="9"></circle>
                 <path d="M9.5 9a2.5 2.5 0 1 1 4.3 1.7c-.8.8-1.8 1.3-1.8 2.3"></path>
                 <circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"></circle>
@@ -524,7 +550,7 @@ export default function MangaReaderLayout() {
         </div>
       )}
 
-      {/* 3. Nội dung trang ảnh chính */}
+      {/* 3. Main Viewer */}
       <main ref={mainRef} className={`rpage-main ${readMode === 'scroll' ? 'rpage-main--long-strip' : 'rpage-main--page'}`}>
         <div className="rpage-main__inner">
           {loading && (
@@ -569,7 +595,7 @@ export default function MangaReaderLayout() {
             </>
           )}
 
-          {/* Khối kết thúc chương (Điều hướng + Thích + Chia sẻ) */}
+          {/* Khối kết thúc chương */}
           {!loading && !error && (
             <div className="rpage-chap-ending">
               <div className="rpage-chap-ending__head">
@@ -615,17 +641,16 @@ export default function MangaReaderLayout() {
                 </button>
               </div>
 
-              {chapterDetails?.id && (
+              {/* Ngắt CommentsSection dưới chân trang nếu đang bật sidebar bình luận (Tránh double load) */}
+              {chapterDetails?.id && activeDialog !== 'comments' && (
                 <CommentsSection targetId={chapterDetails.id} type="chapter" />
               )}
             </div>
           )}
-
         </div>
-        
       </main>
 
-      {/* 4. Thanh điều khiển kích thước dưới chân trang */}
+      {/* 4. Zoom Slider */}
       {showControls && (
         <footer className="rpage-bottombar">
           <div className="rpage-bottombar__controls">
@@ -658,7 +683,7 @@ export default function MangaReaderLayout() {
         </footer>
       )}
 
-      {/* 5. HỘP THOẠI CÀI ĐẶT */}
+      {/* 5. Dialog Settings */}
       {activeDialog === 'settings' && (
         <div className="minidlg rpage-modal rpage-modal--settings" role="dialog" aria-label="Reader settings">
           <div className="minidlg__panel rpage-modal__panel rpage-modal__panel--settings">
@@ -769,7 +794,6 @@ export default function MangaReaderLayout() {
                         <span>Scroll smooth</span>
                       </label>
                     </div>
-                    <p className="rpage-settings__hint">Step size for Arrow / Space / W / S keys, as percent of the viewport height.</p>
                   </section>
 
                   {/* Vị trí thanh tiến trình */}
@@ -846,7 +870,7 @@ export default function MangaReaderLayout() {
         </div>
       )}
 
-      {/* 6. HỘP THOẠI DANH SÁCH CHƯƠNG */}
+      {/* 6. Dialog Danh Sách Chương */}
       {activeDialog === 'chapters' && (
         <div className="minidlg rpage-modal rpage-modal--chaplist" role="dialog" aria-label="Chapter list">
           <div className="minidlg__panel rpage-modal__panel rpage-modal__panel--chaplist">
@@ -928,7 +952,6 @@ export default function MangaReaderLayout() {
               </ul>
             </div>
 
-            {/* Phân trang danh sách chương */}
             <footer className="rpage-chaplist__foot">
               <nav className="npager" aria-label="Pagination">
                 {Array.from({ length: totalChapterPages }, (_, i) => i + 1).map((p) => (
@@ -948,7 +971,7 @@ export default function MangaReaderLayout() {
         </div>
       )}
 
-      {/* 7. HỘP THOẠI HƯỚNG DẪN PHÍM TẮT */}
+      {/* 7. Dialog Keyboard Help */}
       {showHelpKeys && (
         <div className="minidlg rpage-modal rpage-modal--help" role="dialog" aria-label="Keyboard shortcuts">
           <div className="minidlg__panel rpage-modal__panel rpage-modal__panel--help">
@@ -1033,7 +1056,7 @@ export default function MangaReaderLayout() {
         </div>
       )}
 
-      {/* 8. PANEL BÊN TRỰC QUAN CHO BÌNH LUẬN */}
+      {/* 8. Comments Sidebar Panel */}
       <aside className={`rpage-cmpanel ${activeDialog === 'comments' ? 'is-open' : ''}`} aria-hidden={activeDialog !== 'comments'}>
         <div className="rpage-cmpanel__chapnav">
           <button type="button" className="rpage-cmpanel__like" title="Like chapter">
@@ -1067,7 +1090,8 @@ export default function MangaReaderLayout() {
         </div>
 
         <div className="rpage-cmpanel__body" style={{ overflowY: 'auto', height: 'calc(100% - 60px)' }}>
-          {chapterDetails?.id && (
+          {/* Chỉ render bình luận bên trong sidebar khi sidebar được mở */}
+          {chapterDetails?.id && activeDialog === 'comments' && (
             <CommentsSection targetId={chapterDetails.id} type="chapter" />
           )}
         </div>
