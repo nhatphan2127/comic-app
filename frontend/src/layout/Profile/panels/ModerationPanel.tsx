@@ -7,19 +7,6 @@ import type { Comic, Chapter } from '../../../types/types';
 import { formatTimeAgo } from '../../../helpers/formatDate';
 import '../../../assets/styles/ModerationPanel.css';
 
-interface QueueItem {
-  id: string;
-  name?: string;
-  title?: string;
-  url?: string;
-  coverUrl?: string;
-  chapterNumber?: number;
-  comicId?: string;
-  status?: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 interface PreviewState {
   open: boolean;
   type: 'comic' | 'chapter' | null;
@@ -28,6 +15,7 @@ interface PreviewState {
   chapter: Chapter | null;
   images: Array<{ urlPath: string; pageNumber: number }>;
   currentImageIndex: number;
+  isLoading?: boolean;
 }
 
 export default function ModerationPanel() {
@@ -35,8 +23,8 @@ export default function ModerationPanel() {
   const role = (user?.role || '').toLowerCase();
   const canModerate = isLoggedIn && (role === 'moderator' || role === 'admin');
 
-  const [queue, setQueue] = useState<{ comics: QueueItem[]; chapters: QueueItem[] }>({ comics: [], chapters: [] });
-  const [allItems, setAllItems] = useState<{ comics: QueueItem[]; chapters: QueueItem[] }>({ comics: [], chapters: [] });
+  const [queue, setQueue] = useState<{ comics: Comic[]; chapters: Chapter[] }>({ comics: [], chapters: [] });
+  const [allItems, setAllItems] = useState<{ comics: Comic[]; chapters: Chapter[] }>({ comics: [], chapters: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState>({ open: false, type: null, title: '', data: null, chapter: null, images: [], currentImageIndex: 0 });
@@ -113,10 +101,11 @@ export default function ModerationPanel() {
     }
   };
 
-  const previewComic = async (item: QueueItem) => {
+  const previewComic = async (item: Comic) => {
     if (!item.url) return;
+    setPreview(prev => ({ ...prev, open: true, type: 'comic', isLoading: true }));
     try {
-      const data = await comicApi.getByUrl(item.url as string);
+      const data = await comicApi.getByUrl(item.url);
       setPreview({ 
         open: true, 
         type: 'comic', 
@@ -124,14 +113,17 @@ export default function ModerationPanel() {
         data, 
         chapter: null, 
         images: [],
-        currentImageIndex: 0
+        currentImageIndex: 0,
+        isLoading: false
       });
     } catch (err: any) {
       setError(err?.message || 'Unable to preview this comic');
+      setPreview(prev => ({ ...prev, open: false, isLoading: false }));
     }
   };
 
-  const previewChapter = async (item: QueueItem) => {
+  const previewChapter = async (item: Chapter) => {
+    setPreview(prev => ({ ...prev, open: true, type: 'chapter', isLoading: true }));
     try {
       const response = await chapterApi.getDetails(item.id);
       setPreview({
@@ -139,34 +131,33 @@ export default function ModerationPanel() {
         type: 'chapter',
         title: response.title || 'Chapter preview',
         data: null,
-        chapter: { id: response.id, chapterNumber: response.chapterNumber, title: response.title, url: '', createdAt: '', updatedAt: '', metadata: { currentPage: 0, totalPages: 0 } },
+        chapter: response,
         images: response.images || [],
         currentImageIndex: 0,
+        isLoading: false
       });
     } catch (err: any) {
       setError(err?.message || 'Unable to preview this chapter');
+      setPreview(prev => ({ ...prev, open: false, isLoading: false }));
     }
   };
 
   // Filter items by search query in real-time
   const filteredItems = useMemo(() => {
-    const items = activeTab === 'comic' ? queue.comics : queue.chapters;
-    
-    if (searchInput.trim() === '') {
-      return items;
+    if (activeTab === 'comic') {
+      const items = queue.comics;
+      if (searchInput.trim() === '') return items;
+      const query = searchInput.toLowerCase().trim();
+      return items.filter(item => (item.name || '').toLowerCase().includes(query));
+    } else {
+      const items = queue.chapters;
+      if (searchInput.trim() === '') return items;
+      const query = searchInput.toLowerCase().trim();
+      return items.filter(item => (
+        (item.title || '').toLowerCase().includes(query) ||
+        String(item.chapterNumber).includes(query)
+      ));
     }
-
-    const query = searchInput.toLowerCase().trim();
-    return items.filter(item => {
-      if (activeTab === 'comic') {
-        return (item.name || '').toLowerCase().includes(query);
-      } else {
-        return (
-          (item.title || '').toLowerCase().includes(query) ||
-          (item.chapterNumber !== undefined && String(item.chapterNumber).includes(query))
-        );
-      }
-    });
   }, [queue, activeTab, searchInput]);
 
   // Pagination
@@ -218,32 +209,32 @@ export default function ModerationPanel() {
           </button>
         </div>
 
-        <div className="useg">
-          <button 
-            type="button" 
-            className={`useg__btn ${activeStatus === 'pending' ? 'is-on' : ''}`} 
-            onClick={() => handleStatusChange('pending')}
-          >
-            Pending
-            <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => !item.status || item.status.toLowerCase() === 'pending').length}</span>
-          </button>
-          <button 
-            type="button" 
-            className={`useg__btn ${activeStatus === 'accept' ? 'is-on' : ''}`} 
-            onClick={() => handleStatusChange('accept')}
-          >
-            Accepted
-            <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'accept').length}</span>
-          </button>
-          <button 
-            type="button" 
-            className={`useg__btn ${activeStatus === 'reject' ? 'is-on' : ''}`} 
-            onClick={() => handleStatusChange('reject')}
-          >
-            Rejected
-            <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'reject').length}</span>
-          </button>
-        </div>
+          <div className="useg">
+            <button 
+              type="button" 
+              className={`useg__btn ${activeStatus === 'pending' ? 'is-on' : ''}`} 
+              onClick={() => handleStatusChange('pending')}
+            >
+              <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => !item.status || item.status.toLowerCase() === 'pending').length}</span>
+              Pending
+            </button>
+            <button 
+              type="button" 
+              className={`useg__btn ${activeStatus === 'accept' ? 'is-on' : ''}`} 
+              onClick={() => handleStatusChange('accept')}
+            >
+              <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'accept').length}</span>
+              Accepted
+            </button>
+            <button 
+              type="button" 
+              className={`useg__btn ${activeStatus === 'reject' ? 'is-on' : ''}`} 
+              onClick={() => handleStatusChange('reject')}
+            >
+              <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'reject').length}</span>
+              Rejected
+            </button>
+          </div>
       </div>
 
       {/* Thanh tìm kiếm real-time */}
@@ -275,8 +266,12 @@ export default function ModerationPanel() {
         <>
           <div className="hgrid">
             {paginatedItems.map((item) => {
-              const title = activeTab === 'comic' ? item.name || 'Untitled comic' : item.title || `Chapter ${item.chapterNumber ?? ''}`;
-              const imageSrc = item.coverUrl ? `${API_UPLOADS}${item.coverUrl}` : '/images/placeholder.png';
+              const isComic = activeTab === 'comic';
+              const comicItem = isComic ? (item as Comic) : null;
+              const chapterItem = !isComic ? (item as Chapter) : null;
+
+              const title = isComic ? comicItem?.name || 'Untitled comic' : chapterItem?.title || `Chapter ${chapterItem?.chapterNumber ?? ''}`;
+              const imageSrc = isComic && comicItem?.coverUrl ? `${API_UPLOADS}${comicItem.coverUrl}` : '/images/placeholder.png';
 
               // Kiểm tra xem dòng này có đang mở dropdown trạng thái hay không
               const isDropdownOpen = activeStatusDropdownId === item.id;
@@ -293,24 +288,24 @@ export default function ModerationPanel() {
                     <div className="ulrow__title">{title}</div>
                     <div className="ulrow__meta">
                       <span className="ulrow__status ulrow__status--releasing">
-                        {activeTab === 'comic' ? 'Comic submission' : 'Chapter submission'}
+                        {isComic ? 'Comic submission' : 'Chapter submission'}
                       </span>
                       <span className="ulrow__dot" />
-                      <span className="card__time">{formatTimeAgo(item.updatedAt || item.createdAt)}</span>
-                      {activeTab === 'chapter' && item.chapterNumber !== undefined && (
+                      <span className="card__time">{formatTimeAgo(item.updatedAt || (isComic ? comicItem?.createdAt : chapterItem?.createdAt))}</span>
+                      {!isComic && chapterItem?.chapterNumber !== undefined && (
                         <>
                           <span className="ulrow__dot" />
-                          <span className="card__ch">Ch. {item.chapterNumber}</span>
+                          <span className="card__ch">Ch. {chapterItem.chapterNumber}</span>
                         </>
                       )}
                     </div>
-                    {activeTab === 'chapter' && item.name ? <div className="ulrow__meta">{item.name}</div> : null}
+                    {/* {activeTab === 'chapter' && item.name ? <div className="ulrow__meta">{item.name}</div> : null} */}
                   </div>
                   <div className="ulrow__actions">
                     <button 
                       type="button" 
                       className="ubtn ubtn--ghost ubtn--sm" 
-                      onClick={() => (activeTab === 'comic' ? previewComic(item) : previewChapter(item))}
+                      onClick={() => (isComic ? previewComic(comicItem!) : previewChapter(chapterItem!))}
                     >
                       Preview
                     </button>
@@ -382,30 +377,32 @@ export default function ModerationPanel() {
             })}
           </div>
 
-          {/* Pagination controls */}
-          {totalPages > 1 && (
-            <div className="upagination">
-              <button
-                type="button"
-                className="upagination__btn"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="upagination__info">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                type="button"
-                className="upagination__btn"
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          )}
+            {/* Pagination controls */}
+            {totalPages > 1 && (
+              <div className="upagination">
+                <button
+                  type="button"
+                  className="upagination__btn"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="upagination__info">
+                  <span className="upagination__current">{currentPage}</span>
+                  <span className="upagination__separator">/</span>
+                  <span className="upagination__total">{totalPages}</span>
+                </span>
+                <button
+                  type="button"
+                  className="upagination__btn"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
         </>
       ) : (
         /* Giao diện trạng thái trống (Empty State) */
@@ -421,106 +418,69 @@ export default function ModerationPanel() {
         </div>
       )}
 
-      {/* Modal Preview - Comic */}
-      {preview.open && preview.type === 'comic' && preview.data && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-card__header">
-              <div>
-                <h3>{preview.data.name}</h3>
-                <p>{preview.data.description ? preview.data.description.substring(0, 100) + '...' : 'Comic preview'}</p>
-              </div>
-              <button type="button" className="btn-secondary small" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
-                Close
-              </button>
-            </div>
-            <div className="preview-stack">
-              <div className="preview-card preview-card--comic-hero">
-                <div className="preview-card__thumb">
-                  {preview.data.coverUrl ? (
-                    <img src={`${API_UPLOADS}${preview.data.coverUrl}`} alt={preview.data.name} />
-                  ) : (
-                    <div style={{ backgroundColor: 'var(--surface-2)', width: '100%', height: '100%' }} />
-                  )}
+      {/* Comic Preview Modal */}
+      {preview.open && preview.type === 'comic' && (
+        <div className="modal-overlay" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            {preview.isLoading ? (
+              <div className="modal-loading">Loading...</div>
+            ) : preview.data ? (
+              <>
+                <div className="modal-header">
+                  <h3>{preview.data.name}</h3>
+                  <button type="button" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>×</button>
                 </div>
-                <div className="preview-card__info">
-                  <h4>{preview.data.name}</h4>
-                  <p>{preview.data.description || 'No description provided.'}</p>
-                  <div className="meta-row">
-                    {preview.data.types && <span className="stat-pill">{preview.data.types}</span>}
-                    {preview.data.demographic && <span className="stat-pill">{preview.data.demographic}</span>}
+                <div className="modal-body">
+                  <img src={preview.data.coverUrl.startsWith('http') ? preview.data.coverUrl : `${API_UPLOADS}${preview.data.coverUrl}`} alt={preview.data.name} className="modal-image" />
+                  <div className="modal-info">
+                    <p><strong>Types:</strong> {preview.data.types}</p>
+                    <p><strong>Demographic:</strong> {preview.data.demographic}</p>
+                    <p><strong>Description:</strong> {preview.data.description}</p>
                   </div>
                 </div>
-              </div>
-              <div className="preview-card">
-                <h4>Chapters ({preview.data?.latestChapters?.length || 0})</h4>
-                <ul className="preview-list">
-                  {(preview.data?.latestChapters || []).slice(0, 8).map((chapter: Chapter) => (
-                    <li key={chapter.id}>{chapter.title || `Chapter ${chapter.chapterNumber}`}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+              </>
+            ) : null}
           </div>
         </div>
       )}
 
-      {/* Modal Preview - Chapter with image carousel */}
+      {/* Chapter Preview Modal */}
       {preview.open && preview.type === 'chapter' && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
-          <div className="modal-card modal-card--chapter" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-card__header">
-              <div>
-                <h3>{preview.chapter?.title || 'Chapter preview'}</h3>
-                <p>Chapter {preview.chapter?.chapterNumber || ''}</p>
-              </div>
-              <button type="button" className="btn-secondary small" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
-                Close
-              </button>
-            </div>
-            {preview.images && preview.images.length > 0 ? (
-              <div className="chapter-preview-carousel">
-                <div className="carousel-viewer">
-                  <img
-                    src={`${API_UPLOADS}${preview.images[preview.currentImageIndex].urlPath}`}
-                    alt={`Page ${preview.images[preview.currentImageIndex].pageNumber}`}
-                    style={{ maxWidth: '100%', maxHeight: '600px', objectFit: 'contain' }}
-                  />
+        <div className="modal-overlay" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
+          <div className="modal-content modal-carousel" onClick={(e) => e.stopPropagation()}>
+            {preview.isLoading ? (
+              <div className="modal-loading">Loading...</div>
+            ) : preview.images && preview.images.length > 0 ? (
+              <>
+                <div className="modal-header">
+                  <h3>{preview.chapter?.title}</h3>
+                  <button type="button" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>×</button>
                 </div>
-                <div className="carousel-controls">
-                  <button
-                    type="button"
-                    onClick={() => setPreview(prev => ({
-                      ...prev,
-                      currentImageIndex: Math.max(0, prev.currentImageIndex - 1)
-                    }))}
-                    disabled={preview.currentImageIndex === 0}
-                    style={{ opacity: preview.currentImageIndex === 0 ? 0.5 : 1 }}
-                    className="carousel-btn"
-                  >
-                    <ChevronLeft size={20} />
-                  </button>
-                  <span className="carousel-counter" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-2)' }}>
-                    {preview.currentImageIndex + 1} / {preview.images.length}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPreview(prev => ({
-                      ...prev,
-                      currentImageIndex: Math.min(prev.images.length - 1, prev.currentImageIndex + 1)
-                    }))}
-                    disabled={preview.currentImageIndex === preview.images.length - 1}
-                    style={{ opacity: preview.currentImageIndex === preview.images.length - 1 ? 0.5 : 1 }}
-                    className="carousel-btn"
-                  >
-                    <ChevronRight size={20} />
-                  </button>
+                <div className="modal-carousel-body">
+                  <img src={`${API_UPLOADS}${preview.images[preview.currentImageIndex].urlPath}`} alt="Chapter page" className="modal-image-full" />
+                  <div className="modal-carousel-info">
+                    {preview.currentImageIndex + 1} / {preview.images.length} pages
+                  </div>
+                  <div className="modal-carousel-controls">
+                    <button
+                      type="button"
+                      onClick={() => setPreview(prev => ({ ...prev, currentImageIndex: Math.max(0, prev.currentImageIndex - 1) }))}
+                      disabled={preview.currentImageIndex === 0}
+                    >
+                      <ChevronLeft size={20} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreview(prev => ({ ...prev, currentImageIndex: Math.min(preview.images.length - 1, prev.currentImageIndex + 1) }))}
+                      disabled={preview.currentImageIndex === preview.images.length - 1}
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </>
             ) : (
-              <div className="uempty" style={{ padding: '60px 20px' }}>
-                <div className="uempty__title">No images found</div>
-              </div>
+              <div className="modal-loading">No images available</div>
             )}
           </div>
         </div>

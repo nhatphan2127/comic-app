@@ -70,13 +70,7 @@ export interface ChapterContributor {
     unread: number; 
     createdAt: string;
     updatedAt: string;
-    chapter: {
-        id: string;
-        chapterNumber: 2;
-        title: string;
-        url: string;
-        comicId: string;
-    };
+    chapter: Chapter;
     comic: {
         name: string;
         coverUrl: string;
@@ -113,6 +107,7 @@ export interface Comic {
     url: string;
     coverUrl: string;
     description?: string;
+    createdAt?: string;
     updatedAt?: string | null;
 
     // Categories
@@ -163,6 +158,19 @@ export interface Comment {
         displayName: string;
         avatar: string;
     };
+    // Admin dashboard properties
+    source?: 'comic' | 'chapter';
+    targetId?: string;
+    isBanned?: number;
+}
+
+export interface AdminUser {
+    id: string;
+    username: string;
+    displayName?: string;
+    role?: string;
+    isBanned: number;
+    createdAt?: string;
 }
 
 export interface FollowingComic {

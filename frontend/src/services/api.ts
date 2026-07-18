@@ -1,5 +1,5 @@
 // src/services/api.ts
-import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter } from '../types/types';
+import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, AdminUser } from '../types/types';
 
 export const API_BASE_URL = 'http://localhost:5000';
 export const API_UPLOADS = 'http://localhost:5000/storage/';
@@ -161,7 +161,7 @@ export const comicApi = {
 
   // Post a new comment on a comic
   createComment: (comicId: string, content: string, parentCommentId?: string) =>
-    request<any>(`/comments/comics/${comicId}`, {
+    request<Comment>(`/comments/comics/${comicId}`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ content, parentCommentId }),
@@ -169,24 +169,24 @@ export const comicApi = {
 
   reactComment: (commentId: string, reactionType: 'like' | 'dislike' | 'none') =>
     reactionType === 'none'
-      ? request<any>(`/comments/comics/${commentId}/react`, {
+      ? request<{ message: string }>(`/comments/comics/${commentId}/react`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       })
-      : request<any>(`/comments/comics/${commentId}/react`, {
+      : request<{ message: string }>(`/comments/comics/${commentId}/react`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ reactionType }),
       }),
 
   deleteComment: (commentId: string) =>
-    request<any>(`/comments/comics/${commentId}`, {
+    request<{ message: string }>(`/comments/comics/${commentId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     }),
 
   getUserComments: (sortBy: 'recent' | 'most-liked' | 'most-replies' = 'recent') =>
-    request<any[]>(`/comments/user?sortBy=${sortBy}`, {
+    request<Comment[]>(`/comments/user?sortBy=${sortBy}`, {
       headers: getAuthHeaders(),
     }),
 
@@ -219,21 +219,21 @@ export const comicApi = {
 
   // Create a new comic (multipart form - requires FormData)
   create: (formData: FormData) =>
-    multipartRequest<any>(`/comics`, formData, {
+    multipartRequest<Comic>(`/comics`, formData, {
       method: 'POST',
       headers: getAuthHeaders(),
     }),
 
   // Update an existing comic and reset it back to pending review
   update: (comicId: string, formData: FormData) =>
-    multipartRequest<any>(`/comics/${comicId}`, formData, {
+    multipartRequest<Comic>(`/comics/${comicId}`, formData, {
       method: 'PATCH',
       headers: getAuthHeaders(),
     }),
 
   // Create a new chapter for a comic (multipart form - requires FormData)
   createChapter: (comicId: string, formData: FormData) =>
-    multipartRequest<any>(`/comics/${comicId}/chapters`, formData, {
+    multipartRequest<Chapter>(`/comics/${comicId}/chapters`, formData, {
       method: 'POST',
       headers: getAuthHeaders(),
     }),
@@ -247,7 +247,7 @@ export const chapterApi = {
       headers: getAuthHeaders(),
     }),
   saveReadingHistory: (chapterId: string, currentPage: number) =>
-    request<any>(`/comics/chapters/${chapterId}/history`, {
+    request<{ message: string }>(`/comics/chapters/${chapterId}/history`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ currentPage }),
@@ -259,7 +259,7 @@ export const chapterApi = {
 
   // Post a new comment on a chapter
   createComment: (chapterId: string, content: string, parentCommentId?: string) =>
-    request<any>(`/comments/chapters/${chapterId}`, {
+    request<Comment>(`/comments/chapters/${chapterId}`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ content, parentCommentId }),
@@ -267,18 +267,18 @@ export const chapterApi = {
 
   reactComment: (commentId: string, reactionType: 'like' | 'dislike' | 'none') =>
     reactionType === 'none'
-      ? request<any>(`/comments/chapters/${commentId}/react`, {
+      ? request<{ message: string }>(`/comments/chapters/${commentId}/react`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       })
-      : request<any>(`/comments/chapters/${commentId}/react`, {
+      : request<{ message: string }>(`/comments/chapters/${commentId}/react`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ reactionType }),
       }),
 
   deleteComment: (commentId: string) =>
-    request<any>(`/comments/chapters/${commentId}`, {
+    request<{ message: string }>(`/comments/chapters/${commentId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
     }),
@@ -301,7 +301,7 @@ export const userApi = {
 
   // Update current user's profile information (excludes password)
   // EditProfilePanel.tsx
-  updateProfile: (profileData: Omit<any, 'password' | 'confirmPassword'>) =>
+  updateProfile: (profileData: Partial<UserProfile>) =>
     request<UserProfile>('/user/profile', {
       method: 'PUT',
       headers: getAuthHeaders(),
@@ -382,7 +382,7 @@ export const notificationApi = {
 
   // Mark a single notification as read
   markRead: (id: string) =>
-    request<any>(`/api/notifications/${id}/read`, {
+    request<{ message: string }>(`/api/notifications/${id}/read`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
     }),
@@ -401,7 +401,7 @@ export const comicContributorApi = {
     }),
 
   updateStatus: (comicId: string, userId: string, status: 'accept' | 'reject') =>
-    request<any>(`/comics/${comicId}/contributors/${userId}`, {
+    request<{ message: string }>(`/comics/${comicId}/contributors/${userId}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
@@ -412,19 +412,19 @@ export const comicContributorApi = {
 export const chapterContributorApi = {
   // Get list of chapters I've contributed to with status
   listMyContributions: () =>
-    request<any>('/api/user/chapter-contributions', {
+    request<ChapterContributor[]>('/api/user/chapter-contributions', {
       headers: getAuthHeaders(),
     }),
 
   // Get contributors for a specific chapter
   getByChapter: (chapterId: string) =>
-    request<any>(`/chapters/${chapterId}/contributors`, {
+    request<ChapterContributor[]>(`/chapters/${chapterId}/contributors`, {
       headers: getAuthHeaders(),
     }),
 
   // Update contributor status (for moderators/admins)
   updateStatus: (chapterId: string, userId: string, status: 'accept' | 'reject') =>
-    request<any>(`/chapters/${chapterId}/contributors/${userId}`, {
+    request<{ message: string }>(`/chapters/${chapterId}/contributors/${userId}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
@@ -438,12 +438,12 @@ export const moderationApi = {
     if (chapterStatus) params.append('chapterStatus', chapterStatus);
     const queryString = params.toString();
     const path = `/api/admin/moderation/queue${queryString ? '?' + queryString : ''}`;
-    return request<{ comics: any[]; chapters: any[] }>(path, {
+    return request<{ comics: Comic[]; chapters: Chapter[] }>(path, {
       headers: getAuthHeaders(),
     });
   },
   review: (targetType: 'comic' | 'chapter', targetId: string, status: 'accept' | 'reject') =>
-    request<any>(`/api/admin/moderation/${targetType}/${targetId}`, {
+    request<{ message: string }>(`/api/admin/moderation/${targetType}/${targetId}`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
@@ -452,43 +452,43 @@ export const moderationApi = {
 
 export const adminApi = {
   getDashboard: () =>
-    request<any>('/api/admin/dashboard', {
+    request<{ users: AdminUser[]; comments: Comment[]; autoAccept: boolean }>('/api/admin/dashboard', {
       headers: getAuthHeaders(),
     }),
   setAutoAccept: (enabled: boolean) =>
-    request<any>('/api/admin/settings/auto-accept', {
+    request<{ enabled: boolean }>('/api/admin/settings/auto-accept', {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ enabled }),
     }),
   toggleUserBan: (userId: string, isBanned: boolean) =>
-    request<any>(`/api/admin/users/${userId}/ban`, {
+    request<{ message: string }>(`/api/admin/users/${userId}/ban`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ isBanned }),
     }),
   toggleCommentBan: (targetType: 'comic' | 'chapter', commentId: string, isBanned: boolean) =>
-    request<any>(`/api/admin/comments/${targetType}/${commentId}/ban`, {
+    request<{ message: string }>(`/api/admin/comments/${targetType}/${commentId}/ban`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ isBanned }),
     }),
   getComics: (visibility?: string) =>
-    request<any>(`/api/admin/comics-dashboard${visibility ? `?visibility=${visibility}` : ''}`, {
+    request<Comic[]>(`/api/admin/comics-dashboard${visibility ? `?visibility=${visibility}` : ''}`, {
       headers: getAuthHeaders(),
     }),
   getChapters: (visibility?: string) =>
-    request<any>(`/api/admin/chapters-dashboard${visibility ? `?visibility=${visibility}` : ''}`, {
+    request<Chapter[]>(`/api/admin/chapters-dashboard${visibility ? `?visibility=${visibility}` : ''}`, {
       headers: getAuthHeaders(),
     }),
   updateComicVisibility: (comicId: string, visibility: 'public' | 'hidden') =>
-    request<any>(`/api/admin/comics/${comicId}/visibility`, {
+    request<{ message: string }>(`/api/admin/comics/${comicId}/visibility`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ visibility }),
     }),
   updateChapterVisibility: (chapterId: string, visibility: 'public' | 'hidden') =>
-    request<any>(`/api/admin/chapters/${chapterId}/visibility`, {
+    request<{ message: string }>(`/api/admin/chapters/${chapterId}/visibility`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ visibility }),

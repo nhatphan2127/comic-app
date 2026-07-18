@@ -3,32 +3,14 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { adminApi, comicApi, chapterApi } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import { formatTimeAgo } from '../../../helpers/formatDate';
-import type { Comic, Chapter } from '../../../types/types';
+import { parsePageNumber } from '../../../helpers/utils';
+import type { Comic, Chapter, Comment, AdminUser } from '../../../types/types';
 import '../../../assets/styles/AdminDashboardPanel.css';
 
 const ITEMS_PER_PAGE = 12;
 
-interface Comment {
-  id: string;
-  source: 'comic' | 'chapter';
-  userId: string;
-  targetId: string;
-  content: string;
-  isBanned: number;
-  createdAt?: string;
-}
-
-interface User {
-  id: string;
-  username: string;
-  displayName?: string;
-  role?: string;
-  isBanned: number;
-  createdAt?: string;
-}
-
 interface ComicDetail extends Comic {
-  chapters?: any[];
+  chapters?: Chapter[];
 }
 
 interface ChapterDetail extends Chapter {
@@ -48,7 +30,7 @@ export default function AdminDashboardPanel() {
   // State lưu ID của dòng đang được mở dropdown trong danh sách
   const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
 
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [comics, setComics] = useState<Comic[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -172,7 +154,13 @@ export default function AdminDashboardPanel() {
     setChapterImageIndex(0);
     try {
       const detail = await chapterApi.getDetails(chapter.id);
-      setChapterDetail({ ...detail, images: detail.images || [] });
+      // Sort images by page number if they exist
+      const images = detail.images ? [...detail.images].sort((a, b) => {
+        const nA = a.pageNumber || parsePageNumber(a.urlPath || '');
+        const nB = b.pageNumber || parsePageNumber(b.urlPath || '');
+        return nA - nB;
+      }) : [];
+      setChapterDetail({ ...detail, images });
     } catch (err: any) {
       console.error('Error loading chapter detail:', err);
     } finally {
@@ -430,7 +418,7 @@ export default function AdminDashboardPanel() {
             <div className="hgrid">
               {paginatedItems.map((item) => {
                 if (activeTab === 'user') {
-                  const userItem = item as User;
+                  const userItem = item as AdminUser;
                   const isBanned = Boolean(userItem.isBanned);
                   const isDropdownOpen = activeDropdownId === userItem.id;
 
@@ -587,7 +575,7 @@ export default function AdminDashboardPanel() {
                                     aria-selected={isSelected}
                                     className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
                                     onClick={() => {
-                                      if (!isSelected) {
+                                      if (!isSelected && commentItem.source) {
                                         void toggleCommentBan(commentItem.source, commentItem.id, isBanned);
                                       }
                                       setActiveDropdownId(null);
@@ -805,7 +793,9 @@ export default function AdminDashboardPanel() {
                   <ChevronLeft size={16} />
                 </button>
                 <span className="upagination__info">
-                  Page {currentPage} of {totalPages}
+                  <span className="upagination__current">{currentPage}</span>
+                  <span className="upagination__separator">/</span>
+                  <span className="upagination__total">{totalPages}</span>
                 </span>
                 <button
                   type="button"

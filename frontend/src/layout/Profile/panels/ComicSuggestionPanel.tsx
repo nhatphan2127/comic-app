@@ -3,6 +3,7 @@ import { Upload, X } from 'lucide-react';
 import type { ComicContributor } from '../../../types/types';
 import { API_UPLOADS, comicApi, comicContributorApi } from '../../../services/api';
 import { ComicRow } from '../../../components/UploadComicCard';
+import { slugify } from '../../../helpers/utils';
 
 import '../../../assets/styles/ComicForm.css';
 
@@ -221,17 +222,6 @@ export default function ComicSuggestionPanel() {
     };
   }, []);
 
-  // Slug generator helper
-  const slugify = (text: string) => text
-    .toString()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]/g, '')
-    .replace(/-+/g, '-');
-
   const filteredContributions = contributions.filter(contrib => activeTab === 'all' || contrib.status === activeTab);
 
   const loadContributions = useCallback(async () => {
@@ -393,31 +383,35 @@ export default function ComicSuggestionPanel() {
           <div className="useg">
             <button
               type="button"
-              className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
-              onClick={() => setActiveTab('all')}
+              className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
+              onClick={() => setActiveTab('pending')}
             >
-              <span>All</span>
+              <span className='useg__count mono'>{contributions.filter(c => c.status === 'pending').length}</span>
+              Pending
             </button>
             <button
               type="button"
               className={`useg__btn ${activeTab === 'accept' ? 'is-on' : ''}`}
               onClick={() => setActiveTab('accept')}
             >
-              <span>Accepted</span>
-            </button>
-            <button
-              type="button"
-              className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
-              onClick={() => setActiveTab('pending')}
-            >
-              <span>Pending</span>
+              <span className='useg__count mono'>{contributions.filter(c => c.status === 'accept').length}</span>
+              Accepted
             </button>
             <button
               type="button"
               className={`useg__btn ${activeTab === 'reject' ? 'is-on' : ''}`}
               onClick={() => setActiveTab('reject')}
             >
-              <span>Rejected</span>
+              <span className='useg__count mono'>{contributions.filter(c => c.status === 'reject').length}</span>
+              Rejected
+            </button>
+            <button
+              type="button"
+              className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
+              onClick={() => setActiveTab('all')}
+            >
+              <span className='useg__count mono'>{contributions.length}</span>
+              All
             </button>
           </div>
         </div>

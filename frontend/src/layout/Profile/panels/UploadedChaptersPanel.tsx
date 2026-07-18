@@ -3,6 +3,7 @@ import { X, GripVertical } from 'lucide-react';
 import type { ChapterContributor, Chapter } from '../../../types/types';
 import { comicApi, chapterContributorApi } from '../../../services/api';
 import { ChapterRow } from '../../../components/UploadChapterCard'; 
+import { slugify, parsePageNumber } from '../../../helpers/utils';
 import '../../../assets/styles/ComicForm.css';
 
 interface ChapterPage {
@@ -64,12 +65,6 @@ export default function UploadedChaptersPanel() {
       pages.forEach((page) => URL.revokeObjectURL(page.previewUrl));
     };
   }, [pages]);
-
-  const parsePageNumber = (name: string) => {
-    const matches = name.match(/(\d+)/g);
-    if (!matches) return NaN;
-    return parseInt(matches[matches.length - 1], 10);
-  };
 
   const validateAndSetImages = (inputFiles: File[]) => {
     const imageFiles = inputFiles.filter((f) => f.type.startsWith('image/'));
@@ -202,17 +197,6 @@ export default function UploadedChaptersPanel() {
   const zoomIn = () => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)));
   const zoomOut = () => setZoom((z) => Math.max(0.25, +(z - 0.25).toFixed(2)));
   const resetZoom = () => setZoom(1);
-
-  const slugify = (text: string) =>
-    text
-      .toString()
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/[^\w-]/g, '')
-      .replace(/-+/g, '-');
 
   const fetchComicByUrl = async (url: string) => {
     if (!url.trim()) {
@@ -353,31 +337,35 @@ export default function UploadedChaptersPanel() {
             <div className="useg">
               <button 
                 type="button"
-                className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
-                onClick={() => setActiveTab('all')}
+                className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
+                onClick={() => setActiveTab('pending')}
               >
-                <span>All</span>
+                <span className='useg__count mono'>{contributions.filter(c => c.status === 'pending').length}</span>
+                Pending
               </button>
               <button 
                 type="button"
                 className={`useg__btn ${activeTab === 'accept' ? 'is-on' : ''}`}
                 onClick={() => setActiveTab('accept')}
               >
-                <span>Accepted</span>
-              </button>
-              <button 
-                type="button"
-                className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
-                onClick={() => setActiveTab('pending')}
-              >
-                <span>Pending</span>
+                <span className='useg__count mono'>{contributions.filter(c => c.status === 'accept').length}</span>
+                Accepted
               </button>
               <button 
                 type="button"
                 className={`useg__btn ${activeTab === 'reject' ? 'is-on' : ''}`}
                 onClick={() => setActiveTab('reject')}
               >
-                <span>Rejected</span>
+                <span className='useg__count mono'>{contributions.filter(c => c.status === 'reject').length}</span>
+                Rejected
+              </button>
+              <button 
+                type="button"
+                className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
+                onClick={() => setActiveTab('all')}
+              >
+                <span className='useg__count mono'>{contributions.length}</span>
+                All
               </button>
             </div>
           </div>
