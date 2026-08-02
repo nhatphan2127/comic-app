@@ -1,5 +1,5 @@
 // src/services/api.ts
-import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, AdminUser } from '../types/types';
+import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse } from '../types/types';
 
 export const API_BASE_URL = 'http://localhost:5000';
 export const API_UPLOADS = 'http://localhost:5000/storage/';
@@ -127,6 +127,21 @@ export const comicApi = {
     return request<{ comics: Comic[]; metadata: { page: number; totalPages: number } }>(
       `/comics${queryString ? `?${queryString}` : ''}`
     );
+
+    
+  },
+
+  editComment: async (commentId: string, content: string) => {
+    const response = await fetch(`/api/comments/comics/${commentId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}` // Adjust based on your Auth model
+      },
+      body: JSON.stringify({ content })
+    });
+    if (!response.ok) throw new Error('Failed to edit comment');
+    return response.json();
   },
 
   // use Main.tsx
@@ -282,6 +297,19 @@ export const chapterApi = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     }),
+
+  editComment: async (commentId: string, content: string) => {
+    const response = await fetch(`/api/comments/chapters/${commentId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}` // Adjust based on your Auth model
+      },
+      body: JSON.stringify({ content })
+    });
+    if (!response.ok) throw new Error('Failed to edit comment');
+    return response.json();
+  }
 };
 
 // Get authorization header with JWT token from localStorage
@@ -437,22 +465,26 @@ export const moderationApi = {
     if (comicStatus) params.append('comicStatus', comicStatus);
     if (chapterStatus) params.append('chapterStatus', chapterStatus);
     const queryString = params.toString();
-    const path = `/api/admin/moderation/queue${queryString ? '?' + queryString : ''}`;
+    const path = `/api/moderator/queue${queryString ? '?' + queryString : ''}`;
     return request<{ comics: Comic[]; chapters: Chapter[] }>(path, {
       headers: getAuthHeaders(),
     });
   },
   review: (targetType: 'comic' | 'chapter', targetId: string, status: 'accept' | 'reject') =>
-    request<{ message: string }>(`/api/admin/moderation/${targetType}/${targetId}`, {
+    request<{ message: string }>(`/api/moderator/${targetType}/${targetId}`, {
       method: 'PATCH',
       headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
+    }),
+  getComicDetail: (comicId: string) =>
+    request<Comic>(`/api/moderator/comic/${comicId}`, {
+      headers: getAuthHeaders(),
     }),
 };
 
 export const adminApi = {
   getDashboard: () =>
-    request<{ users: AdminUser[]; comments: Comment[]; autoAccept: boolean }>('/api/admin/dashboard', {
+    request<DashboardResponse>('/api/admin/dashboard', {
       headers: getAuthHeaders(),
     }),
   setAutoAccept: (enabled: boolean) =>
@@ -493,4 +525,11 @@ export const adminApi = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ visibility }),
     }),
+};
+
+
+// Thêm đối tượng commentApi này vào file api.ts
+export const commentApi = {
+  getDetail: (commentId: string) =>
+    request<{ comment: Comment; type: 'comic' | 'chapter' }>(`/comments/detail/${commentId}`),
 };

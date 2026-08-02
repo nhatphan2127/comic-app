@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { UserFollowingCategory, FollowingComic } from '../../../types/types';
-import Pagination from '../../../components/Pagination';
+
 import { ComicCard, ComicRow } from '../../../components/FollowingComic';
 import { comicApi, userApi } from '../../../services/api';
+import { toggleArrayItem, getDisplayValue, getGenresDisplayValue } from '../../../helpers/utils';
 
 // Danh sách dữ liệu cố định cho các bộ lọc
 const TYPE_OPTIONS = ['Manga', 'Manhwa', 'Manhua', 'Other'];
@@ -107,8 +109,8 @@ export default function FollowingTitlesPanel() {
       ]);
       setAllComics(comics || []);
       setFolders(categories || []);
-    } catch (err: any) {
-      setError(err.message || 'Unable to load your library');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to load your library');
     } finally {
       setLoading(false);
     }
@@ -122,7 +124,6 @@ export default function FollowingTitlesPanel() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, activeFolderId, selectedTypes, selectedDemographics, selectedStatuses, selectedGenres, selectedFormats, genreMatchMode, subTab]);
-
   // --- Logic lọc và sắp xếp chính ---
   const filteredComics = useMemo(() => {
     let result = [...allComics];
@@ -131,7 +132,7 @@ export default function FollowingTitlesPanel() {
     // 1. Tìm kiếm theo tên
     if (query) {
       result = result.filter((item) => {
-        const title = `${item.comic.name || (item.comic as any).title || ''}`.toLowerCase();
+        const title = `${item.comic.name || (item.comic as unknown as { title: string }).title || ''}`.toLowerCase();
         return title.includes(query);
       });
     }
@@ -144,7 +145,7 @@ export default function FollowingTitlesPanel() {
     // 3. Lọc theo TYPES
     if (selectedTypes.length > 0) {
       result = result.filter((item) => {
-        const comicType = (item.comic.types || (item.comic as any).type || '').toLowerCase();
+        const comicType = (item.comic.types || (item.comic as unknown as { type: string }).type || '').toLowerCase();
         return selectedTypes.some((t) => t.toLowerCase() === comicType);
       });
     }
@@ -152,7 +153,7 @@ export default function FollowingTitlesPanel() {
     // 4. Lọc theo DEMOGRAPHIC
     if (selectedDemographics.length > 0) {
       result = result.filter((item) => {
-        const demo = (item.comic.demographic || (item.comic as any).demographic || '').toLowerCase();
+        const demo = (item.comic.demographic || (item.comic as unknown as { demographic: string }).demographic || '').toLowerCase();
         return selectedDemographics.some((d) => d.toLowerCase() === demo);
       });
     }
@@ -160,7 +161,7 @@ export default function FollowingTitlesPanel() {
     // 5. Lọc theo RELEASE STATUS
     if (selectedStatuses.length > 0) {
       result = result.filter((item) => {
-        const status = (item.comic.releaseStatus || (item.comic as any).status || '').toLowerCase().replace(/\s+/g, '');
+        const status = (item.comic.releaseStatus || (item.comic as unknown as { status: string }).status || '').toLowerCase().replace(/\s+/g, '');
         return selectedStatuses.some((s) => {
           const targetStatus = s.toLowerCase().replace(/\s+/g, '');
           return status === targetStatus;
@@ -176,14 +177,14 @@ export default function FollowingTitlesPanel() {
 
       result = result.filter((item) => {
         const comicGenres: string[] = Array.isArray(item.comic.genres)
-          ? item.comic.genres.map((g: any) => (typeof g === 'string' ? g.toLowerCase() : (g.name || '').toLowerCase()))
+          ? item.comic.genres.map((g: string | { name: string }) => (typeof g === 'string' ? g.toLowerCase() : (g.name || '').toLowerCase()))
           : [];
 
-        const rawFormats = (item.comic as any).formats || item.comic.formats || [];
+        const rawFormats = (item.comic as unknown as { formats: string[] }).formats || item.comic.formats || [];
         const comicFormats: string[] = Array.isArray(rawFormats)
-          ? rawFormats.map((f: any) => (typeof f === 'string' ? f.toLowerCase() : (f.name || '').toLowerCase()))
+          ? rawFormats.map((f: string | { name: string }) => (typeof f === 'string' ? f.toLowerCase() : (f.name || '').toLowerCase()))
           : typeof rawFormats === 'string'
-          ? [rawFormats.toLowerCase()]
+          ? [(rawFormats as string).toLowerCase()]
           : [];
 
         const matchedGenres = lowerSelectedGenres.filter((g) => comicGenres.includes(g));
@@ -248,23 +249,23 @@ export default function FollowingTitlesPanel() {
           return (b.comic.name || '').localeCompare(a.comic.name || '');
         }
         case 'year_desc': {
-          const yearA = Number(a.comic.releasingYear || (a.comic as any).releaseYear || 0);
-          const yearB = Number(b.comic.releasingYear || (b.comic as any).releaseYear || 0);
+          const yearA = Number(a.comic.releasingYear || (a.comic as unknown as { releaseYear: string }).releaseYear || 0);
+          const yearB = Number(b.comic.releasingYear || (b.comic as unknown as { releaseYear: string }).releaseYear || 0);
           return yearB - yearA || (a.comic.name || '').localeCompare(b.comic.name || '');
         }
         case 'year_asc': {
-          const yearA = Number(a.comic.releasingYear || (a.comic as any).releaseYear || 9999);
-          const yearB = Number(b.comic.releasingYear || (b.comic as any).releaseYear || 9999);
+          const yearA = Number(a.comic.releasingYear || (a.comic as unknown as { releaseYear: string }).releaseYear || 9999);
+          const yearB = Number(b.comic.releasingYear || (b.comic as unknown as { releaseYear: string }).releaseYear || 9999);
           return yearA - yearB || (a.comic.name || '').localeCompare(b.comic.name || '');
         }
         case 'score_desc': {
-          const scoreA = Number((a.comic as any).score || (a.comic as any).rating || 0);
-          const scoreB = Number((b.comic as any).score || (b.comic as any).rating || 0);
+          const scoreA = Number((a.comic as unknown as { score: number }).score || (a.comic as unknown as { rating: number }).rating || 0);
+          const scoreB = Number((b.comic as unknown as { score: number }).score || (b.comic as unknown as { rating: number }).rating || 0);
           return scoreB - scoreA || (a.comic.name || '').localeCompare(b.comic.name || '');
         }
         case 'score_asc': {
-          const scoreA = Number((a.comic as any).score || (a.comic as any).rating || 0);
-          const scoreB = Number((b.comic as any).score || (b.comic as any).rating || 0);
+          const scoreA = Number((a.comic as unknown as { score: number }).score || (a.comic as unknown as { rating: number }).rating || 0);
+          const scoreB = Number((b.comic as unknown as { score: number }).score || (b.comic as unknown as { rating: number }).rating || 0);
           return scoreA - scoreB || (a.comic.name || '').localeCompare(b.comic.name || '');
         }
         case 'match':
@@ -290,26 +291,7 @@ export default function FollowingTitlesPanel() {
     setGenreSearch('');
   };
 
-  // --- Hàm hỗ trợ giao diện ---
-  const toggleCheckbox = (item: string, setState: React.Dispatch<React.SetStateAction<string[]>>) => {
-    setState((prev) => (prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]));
-  };
-
-  const toggleTag = (tag: string, isGenre: boolean) => {
-    const setState = isGenre ? setSelectedGenres : setSelectedFormats;
-    setState((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
-  };
-
-  const getDisplayValue = (selected: string[]) => {
-    if (selected.length === 0) return 'Any';
-    if (selected.length <= 2) return selected.join(', ');
-    return `${selected.length} selected`;
-  };
-
-  const getGenresDisplayValue = () => {
-    const totalSelected = selectedGenres.length + selectedFormats.length;
-    return totalSelected === 0 ? 'Any' : `${totalSelected} selected`;
-  };
+  // --- UI helpers moved to shared utils: toggleArrayItem, getDisplayValue, getGenresDisplayValue ---
 
   const handleUnfollow = async (comicId: string) => {
     try {
@@ -352,7 +334,7 @@ export default function FollowingTitlesPanel() {
     try {
       await userApi.deleteFollowingCategory(folderId);
       setFolders((prev) => prev.filter((item) => item.id !== folderId));
-      setAllComics((prev) => prev.map((item) => item.category?.id === folderId ? { ...item, category: null as any } : item));
+      setAllComics((prev) => prev.map((item) => item.category?.id === folderId ? { ...item, category: null } : item));
       if (activeFolderId === folderId) {
         setActiveFolderId(null);
       }
@@ -369,7 +351,7 @@ export default function FollowingTitlesPanel() {
       setAllComics((prev) => prev.map((item) => {
         if (item.comic.id === comicId) {
           const matchedFolder = categoryId ? folders.find((folder) => folder.id === categoryId) || null : null;
-          return { ...item, category: matchedFolder as any };
+          return { ...item, category: matchedFolder ?? null };
         }
         return item;
       }));
@@ -545,7 +527,7 @@ export default function FollowingTitlesPanel() {
                             role="option"
                             aria-selected={isSelected}
                             className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
-                            onClick={() => toggleCheckbox(type, setSelectedTypes)}
+                            onClick={() => setSelectedTypes((prev) => toggleArrayItem(prev, type))}
                           >
                             <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true">
                               {isSelected && (
@@ -567,7 +549,7 @@ export default function FollowingTitlesPanel() {
               <div className={`fdrop fdrop--tags ${isGenresOpen ? 'is-open' : ''}`} ref={genresRef}>
                 <label className="fdrop__label mono">GENRES</label>
                 <button type="button" className="fdrop__btn" aria-haspopup="listbox" aria-expanded={isGenresOpen} onClick={() => setIsGenresOpen(!isGenresOpen)}>
-                  <span className="fdrop__value">{getGenresDisplayValue()}</span>
+                  <span className="fdrop__value">{getGenresDisplayValue(selectedGenres, selectedFormats)}</span>
                   <svg className="fdrop__caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="6 9 12 15 18 9"></polyline>
                   </svg>
@@ -633,7 +615,7 @@ export default function FollowingTitlesPanel() {
                                         <button
                                           type="button"
                                           className={`tagpop__item ${tagClass}`}
-                                          onClick={() => toggleTag(genre, true)}
+                                          onClick={() => setSelectedGenres((prev) => toggleArrayItem(prev, genre))}
                                         >
                                           <span className="tagpop__check" aria-hidden="true">
                                             {isSelected && (
@@ -664,7 +646,7 @@ export default function FollowingTitlesPanel() {
                                         <button
                                           type="button"
                                           className={`tagpop__item ${tagClass}`}
-                                          onClick={() => toggleTag(format, false)}
+                                          onClick={() => setSelectedFormats((prev) => toggleArrayItem(prev, format))}
                                         >
                                           <span className="tagpop__check" aria-hidden="true">
                                             {isSelected && (
@@ -709,7 +691,7 @@ export default function FollowingTitlesPanel() {
                             role="option"
                             aria-selected={isSelected}
                             className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
-                            onClick={() => toggleCheckbox(demo, setSelectedDemographics)}
+                            onClick={() => setSelectedDemographics((prev) => toggleArrayItem(prev, demo))}
                           >
                             <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true">
                               {isSelected && (
@@ -747,7 +729,7 @@ export default function FollowingTitlesPanel() {
                             role="option"
                             aria-selected={isSelected}
                             className={`fdrop__item ${isSelected ? 'is-active' : ''}`}
-                            onClick={() => toggleCheckbox(status, setSelectedStatuses)}
+                            onClick={() => setSelectedStatuses((prev) => toggleArrayItem(prev, status))}
                           >
                             <span className={`fdrop__check fdrop__check--box ${isSelected ? 'is-checked' : ''}`} aria-hidden="true">
                               {isSelected && (
@@ -839,8 +821,28 @@ export default function FollowingTitlesPanel() {
         )}
 
         {totalPages > 1 && (
-          <div className="pagination-wrapper" style={{ marginTop: '20px' }}>
-            <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={(page) => setCurrentPage(page)} />
+          <div className="upagination">
+            <button
+              type="button"
+              className="upagination__btn"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="upagination__info">
+              <span className="upagination__current">{currentPage}</span>
+              <span className="upagination__separator">/</span>
+              <span className="upagination__total">{totalPages}</span>
+            </span>
+            <button
+              type="button"
+              className="upagination__btn"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
         )}
       </div>

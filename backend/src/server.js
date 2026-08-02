@@ -7,6 +7,7 @@ import interactionRoutes from './routes/interactionRoutes.js';
 import commentRoutes from './routes/commentRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import moderatorRoutes from './routes/moderatorRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import errorHandler from './middlewares/errorMiddleware.js';
 import chaptersRoutes from './routes/chaptersRoutes.js';
@@ -28,6 +29,7 @@ app.use('/comics', interactionRoutes);
 app.use('/comments', commentRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/admin', adminRoutes);
+app.use('/moderator', moderatorRoutes);
 app.use('/upload', uploadRoutes);
 
 app.use('/api/auth', authRoutes);
@@ -37,6 +39,7 @@ app.use('/api/comics', interactionRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/moderator', moderatorRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/chapters', chaptersRoutes);
 

@@ -52,8 +52,8 @@ export default function UploadedChaptersPanel() {
     try {
       const items = await chapterContributorApi.listMyContributions();
       setContributions(items || []);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load contributions');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load contributions');
     } finally {
       setLoading(false);
     }
@@ -279,8 +279,8 @@ export default function UploadedChaptersPanel() {
       setIsZip(false);
       setShowForm(false);
       await loadContributions();
-    } catch (submitError: any) {
-      setFormError(submitError?.message || 'Chapter upload failed.');
+    } catch (submitError: unknown) {
+      setFormError(submitError instanceof Error ? submitError.message : 'Chapter upload failed.');
     } finally {
       setIsSaving(false);
     }
@@ -334,40 +334,40 @@ export default function UploadedChaptersPanel() {
         {/* Thanh Bộ lọc (Filters) - Chỉ hiển thị khi showForm là false */}
         {!showForm && (
           <div className="nfilters">
-            <div className="useg">
-              <button 
-                type="button"
-                className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
-                onClick={() => setActiveTab('pending')}
-              >
-                <span className='useg__count mono'>{contributions.filter(c => c.status === 'pending').length}</span>
-                Pending
-              </button>
-              <button 
-                type="button"
-                className={`useg__btn ${activeTab === 'accept' ? 'is-on' : ''}`}
-                onClick={() => setActiveTab('accept')}
-              >
-                <span className='useg__count mono'>{contributions.filter(c => c.status === 'accept').length}</span>
-                Accepted
-              </button>
-              <button 
-                type="button"
-                className={`useg__btn ${activeTab === 'reject' ? 'is-on' : ''}`}
-                onClick={() => setActiveTab('reject')}
-              >
-                <span className='useg__count mono'>{contributions.filter(c => c.status === 'reject').length}</span>
-                Rejected
-              </button>
-              <button 
-                type="button"
-                className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
-                onClick={() => setActiveTab('all')}
-              >
-                <span className='useg__count mono'>{contributions.length}</span>
-                All
-              </button>
-            </div>
+              <div className="useg">
+                <button 
+                  type="button"
+                  className={`useg__btn ${activeTab === 'pending' ? 'is-on' : ''}`}
+                  onClick={() => setActiveTab('pending')}
+                >
+                  <span className='useg__count mono'>{contributions.filter(c => c.status === 'pending').length}</span>
+                  Pending
+                </button>
+                <button 
+                  type="button"
+                  className={`useg__btn ${activeTab === 'accept' ? 'is-on' : ''}`}
+                  onClick={() => setActiveTab('accept')}
+                >
+                  <span className='useg__count mono'>{contributions.filter(c => c.status === 'accept').length}</span>
+                  Accepted
+                </button>
+                <button 
+                  type="button"
+                  className={`useg__btn ${activeTab === 'reject' ? 'is-on' : ''}`}
+                  onClick={() => setActiveTab('reject')}
+                >
+                  <span className='useg__count mono'>{contributions.filter(c => c.status === 'reject').length}</span>
+                  Rejected
+                </button>
+                <button 
+                  type="button"
+                  className={`useg__btn ${activeTab === 'all' ? 'is-on' : ''}`}
+                  onClick={() => setActiveTab('all')}
+                >
+                  <span className='useg__count mono'>{contributions.length}</span>
+                  All
+                </button>
+              </div>
           </div>
         )}
 

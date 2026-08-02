@@ -86,6 +86,60 @@ export async function getAdminChapters(req, res, next) {
   }
 }
 
+export async function getModerationComicDetail(req, res, next) {
+  try {
+    const { comicId } = req.params;
+    const comic = await db.get(
+      `SELECT c.id, c.name, c.description, c.types, c.contentRating,
+              c.demographic, c.rating, c.coverUrl, c.view, c.follow, 
+              c.releaseStatus, c.visibility, c.url, c.releasingYear, 
+              c.source, a.name AS authorName, ar.name AS artistName, c.status
+       FROM comics c
+       LEFT JOIN author a ON c.authorId = a.id
+       LEFT JOIN artist ar ON c.artistId = ar.id
+       WHERE c.id = ?`,
+      [comicId]
+    );
+
+    if (!comic) {
+      return res.status(404).json({ status: 'fail', message: 'Comic not found' });
+    }
+
+    const [genres, formats] = await Promise.all([
+      db.all(`SELECT g.name FROM genres g JOIN comic_genres cg ON g.id = cg.genreId WHERE cg.comicId = ?`, [comic.id]),
+      db.all(`SELECT f.name FROM formats f JOIN comic_formats cf ON f.id = cf.formatId WHERE cf.comicId = ?`, [comic.id]),
+    ]);
+
+    return res.json({
+      status: 'success',
+      data: {
+        id: comic.id,
+        name: comic.name,
+        description: comic.description,
+        coverUrl: comic.coverUrl,
+        source: comic.source,
+        types: comic.types,
+        contentRating: comic.contentRating,
+        demographic: comic.demographic,
+        rating: comic.rating,
+        view: comic.view,
+        follow: comic.follow,
+        releaseStatus: comic.releaseStatus,
+        status: comic.status,
+        visibility: comic.visibility,
+        url: comic.url,
+        releasingYear: comic.releasingYear,
+        author: comic.authorName,
+        artist: comic.artistName,
+        genres: genres.map((g) => g.name),
+        formats: formats.map((f) => f.name),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function reviewSubmission(req, res, next) {
   try {
     const { targetType, targetId } = req.params;

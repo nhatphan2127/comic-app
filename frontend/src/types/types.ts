@@ -8,6 +8,20 @@ export interface User {
     bio: string | null;
     socialLinks: string | null;
     role?: string | null;
+    // Optional aggregated stats returned by some APIs
+    stats?: {
+        titles?: number;
+        groups?: number;
+        chapters?: number;
+        comments?: number;
+        likes?: number;
+    } | null;
+    // Backwards-compatible individual count fields
+    titlesCount?: number;
+    groupsCount?: number;
+    chaptersCount?: number;
+    commentsCount?: number;
+    likesCount?: number;
 }
 
 export interface UserProfile extends User {
@@ -90,12 +104,11 @@ export interface Notification {
 }
 
 export interface ChapterDetail extends Chapter {
-    chapterImages: Array<{
-        id: string;
-        chapterId: string;
-        urlPath: string;
-        pageNumber: number;
-    }>;
+    images?: ChapterImage[];
+}
+
+export interface ComicDetail extends Comic {
+    chapters?: Chapter[];
 }
 
 export interface Comic {
@@ -177,7 +190,7 @@ export interface FollowingComic {
     userId: string;
     updatedAt: string;
     comic: Comic;
-    category: UserFollowingCategory
+    category: UserFollowingCategory | null;
     readedChapter: number
     totalChapters: number
 }
@@ -185,6 +198,12 @@ export interface FollowingComic {
 export interface UserFollowingCategory {
     id: string;
     category: string;
+}
+
+export interface DashboardResponse {
+    users: AdminUser[];
+    comments: Comment[];
+    autoAccept: boolean;
 }
 
 export interface HistoryItem {

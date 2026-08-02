@@ -8,20 +8,20 @@ interface UserComment {
   id: string;
   content: string;
   createdAt: string;
-  likes: number;
-  dislikes: number;
-  targetName: string;
-  targetUrl: string;
-  targetCoverUrl: string;
-  type: 'comic' | 'chapter';
-  replyCount: number;
+  likes?: number;
+  dislikes?: number;
+  targetName?: string;
+  targetUrl?: string;
+  targetCoverUrl?: string | null;
+  type?: 'comic' | 'chapter';
+  replyCount?: number;
 }
 
 export default function CommentsPanel() {
   const [comments, setComments] = useState<UserComment[]>([]);
   const [sortBy, setSortBy] = useState<'recent' | 'most-liked' | 'most-replies'>('recent');
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  useAuth();
 
   useEffect(() => {
     fetchUserComments();
@@ -38,7 +38,7 @@ export default function CommentsPanel() {
       setLoading(false);
     }
   };
-
+  
   return (
     <div className="user-content">
       <div className="uview">
@@ -79,16 +79,16 @@ export default function CommentsPanel() {
               <li className="crow" key={comment.id}>
                 <a 
                   className="crow__poster" 
-                  href={`/title/${comment.targetUrl}?cm_id=${comment.id}`} 
+                  href={`/comics/${comment.targetUrl}?cm_id=${comment.id}`} 
                   aria-label={comment.targetName}
                 >
-                  <div className="poster poster--sm">
-                    <img alt="" loading="lazy" src={getImage(comment.targetCoverUrl)} />
+                    <div className="poster poster--sm">
+                    <img alt="" loading="lazy" src={getImage(comment.targetCoverUrl ?? undefined)} />
                   </div>
                 </a>
                 <div className="crow__body">
                   <div className="crow__head">
-                    <a className="crow__title" href={`/title/${comment.targetUrl}?cm_id=${comment.id}`}>
+                    <a className="crow__title" href={`/comics/${comment.targetUrl}?cm_id=${comment.id}`}>
                       {comment.targetName}
                     </a>
                   </div>

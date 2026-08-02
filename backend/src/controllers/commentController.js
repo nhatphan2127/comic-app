@@ -226,6 +226,97 @@ export async function deleteChapterComment(req, res, next) {
         next(error);
     }
 }
+export async function getSingleComment(req, res, next) {
+    try {
+        const { commentId } = req.params;
+        const userId = req.user?.id || null;
+
+        // 1. Xác định xem ID này thuộc về comic_comments hay chapter_comments
+        let isComicComment = true;
+        let commentExists = await db.get('SELECT id FROM comic_comments WHERE id = ?', [commentId]);
+        
+        if (!commentExists) {
+            commentExists = await db.get('SELECT id FROM chapter_comments WHERE id = ?', [commentId]);
+            if (!commentExists) {
+                return res.status(404).json({ status: 'fail', message: 'Comment not found' });
+            }
+            isComicComment = false;
+        }
+
+        let rawComments = [];
+
+        // 2. Chạy truy vấn đệ quy lấy comment mục tiêu và tất cả các comment con của nó
+        if (isComicComment) {
+            rawComments = await db.all(
+                `WITH RECURSIVE
+                    comment_tree AS (
+                        -- Phần khởi tạo (Anchor): Lấy chính comment mục tiêu
+                        SELECT cc.id, cc.comicId, NULL AS chapterId, cc.userId, cc.content, cc.parentCommentId, cc.createdAt, cc.updatedAt, cc.likes, cc.dislikes, u.displayName, u.avatar,
+                               CASE WHEN r.reactionType IS NULL THEN 'none' ELSE r.reactionType END AS userReaction
+                        FROM comic_comments cc
+                        LEFT JOIN users u ON cc.userId = u.id
+                        LEFT JOIN comic_comment_reactions r ON r.commentId = cc.id AND r.userId = ?
+                        WHERE cc.id = ?
+
+                        UNION ALL
+
+                        -- Phần đệ quy (Recursive): Tìm tất cả các comment con trực tiếp hoặc gián tiếp
+                        SELECT cc.id, cc.comicId, NULL AS chapterId, cc.userId, cc.content, cc.parentCommentId, cc.createdAt, cc.updatedAt, cc.likes, cc.dislikes, u.displayName, u.avatar,
+                               CASE WHEN r.reactionType IS NULL THEN 'none' ELSE r.reactionType END AS userReaction
+                        FROM comic_comments cc
+                        LEFT JOIN users u ON cc.userId = u.id
+                        LEFT JOIN comic_comment_reactions r ON r.commentId = cc.id AND r.userId = ?
+                        INNER JOIN comment_tree ct ON cc.parentCommentId = ct.id
+                    )
+                    SELECT * FROM comment_tree`,
+                [userId, commentId, userId]
+            );
+        } else {
+            rawComments = await db.all(
+                `WITH RECURSIVE
+                    comment_tree AS (
+                        -- Phần khởi tạo (Anchor): Lấy chính comment mục tiêu
+                        SELECT cc.id, NULL AS comicId, cc.chapterId, cc.userId, cc.content, cc.parentCommentId, cc.createdAt, cc.updatedAt, cc.likes, cc.dislikes, u.displayName, u.avatar,
+                               CASE WHEN r.reactionType IS NULL THEN 'none' ELSE r.reactionType END AS userReaction
+                        FROM chapter_comments cc
+                        LEFT JOIN users u ON cc.userId = u.id
+                        LEFT JOIN chapter_comment_reactions r ON r.commentId = cc.id AND r.userId = ?
+                        WHERE cc.id = ?
+
+                        UNION ALL
+
+                        -- Phần đệ quy (Recursive): Tìm tất cả các comment con trực tiếp hoặc gián tiếp
+                        SELECT cc.id, NULL AS comicId, cc.chapterId, cc.userId, cc.content, cc.parentCommentId, cc.createdAt, cc.updatedAt, cc.likes, cc.dislikes, u.displayName, u.avatar,
+                               CASE WHEN r.reactionType IS NULL THEN 'none' ELSE r.reactionType END AS userReaction
+                        FROM chapter_comments cc
+                        LEFT JOIN users u ON cc.userId = u.id
+                        LEFT JOIN chapter_comment_reactions r ON r.commentId = cc.id AND r.userId = ?
+                        INNER JOIN comment_tree ct ON cc.parentCommentId = ct.id
+                    )
+                    SELECT * FROM comment_tree`,
+                [userId, commentId, userId]
+            );
+        }
+
+        // 3. Sử dụng helper dựng lại cấu trúc cây
+        const commentsTree = buildCommentTree(rawComments, 'best');
+        const targetComment = commentsTree.length > 0 ? commentsTree[0] : null;
+
+        if (!targetComment) {
+            return res.status(404).json({ status: 'fail', message: 'Comment not found' });
+        }
+
+        return res.json({
+            status: 'success',
+            data: {
+                comment: targetComment,
+                type: isComicComment ? 'comic' : 'chapter'
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+}
 
 export async function reactChapterComment(req, res, next) {
     try {
@@ -405,13 +496,12 @@ export async function getUserComments(req, res, next) {
         let { sortBy } = req.query;
         const safeSortBy = ['recent', 'most-liked', 'most-replies'].includes(sortBy) ? sortBy : 'recent';
 
-        // Query both comic and chapter comments
-        // Note: For 'most-replies', we'll need a subquery to count children
         const query = `
             SELECT * FROM (
                 SELECT 
                     cc.id, cc.content, cc.createdAt, cc.likes, cc.dislikes,
                     c.name AS targetName, c.url AS targetUrl, c.coverUrl AS targetCoverUrl,
+                    NULL AS chapterId, -- Comic comment không có chapterId
                     'comic' as type,
                     (SELECT COUNT(*) FROM comic_comments WHERE parentCommentId = cc.id) as replyCount
                 FROM comic_comments cc
@@ -423,6 +513,7 @@ export async function getUserComments(req, res, next) {
                 SELECT 
                     cc.id, cc.content, cc.createdAt, cc.likes, cc.dislikes,
                     c.name AS targetName, c.url AS targetUrl, c.coverUrl AS targetCoverUrl,
+                    cc.chapterId AS chapterId, -- Lấy chapterId để làm link nhảy trực tiếp
                     'chapter' as type,
                     (SELECT COUNT(*) FROM chapter_comments WHERE parentCommentId = cc.id) as replyCount
                 FROM chapter_comments cc

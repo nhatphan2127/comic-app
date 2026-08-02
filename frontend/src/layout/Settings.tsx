@@ -1,6 +1,6 @@
 // src/components/Settings.tsx
 import { useState, useEffect, useRef } from 'react';
-import { Sparkle, Moon, Sun, X, ChevronRight } from 'lucide-react';
+import { Sparkle, Moon, Sun, X } from 'lucide-react';
 import { useTheme, type Theme } from '../context/ThemeContext';
 // import '../assets/styles/Settings.css';
 import { THEMES, FILTER_OPTIONS } from '../types/data';

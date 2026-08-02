@@ -3,14 +3,14 @@ import { Upload, X } from 'lucide-react';
 import type { ComicContributor } from '../../../types/types';
 import { API_UPLOADS, comicApi, comicContributorApi } from '../../../services/api';
 import { ComicRow } from '../../../components/UploadComicCard';
-import { slugify } from '../../../helpers/utils';
+import { slugify, formatDisplayValue } from '../../../helpers/utils';
 
 import '../../../assets/styles/ComicForm.css';
 
 const TYPE_OPTIONS = ['Manga', 'Manhwa', 'Manhua', 'Other'];
-const DEMOGRAPHIC_OPTIONS = ['Josei', 'Seinen', 'Shoujo', 'Shounen'];
-const STATUS_OPTIONS = ['Releasing', 'Finished', 'On hiatus', 'Discontinued'];
-const CONTENT_FILTER = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'];
+export const DEMOGRAPHIC_OPTIONS = ['Josei', 'Seinen', 'Shoujo', 'Shounen'];
+export const STATUS_OPTIONS = ['Releasing', 'Finished', 'On hiatus', 'Discontinued'];
+export const CONTENT_FILTER = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'];
 
 const ALL_GENRES = [
   'Action', 'Adult', 'Adventure', 'Boys Love', 'Comedy', 'Crime', 'Drama', 'Ecchi',
@@ -38,20 +38,6 @@ const createEmptyFormData = () => ({
   otherNames: '',
   correspondingCountries: '',
 });
-
-const formatDisplayValue = (value?: string, options: string[] = []) => {
-  if (!value) return '';
-  const normalized = value.toString().trim();
-  const matchedOption = options.find((option) => option.toLowerCase() === normalized.toLowerCase());
-  if (matchedOption) {
-    return matchedOption;
-  }
-
-  return normalized
-    .split(' ')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
 
 // Định nghĩa Component Dropdown dùng chung cấu trúc fdrop chính xác của bạn
 interface CustomFormDropdownProps {
@@ -199,8 +185,8 @@ export default function ComicSuggestionPanel() {
       setEditingComicId(contrib.comicId);
       setShowForm(true);
       setStatusMessage(null);
-    } catch (err: any) {
-      setStatusMessage(err?.message || 'Failed to load comic details.');
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : 'Failed to load comic details.');
     }
   }, []);
 
@@ -230,8 +216,8 @@ export default function ComicSuggestionPanel() {
     try {
       const items = await comicContributorApi.listMyContributions();
       setContributions(items || []);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load contributions');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load contributions');
     } finally {
       setLoading(false);
     }
@@ -249,11 +235,11 @@ export default function ComicSuggestionPanel() {
     }
   };
 
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: keyof ReturnType<typeof createEmptyFormData>, value: string | number | File | null) => {
     setFormData((prev) => {
-      const updated = { ...prev, [field]: value };
+      const updated = { ...prev, [field]: value } as ReturnType<typeof createEmptyFormData>;
       if (field === 'name') {
-        updated.url = slugify(value);
+        updated.url = slugify(value as string);
       }
       return updated;
     });
@@ -332,8 +318,8 @@ export default function ComicSuggestionPanel() {
       resetForm();
       setActiveTab('pending');
       await loadContributions();
-    } catch (error: any) {
-      setStatusMessage(error?.message || 'Failed to save comic.');
+    } catch (error: unknown) {
+      setStatusMessage(error instanceof Error ? error.message : 'Failed to save comic.');
     } finally {
       setIsSaving(false);
     }

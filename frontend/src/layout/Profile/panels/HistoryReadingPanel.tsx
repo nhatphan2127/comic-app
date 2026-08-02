@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import HistoryCard from '../../../components/HistoryCard';
-import { userApi, API_UPLOADS } from '../../../services/api';
+import { userApi } from '../../../services/api';
 import type { HistoryItem } from '../../../types/types';
 import { formatTimeAgo } from '../../../helpers/formatDate';
 import { getImage } from '../../../helpers/getImage';

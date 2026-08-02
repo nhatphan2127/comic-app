@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
 import { formatTimeAgo } from '../helpers/formatDate';
 import { API_UPLOADS, comicApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,8 @@ export default function MangaDetailLayout() {
   const navigate = useNavigate();
   const { comicUrl } = useParams<{ comicUrl: string }>();
   const { isLoggedIn } = useAuth();
+  const [searchParams] = useSearchParams();
+  const cmId = searchParams.get('cm_id') || undefined;
 
   // Auth modal state
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
@@ -592,7 +594,7 @@ export default function MangaDetailLayout() {
             </section>
 
             {/* COMMENTS SECTION */}
-            <CommentsSection targetId={comic.id} type="comic" />
+            <CommentsSection id={comic.id} targetId={cmId} type="comic"  />
           </div>
         </div>
       </article>

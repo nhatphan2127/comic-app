@@ -41,12 +41,12 @@ export default function ProfileHeader({ user, loading = false }: ProfileHeaderPr
   const initials = getInitials(user?.displayName, user?.username);
   const avatarBgColor = getAvatarBg(displayName);
 
-  // Thêm đầy đủ 6 chỉ số thống kê tương ứng với mẫu giao diện
+  // Thêm đầy đủ 4 chỉ số thống kê tương ứng với mẫu giao diện
   const stats = [
-    { label: 'Comics', value: (user as any)?.stats?.titles ?? (user as any)?.titlesCount ?? 0 },
-    { label: 'Chapters', value: (user as any)?.stats?.chapters ?? (user as any)?.chaptersCount ?? 0 },
-    { label: 'Comments', value: (user as any)?.stats?.comments ?? (user as any)?.commentsCount ?? 0 },
-    { label: 'Likes', value: (user as any)?.stats?.likes ?? (user as any)?.likesCount ?? 0 },
+    { label: 'Titles', value: user?.stats?.titles ?? user?.titlesCount ?? 0 },
+    { label: 'Chapters', value: user?.stats?.chapters ?? user?.chaptersCount ?? 0 },
+    { label: 'Comments', value: user?.stats?.comments ?? user?.commentsCount ?? 0 },
+    { label: 'Reactions', value: user?.stats?.likes ?? user?.likesCount ?? 0 },
   ];
 
   return (

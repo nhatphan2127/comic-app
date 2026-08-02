@@ -1,14 +1,15 @@
 import db from '../config/database.js';
 import { v4 as uuidv4 } from 'uuid';
+import * as userModel from '../models/userModel.js';
 
 export async function getProfile(req, res, next) {
   try {
-    const user = await db.get('SELECT id, avatar, displayName, username, email, bio, socialLinks, role FROM users WHERE id = ?', [req.user.id]);
+    const user = await userModel.findUserById(req.user.id);
     if (!user) {
       return res.status(404).json({ status: 'fail', message: 'User not found' });
     }
 
-    const preferences = await db.get('SELECT theme, filter FROM user_preferences WHERE userId = ?', [req.user.id]);
+    const preferences = await userModel.getUserPreferences(req.user.id);
     user.preference = preferences || { theme: 'light', filter: 1 };
 
     return res.json({ status: 'success', data: user });
@@ -20,17 +21,14 @@ export async function getProfile(req, res, next) {
 export async function updateProfile(req, res, next) {
   try {
     const { avatar, displayName, email, bio, socialLinks } = req.body;
-    const user = await db.get('SELECT id FROM users WHERE id = ?', [req.user.id]);
+    const user = await userModel.findUserById(req.user.id);
     if (!user) {
       return res.status(404).json({ status: 'fail', message: 'User not found' });
     }
 
-    await db.run(
-      `UPDATE users SET avatar = COALESCE(?, avatar), displayName = COALESCE(?, displayName), email = COALESCE(?, email), bio = COALESCE(?, bio), socialLinks = COALESCE(?, socialLinks), updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-      [avatar, displayName, email, bio, socialLinks, req.user.id]
-    );
+    const updatedUser = await userModel.updateUser(req.user.id, { avatar, displayName, email, bio, socialLinks });
 
-    return res.json({ status: 'success', data: { avatar, displayName, email, bio, socialLinks } });
+    return res.json({ status: 'success', data: updatedUser });
   } catch (error) {
     next(error);
   }
@@ -52,16 +50,12 @@ export async function updatePassword(req, res, next) {
       return res.status(400).json({ status: 'fail', message: 'Password must be at least 6 characters' });
     }
 
-    const user = await db.get('SELECT id FROM users WHERE id = ?', [req.user.id]);
+    const user = await userModel.findUserById(req.user.id);
     if (!user) {
       return res.status(404).json({ status: 'fail', message: 'User not found' });
     }
 
-    // TODO: Hash new password with bcrypt.hash(newPassword, 10) before saving
-    await db.run(
-      `UPDATE users SET password = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-      [newPassword, req.user.id]
-    );
+    await userModel.updateUserPassword(req.user.id, newPassword);
 
     return res.json({ status: 'success', message: 'Password updated successfully' });
   } catch (error) {
@@ -72,14 +66,7 @@ export async function updatePassword(req, res, next) {
 export async function updatePreferences(req, res, next) {
   try {
     const { theme, filter } = req.body;
-    const pref = await db.get('SELECT userId FROM user_preferences WHERE userId = ?', [req.user.id]);
-    if (pref) {
-      await db.run(`UPDATE user_preferences SET theme = COALESCE(?, theme), filter = COALESCE(?, filter) WHERE userId = ?`, [theme, filter, req.user.id]);
-    } else {
-      await db.run(`INSERT INTO user_preferences (userId, theme, filter) VALUES (?, ?, ?)`, [req.user.id, theme || 'light', filter ?? 1]);
-    }
-
-    const updated = await db.get('SELECT theme, filter FROM user_preferences WHERE userId = ?', [req.user.id]);
+    const updated = await userModel.updateUserPreferences(req.user.id, { theme, filter });
     return res.json({ status: 'success', data: updated });
   } catch (error) {
     next(error);

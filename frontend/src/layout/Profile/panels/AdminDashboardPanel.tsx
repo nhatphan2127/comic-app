@@ -1,21 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { adminApi, comicApi, chapterApi } from '../../../services/api';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { adminApi, comicApi, chapterApi, API_UPLOADS } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import { formatTimeAgo } from '../../../helpers/formatDate';
-import { parsePageNumber } from '../../../helpers/utils';
-import type { Comic, Chapter, Comment, AdminUser } from '../../../types/types';
+import { parsePageNumber, formatDisplayValue } from '../../../helpers/utils';
+import { DEMOGRAPHIC_OPTIONS, STATUS_OPTIONS } from './ComicSuggestionPanel';
+import type { Comic, Chapter, Comment, AdminUser, ComicDetail, ChapterDetail } from '../../../types/types';
 import '../../../assets/styles/AdminDashboardPanel.css';
 
 const ITEMS_PER_PAGE = 12;
-
-interface ComicDetail extends Comic {
-  chapters?: Chapter[];
-}
-
-interface ChapterDetail extends Chapter {
-  images: any[];
-}
 
 export default function AdminDashboardPanel() {
   const { user, isLoggedIn } = useAuth();
@@ -77,8 +70,8 @@ export default function AdminDashboardPanel() {
       setAutoAccept(Boolean(dashboardRes?.autoAccept));
       setComics(comicsRes || []);
       setChapters(chaptersRes || []);
-    } catch (err: any) {
-      setError(err?.message || 'Unable to load dashboard');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to load dashboard');
     } finally {
       setLoading(false);
     }
@@ -96,8 +89,8 @@ export default function AdminDashboardPanel() {
     try {
       await adminApi.toggleUserBan(userId, !isBanned);
       await loadData();
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update user ban status');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to update user ban status');
     }
   };
 
@@ -105,8 +98,8 @@ export default function AdminDashboardPanel() {
     try {
       await adminApi.toggleCommentBan(targetType, commentId, !isBanned);
       await loadData();
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update comment ban status');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to update comment ban status');
     }
   };
 
@@ -114,8 +107,8 @@ export default function AdminDashboardPanel() {
     try {
       await adminApi.updateComicVisibility(comicId, visibility);
       await loadData();
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update comic visibility');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to update comic visibility');
     }
   };
 
@@ -123,8 +116,8 @@ export default function AdminDashboardPanel() {
     try {
       await adminApi.updateChapterVisibility(chapterId, visibility);
       await loadData();
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update chapter visibility');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to update chapter visibility');
     }
   };
 
@@ -132,8 +125,8 @@ export default function AdminDashboardPanel() {
     try {
       const response = await adminApi.setAutoAccept(!autoAccept);
       setAutoAccept(Boolean(response.enabled));
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update auto-accept');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to update auto-accept');
     }
   };
 
@@ -142,7 +135,7 @@ export default function AdminDashboardPanel() {
     try {
       const detail = await comicApi.getByUrl(comic.url);
       setComicDetail(detail);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading comic detail:', err);
     } finally {
       setPreviewLoading(false);
@@ -161,7 +154,7 @@ export default function AdminDashboardPanel() {
         return nA - nB;
       }) : [];
       setChapterDetail({ ...detail, images });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading chapter detail:', err);
     } finally {
       setPreviewLoading(false);
@@ -203,7 +196,7 @@ export default function AdminDashboardPanel() {
 
   // Filter items based on search and visibility/ban status
   const filteredItems = useMemo(() => {
-    let items: any[] = [];
+    let items: (AdminUser | Comment | Comic | Chapter)[] = [];
 
     if (activeTab === 'user') {
       items = users;
@@ -216,39 +209,50 @@ export default function AdminDashboardPanel() {
     }
 
     // Filter by visibility/ban status
-    if (activeTab === 'user' || activeTab === 'comment') {
+    if (activeTab === 'user') {
+      const userItems = items as AdminUser[];
       if (activeVisibility === 'hidden') {
-        items = items.filter((i) => i.isBanned);
+        items = userItems.filter((i) => i.isBanned);
       } else if (activeVisibility === 'public') {
-        items = items.filter((i) => !i.isBanned);
+        items = userItems.filter((i) => !i.isBanned);
       }
-    } else if (activeTab === 'comic' || activeTab === 'chapter') {
+    } else if (activeTab === 'comment') {
+      const commentItems = items as Comment[];
+      if (activeVisibility === 'hidden') {
+        items = commentItems.filter((i) => i.isBanned);
+      } else if (activeVisibility === 'public') {
+        items = commentItems.filter((i) => !i.isBanned);
+      }
+    } else if (activeTab === 'comic') {
+      const comicItems = items as Comic[];
       if (activeVisibility !== 'all') {
-        items = items.filter((i) => i.visibility === activeVisibility);
+        items = comicItems.filter((i) => i.visibility === activeVisibility);
+      }
+    } else if (activeTab === 'chapter') {
+      const chapterItems = items as Chapter[];
+      if (activeVisibility !== 'all') {
+        items = chapterItems.filter((i) => i.visibility === activeVisibility);
       }
     }
 
     // Filter by search
     if (searchInput.trim()) {
       const query = searchInput.toLowerCase();
-      items = items.filter((item) => {
-        if (activeTab === 'user') {
-          return (
-            (item.username || '').toLowerCase().includes(query) ||
-            (item.displayName || '').toLowerCase().includes(query)
-          );
-        } else if (activeTab === 'comment') {
-          return (item.content || '').toLowerCase().includes(query);
-        } else if (activeTab === 'comic') {
-          return (item.name || '').toLowerCase().includes(query);
-        } else if (activeTab === 'chapter') {
-          return (
-            (item.title || '').toLowerCase().includes(query) ||
-            String(item.chapterNumber).includes(query)
-          );
-        }
-        return false;
-      });
+      if (activeTab === 'user') {
+        items = (items as AdminUser[]).filter((item) =>
+          (item.username || '').toLowerCase().includes(query) ||
+          (item.displayName || '').toLowerCase().includes(query)
+        );
+      } else if (activeTab === 'comment') {
+        items = (items as Comment[]).filter((item) => (item.content || '').toLowerCase().includes(query));
+      } else if (activeTab === 'comic') {
+        items = (items as Comic[]).filter((item) => (item.name || '').toLowerCase().includes(query));
+      } else if (activeTab === 'chapter') {
+        items = (items as Chapter[]).filter((item) =>
+          (item.title || '').toLowerCase().includes(query) ||
+          String(item.chapterNumber).includes(query)
+        );
+      }
     }
 
     return items;
@@ -302,6 +306,7 @@ export default function AdminDashboardPanel() {
                 setSearchInput('');
               }}
             >
+              <span className="useg__count mono">{users.length}</span>
               Users
             </button>
             <button
@@ -313,6 +318,7 @@ export default function AdminDashboardPanel() {
                 setSearchInput('');
               }}
             >
+              <span className="useg__count mono">{comments.length}</span>
               Comments
             </button>
             <button
@@ -324,6 +330,7 @@ export default function AdminDashboardPanel() {
                 setSearchInput('');
               }}
             >
+              <span className="useg__count mono">{comics.length}</span>
               Comics
             </button>
             <button
@@ -335,6 +342,7 @@ export default function AdminDashboardPanel() {
                 setSearchInput('');
               }}
             >
+              <span className="useg__count mono">{chapters.length}</span>
               Chapters
             </button>
           </div>
@@ -347,16 +355,16 @@ export default function AdminDashboardPanel() {
                   className={`useg__btn ${activeVisibility === 'public' ? 'is-on' : ''}`}
                   onClick={() => setActiveVisibility('public')}
                 >
-                  Active
                   <span className="useg__count mono">{counts.active}</span>
+                  Active
                 </button>
                 <button
                   type="button"
                   className={`useg__btn ${activeVisibility === 'hidden' ? 'is-on' : ''}`}
                   onClick={() => setActiveVisibility('hidden')}
                 >
-                  Banned
                   <span className="useg__count mono">{counts.banned}</span>
+                  Banned
                 </button>
               </>
             ) : (
@@ -366,16 +374,16 @@ export default function AdminDashboardPanel() {
                   className={`useg__btn ${activeVisibility === 'public' ? 'is-on' : ''}`}
                   onClick={() => setActiveVisibility('public')}
                 >
-                  Public
                   <span className="useg__count mono">{counts.visible}</span>
+                  Public
                 </button>
                 <button
                   type="button"
                   className={`useg__btn ${activeVisibility === 'hidden' ? 'is-on' : ''}`}
                   onClick={() => setActiveVisibility('hidden')}
                 >
-                  Hidden
                   <span className="useg__count mono">{counts.hidden}</span>
+                  Hidden
                 </button>
               </>
             )}
@@ -384,8 +392,8 @@ export default function AdminDashboardPanel() {
               className={`useg__btn ${activeVisibility === 'all' ? 'is-on' : ''}`}
               onClick={() => setActiveVisibility('all')}
             >
-              All
               <span className="useg__count mono">{allItemsByTab.length}</span>
+              All
             </button>
           </div>
         </div>
@@ -819,25 +827,79 @@ export default function AdminDashboardPanel() {
 
       {/* Comic Preview Modal */}
       {comicDetail && (
-        <div className="modal-overlay" onClick={() => setComicDetail(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="comic-form-container modal-overlay" onClick={() => setComicDetail(null)}>
+          <div className="comic-form-content" onClick={(e) => e.stopPropagation()}>
+            <div className="comic-form-header">
+              <h3 className="comic-form-title">{comicDetail.name}</h3>
+              <button type="button" className="comic-form-close-btn" onClick={() => setComicDetail(null)}>
+                <X size={20} />
+              </button>
+            </div>
             {previewLoading ? (
-              <div className="modal-loading">Loading...</div>
+              <div className="uempty">Loading...</div>
             ) : (
-              <>
-                <div className="modal-header">
-                  <h3>{comicDetail.name}</h3>
-                  <button type="button" onClick={() => setComicDetail(null)}>×</button>
-                </div>
-                <div className="modal-body">
-                  <img src={comicDetail.coverUrl} alt={comicDetail.name} className="modal-image" />
-                  <div className="modal-info">
-                    <p><strong>Types:</strong> {comicDetail.types}</p>
-                    <p><strong>Demographic:</strong> {comicDetail.demographic}</p>
-                    <p><strong>Description:</strong> {comicDetail.description}</p>
+              <div className="comic-form">
+                <div className="comic-form-left">
+                  <div className="form-group">
+                    <label className="form-label">Cover Image</label>
+                    <div className="image-preview">
+                      <img
+                        src={comicDetail.coverUrl.startsWith('http') ? comicDetail.coverUrl : `${API_UPLOADS}${comicDetail.coverUrl}`}
+                        alt={comicDetail.name}
+                        className="preview-img"
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row-2col">
+                    <div className="form-group">
+                      <label className="form-label">Releasing Year</label>
+                      <div className="form-input bg-sf-1">{comicDetail.releasingYear}</div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Status</label>
+                      <div className="form-input bg-sf-1">{formatDisplayValue(comicDetail.releaseStatus, STATUS_OPTIONS)}</div>
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Author</label>
+                    <div className="form-input bg-sf-1">{comicDetail.author || 'N/A'}</div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Artist</label>
+                    <div className="form-input bg-sf-1">{comicDetail.artist || 'N/A'}</div>
                   </div>
                 </div>
-              </>
+                <div className="comic-form-right">
+                  <div className="form-group">
+                    <label className="form-label">Name</label>
+                    <div className="form-input bg-sf-1">{comicDetail.name}</div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Slug</label>
+                    <div className="form-input bg-sf-1">{comicDetail.url}</div>
+                  </div>
+                  <div className="form-row-3col">
+                    <div className="form-group">
+                      <label className="form-label">Type</label>
+                      <div className="form-input bg-sf-1">{comicDetail.types}</div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Demographic</label>
+                      <div className="form-input bg-sf-1">{formatDisplayValue(comicDetail.demographic, DEMOGRAPHIC_OPTIONS)}</div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Content Filter</label>
+                      <div className="form-input bg-sf-1" style={{ textTransform: 'capitalize' }}>{comicDetail.contentRating}</div>
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Description</label>
+                    <div className="form-textarea bg-sf-1" style={{ minHeight: '132px', whiteSpace: 'pre-wrap' }}>
+                      {comicDetail.description}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -845,41 +907,64 @@ export default function AdminDashboardPanel() {
 
       {/* Chapter Preview Modal */}
       {chapterDetail && (
-        <div className="modal-overlay" onClick={() => setChapterDetail(null)}>
-          <div className="modal-content modal-carousel" onClick={(e) => e.stopPropagation()}>
+        <div className="comic-form-container modal-overlay" onClick={() => setChapterDetail(null)}>
+          <div className="comic-form-content" style={{ maxWidth: '800px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="comic-form-header">
+              <h3 className="comic-form-title">{chapterDetail.title}</h3>
+              <button type="button" className="comic-form-close-btn" onClick={() => setChapterDetail(null)}>
+                <X size={20} />
+              </button>
+            </div>
             {previewLoading ? (
-              <div className="modal-loading">Loading...</div>
+              <div className="uempty">Loading...</div>
             ) : chapterDetail.images && chapterDetail.images.length > 0 ? (
-              <>
-                <div className="modal-header">
-                  <h3>{chapterDetail.title}</h3>
-                  <button type="button" onClick={() => setChapterDetail(null)}>×</button>
-                </div>
-                <div className="modal-carousel-body">
-                  <img src={chapterDetail.images[chapterImageIndex]?.url} alt="Chapter page" className="modal-image-full" />
-                  <div className="modal-carousel-info">
-                    {chapterImageIndex + 1} / {chapterDetail.images.length} pages
-                  </div>
-                  <div className="modal-carousel-controls">
-                    <button
-                      type="button"
-                      onClick={() => setChapterImageIndex((i) => Math.max(0, i - 1))}
-                      disabled={chapterImageIndex === 0}
-                    >
-                      <ChevronLeft size={20} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChapterImageIndex((i) => Math.min(chapterDetail.images.length - 1, i + 1))}
-                      disabled={chapterImageIndex === chapterDetail.images.length - 1}
-                    >
-                      <ChevronRight size={20} />
-                    </button>
+              <div className="comic-form">
+                <div className="form-full">
+                  <div className="form-row-2col">
+                    <div className="form-group">
+                      <label className="form-label">Chapter Number</label>
+                      <div className="form-input bg-sf-1">{chapterDetail.chapterNumber}</div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Title</label>
+                      <div className="form-input bg-sf-1">{chapterDetail.title}</div>
+                    </div>
                   </div>
                 </div>
-              </>
+                <div className="form-full">
+                  <label className="form-label">Pages ({chapterImageIndex + 1} / {chapterDetail.images.length})</label>
+                  <div className="modal-carousel-body" style={{ background: 'var(--bg-sf-1)', borderRadius: '8px', padding: '10px', position: 'relative' }}>
+                    <img
+                      src={chapterDetail.images[chapterImageIndex].urlPath.startsWith('http') ? chapterDetail.images[chapterImageIndex].urlPath : `${API_UPLOADS}${chapterDetail.images[chapterImageIndex].urlPath}`}
+                      alt="Chapter page"
+                      className="modal-image-full"
+                      style={{ maxHeight: '60vh', objectFit: 'contain', width: '100%' }}
+                    />
+                    <div className="modal-carousel-controls" style={{ position: 'absolute', top: '50%', left: 0, right: 0, transform: 'translateY(-50%)', display: 'flex', justifyContent: 'space-between', padding: '0 10px', pointerEvents: 'none' }}>
+                      <button
+                        type="button"
+                        className="ubtn ubtn--secondary ubtn--sm"
+                        style={{ pointerEvents: 'auto' }}
+                        onClick={() => setChapterImageIndex((i) => Math.max(0, i - 1))}
+                        disabled={chapterImageIndex === 0}
+                      >
+                        <ChevronLeft size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        className="ubtn ubtn--secondary ubtn--sm"
+                        style={{ pointerEvents: 'auto' }}
+                        onClick={() => setChapterImageIndex((i) => Math.min(chapterDetail.images!.length - 1, i + 1))}
+                        disabled={chapterImageIndex === chapterDetail.images!.length - 1}
+                      >
+                        <ChevronRight size={20} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <div className="modal-loading">No images available</div>
+              <div className="uempty">No images available</div>
             )}
           </div>
         </div>

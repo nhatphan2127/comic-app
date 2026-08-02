@@ -28,8 +28,8 @@ export default function NotificationsPanel() {
     try {
       const items = await notificationApi.list();
       setNotifications(items);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load notifications');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load notifications');
     } finally {
       setLoading(false);
     }

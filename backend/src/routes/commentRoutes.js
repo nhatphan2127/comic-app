@@ -14,6 +14,7 @@ import {
   reactChapterComment,
   removeChapterCommentReaction,
   getUserComments,
+  getSingleComment
 } from '../controllers/commentController.js';
 
 const router = express.Router();
@@ -32,4 +33,6 @@ router.delete('/chapters/:commentId', authenticateToken, deleteChapterComment);
 router.post('/chapters/:commentId/react', authenticateToken, reactChapterComment);
 router.delete('/chapters/:commentId/react', authenticateToken, removeChapterCommentReaction);
 
+
+router.get('/detail/:commentId', getSingleComment);
 export default router;

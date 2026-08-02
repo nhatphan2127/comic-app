@@ -1,19 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { moderationApi, comicApi, chapterApi } from '../../../services/api';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { moderationApi, chapterApi } from '../../../services/api';
 import { API_UPLOADS } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
-import type { Comic, Chapter } from '../../../types/types';
+import type { Comic, Chapter, ComicDetail, ChapterDetail } from '../../../types/types';
 import { formatTimeAgo } from '../../../helpers/formatDate';
+import { formatDisplayValue } from '../../../helpers/utils';
+import { DEMOGRAPHIC_OPTIONS, STATUS_OPTIONS, CONTENT_FILTER } from './ComicSuggestionPanel';
 import '../../../assets/styles/ModerationPanel.css';
+import '../../../assets/styles/ComicForm.css';
+
+const ALL_GENRES = [
+  'Action', 'Adult', 'Adventure', 'Boys Love', 'Comedy', 'Crime', 'Drama', 'Ecchi',
+  'Fantasy', 'Girls Love', 'Harem', 'Hentai', 'Historical', 'Horror', 'Isekai',
+  'Magical Girls', 'Mature', 'Mecha', 'Medical', 'Mystery', 'Philosophical',
+  'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Smut', 'Sports',
+  'Superhero', 'Thriller', 'Tragedy', 'Wuxia'
+];
+
+const ALL_FORMATS = [
+  '4-Koma', 'Adaptation', 'Anthology', 'Award Winning', 'Doujinshi',
+  'Full Color', 'Long Strip', 'Oneshot', 'Web Comic'
+];
 
 interface PreviewState {
   open: boolean;
   type: 'comic' | 'chapter' | null;
   title: string;
-  data: Comic | null;
-  chapter: Chapter | null;
-  images: Array<{ urlPath: string; pageNumber: number }>;
+  comic: ComicDetail | null;
+  chapter: ChapterDetail | null;
   currentImageIndex: number;
   isLoading?: boolean;
 }
@@ -27,7 +42,7 @@ export default function ModerationPanel() {
   const [allItems, setAllItems] = useState<{ comics: Comic[]; chapters: Chapter[] }>({ comics: [], chapters: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<PreviewState>({ open: false, type: null, title: '', data: null, chapter: null, images: [], currentImageIndex: 0 });
+  const [preview, setPreview] = useState<PreviewState>({ open: false, type: null, title: '', comic: null, chapter: null, currentImageIndex: 0 });
 
   // Bộ lọc theo thiết kế của ảnh: Comic/Chapter và Trạng thái
   const [activeTab, setActiveTab] = useState<'comic' | 'chapter'>('comic');
@@ -74,14 +89,14 @@ export default function ModerationPanel() {
         activeTab === 'chapter' ? activeStatus : undefined
       );
       setQueue({ comics: filteredResponse.comics || [], chapters: filteredResponse.chapters || [] });
-      
+
       // Fetch all items (all statuses) for count badges
       const allResponse = await moderationApi.getQueue();
       setAllItems({ comics: allResponse.comics || [], chapters: allResponse.chapters || [] });
-      
+
       setCurrentPage(1); // Reset to first page when status changes
-    } catch (err: any) {
-      setError(err?.message || 'Unable to load moderation queue');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err) || 'Unable to load moderation queue');
     } finally {
       setLoading(false);
     }
@@ -96,28 +111,26 @@ export default function ModerationPanel() {
       await moderationApi.review(targetType, targetId, newStatus);
       // Reload queue to update display
       await loadQueue();
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update submission');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err) || 'Unable to update submission');
     }
   };
 
   const previewComic = async (item: Comic) => {
-    if (!item.url) return;
     setPreview(prev => ({ ...prev, open: true, type: 'comic', isLoading: true }));
     try {
-      const data = await comicApi.getByUrl(item.url);
-      setPreview({ 
-        open: true, 
-        type: 'comic', 
-        title: data.name || 'Comic preview', 
-        data, 
-        chapter: null, 
-        images: [],
+      const data = await moderationApi.getComicDetail(item.id);
+      setPreview({
+        open: true,
+        type: 'comic',
+        title: data.name || 'Comic preview',
+        comic: data,
+        chapter: null,
         currentImageIndex: 0,
         isLoading: false
       });
-    } catch (err: any) {
-      setError(err?.message || 'Unable to preview this comic');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to preview this comic');
       setPreview(prev => ({ ...prev, open: false, isLoading: false }));
     }
   };
@@ -130,14 +143,13 @@ export default function ModerationPanel() {
         open: true,
         type: 'chapter',
         title: response.title || 'Chapter preview',
-        data: null,
+        comic: null,
         chapter: response,
-        images: response.images || [],
         currentImageIndex: 0,
         isLoading: false
       });
-    } catch (err: any) {
-      setError(err?.message || 'Unable to preview this chapter');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unable to preview this chapter');
       setPreview(prev => ({ ...prev, open: false, isLoading: false }));
     }
   };
@@ -209,32 +221,32 @@ export default function ModerationPanel() {
           </button>
         </div>
 
-          <div className="useg">
-            <button 
-              type="button" 
-              className={`useg__btn ${activeStatus === 'pending' ? 'is-on' : ''}`} 
-              onClick={() => handleStatusChange('pending')}
-            >
-              <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => !item.status || item.status.toLowerCase() === 'pending').length}</span>
-              Pending
-            </button>
-            <button 
-              type="button" 
-              className={`useg__btn ${activeStatus === 'accept' ? 'is-on' : ''}`} 
-              onClick={() => handleStatusChange('accept')}
-            >
-              <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'accept').length}</span>
-              Accepted
-            </button>
-            <button 
-              type="button" 
-              className={`useg__btn ${activeStatus === 'reject' ? 'is-on' : ''}`} 
-              onClick={() => handleStatusChange('reject')}
-            >
-              <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'reject').length}</span>
-              Rejected
-            </button>
-          </div>
+        <div className="useg">
+          <button
+            type="button"
+            className={`useg__btn ${activeStatus === 'pending' ? 'is-on' : ''}`}
+            onClick={() => handleStatusChange('pending')}
+          >
+            <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => !item.status || item.status.toLowerCase() === 'pending').length}</span>
+            Pending
+          </button>
+          <button
+            type="button"
+            className={`useg__btn ${activeStatus === 'accept' ? 'is-on' : ''}`}
+            onClick={() => handleStatusChange('accept')}
+          >
+            <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'accept').length}</span>
+            Accepted
+          </button>
+          <button
+            type="button"
+            className={`useg__btn ${activeStatus === 'reject' ? 'is-on' : ''}`}
+            onClick={() => handleStatusChange('reject')}
+          >
+            <span className='useg__count mono'>{allItems[activeTab === 'comic' ? 'comics' : 'chapters'].filter(item => item.status?.toLowerCase() === 'reject').length}</span>
+            Rejected
+          </button>
+        </div>
       </div>
 
       {/* Thanh tìm kiếm real-time */}
@@ -302,28 +314,28 @@ export default function ModerationPanel() {
                     {/* {activeTab === 'chapter' && item.name ? <div className="ulrow__meta">{item.name}</div> : null} */}
                   </div>
                   <div className="ulrow__actions">
-                    <button 
-                      type="button" 
-                      className="ubtn ubtn--ghost ubtn--sm" 
+                    <button
+                      type="button"
+                      className="ubtn ubtn--ghost ubtn--sm"
                       onClick={() => (isComic ? previewComic(comicItem!) : previewChapter(chapterItem!))}
                     >
                       Preview
                     </button>
-                    
+
                     {/* Áp dụng CSS Name của Sort By cho phần Pending/Accept/Reject */}
-                    <div 
-                      className={`fdrop row-status-fdrop ${isDropdownOpen ? 'is-open' : ''}`} 
+                    <div
+                      className={`fdrop row-status-fdrop ${isDropdownOpen ? 'is-open' : ''}`}
                       style={{ position: 'relative' }}
                     >
-                      <button 
-                        type="button" 
-                        className="fdrop__btn ubtn--sm" 
-                        style={{ 
-                          height: '32px', 
-                          minWidth: '84px', 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          alignItems: 'center' 
+                      <button
+                        type="button"
+                        className="fdrop__btn ubtn--sm"
+                        style={{
+                          height: '32px',
+                          minWidth: '84px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
                         }}
                         onClick={() => setActiveStatusDropdownId(isDropdownOpen ? null : item.id)}
                       >
@@ -334,18 +346,18 @@ export default function ModerationPanel() {
                           <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
                       </button>
-                      
+
                       {isDropdownOpen && (
-                        <ul 
-                          className="fdrop__pop fdrop__pop--menu" 
-                          role="listbox" 
-                          style={{ 
-                            position: 'absolute', 
-                            right: 0, 
-                            top: '100%', 
-                            marginTop: '4px', 
-                            zIndex: 10, 
-                            minWidth: '84px' 
+                        <ul
+                          className="fdrop__pop fdrop__pop--menu"
+                          role="listbox"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: '100%',
+                            marginTop: '4px',
+                            zIndex: 10,
+                            minWidth: '84px'
                           }}
                         >
                           {['pending', 'accept', 'reject'].map((statusOption) => {
@@ -377,32 +389,32 @@ export default function ModerationPanel() {
             })}
           </div>
 
-            {/* Pagination controls */}
-            {totalPages > 1 && (
-              <div className="upagination">
-                <button
-                  type="button"
-                  className="upagination__btn"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <span className="upagination__info">
-                  <span className="upagination__current">{currentPage}</span>
-                  <span className="upagination__separator">/</span>
-                  <span className="upagination__total">{totalPages}</span>
-                </span>
-                <button
-                  type="button"
-                  className="upagination__btn"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            )}
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div className="upagination">
+              <button
+                type="button"
+                className="upagination__btn"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="upagination__info">
+                <span className="upagination__current">{currentPage}</span>
+                <span className="upagination__separator">/</span>
+                <span className="upagination__total">{totalPages}</span>
+              </span>
+              <button
+                type="button"
+                className="upagination__btn"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
         </>
       ) : (
         /* Giao diện trạng thái trống (Empty State) */
@@ -421,24 +433,195 @@ export default function ModerationPanel() {
       {/* Comic Preview Modal */}
       {preview.open && preview.type === 'comic' && (
         <div className="modal-overlay" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="comic-form-container" style={{ width: 'min(1120px, 95vw)', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div className="comic-form-header">
+              <h3 className="comic-form-title">{preview.comic?.name || 'Comic Preview'}</h3>
+              <button type="button" className="comic-form-close-btn" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
+                <X size={20} />
+              </button>
+            </div>
             {preview.isLoading ? (
-              <div className="modal-loading">Loading...</div>
-            ) : preview.data ? (
-              <>
-                <div className="modal-header">
-                  <h3>{preview.data.name}</h3>
-                  <button type="button" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>×</button>
-                </div>
-                <div className="modal-body">
-                  <img src={preview.data.coverUrl.startsWith('http') ? preview.data.coverUrl : `${API_UPLOADS}${preview.data.coverUrl}`} alt={preview.data.name} className="modal-image" />
-                  <div className="modal-info">
-                    <p><strong>Types:</strong> {preview.data.types}</p>
-                    <p><strong>Demographic:</strong> {preview.data.demographic}</p>
-                    <p><strong>Description:</strong> {preview.data.description}</p>
+              <div className="uempty">Loading...</div>
+            ) : preview.comic ? (
+              <div className="comic-form">
+                {/* LEFT COLUMN */}
+                <div className="comic-form-left">
+                  <div className="form-group">
+                    <label className="form-label">Image</label>
+                    <div className="image-upload-box">
+                      <div className="image-preview">
+                        <img
+                          src={preview.comic.coverUrl?.startsWith('http') ? preview.comic.coverUrl : `${API_UPLOADS}${preview.comic.coverUrl}`}
+                          alt="Comic preview"
+                          className="preview-img"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-row-2col">
+                    <div className="form-group">
+                      <label className="form-label">Releasing Year</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={preview.comic.releasingYear}
+                        disabled
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Releasing Status</label>
+                      <button type="button" className="fdrop__btn form-input" disabled>
+                        <span className="fdrop__value">{formatDisplayValue(preview.comic.releaseStatus, STATUS_OPTIONS) || 'Choose status'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Author</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={preview.comic.author || ''}
+                      disabled
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Artist</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={preview.comic.artist || ''}
+                      disabled
+                    />
                   </div>
                 </div>
-              </>
+
+                {/* RIGHT COLUMN */}
+                <div className="comic-form-right">
+                  <div className="form-group">
+                    <label className="form-label">Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={preview.comic.name}
+                      disabled
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Slug</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={preview.comic.url}
+                      disabled
+                    />
+                  </div>
+
+                  <div className="form-row-3col">
+                    <div className="form-group">
+                      <label className="form-label">Type</label>
+                      <button type="button" className="fdrop__btn form-input" disabled>
+                        <span className="fdrop__value">{preview.comic.types || 'Choose type'}</span>
+                      </button>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Demographic</label>
+                      <button type="button" className="fdrop__btn form-input" disabled>
+                        <span className="fdrop__value">{formatDisplayValue(preview.comic.demographic, DEMOGRAPHIC_OPTIONS) || 'Choose demographic'}</span>
+                      </button>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Content Filter</label>
+                      <button type="button" className="fdrop__btn form-input" disabled>
+                        <span className="fdrop__value">{formatDisplayValue(preview.comic.contentRating, CONTENT_FILTER) || 'Choose filter'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Other Names & Countries (per line)</label>
+                    <textarea
+                      className="form-textarea"
+                      value={preview.comic.names?.map(n => `${n.name},${n.country}`).join('\n') || ''}
+                      disabled
+                      rows={3}
+                    />
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="form-label">Description</label>
+                    <textarea
+                      style={{ minHeight: '132px' }}
+                      className="form-textarea"
+                      value={preview.comic.description || ''}
+                      disabled
+                      rows={4}
+                    />
+                  </div>
+
+
+                </div>
+
+                {/* Formats - FULL WIDTH */}
+                <div className="form-full">
+                  <div className="form-group">
+                    <label className="form-label">Formats</label>
+                    <div className="direct-tags-box">
+                      <ul className="direct-tags-grid">
+                        {ALL_FORMATS.map((format) => {
+                          const isSelected = preview.comic?.formats?.includes(format);
+                          return (
+                            <li key={format}>
+                              <button
+                                type="button"
+                                className={`tagpop__item ${isSelected ? 'tag-on' : 'tag-off'}`}
+                                disabled
+                                style={{ opacity: 1, cursor: 'default' }}
+                              >
+                                <span className="tagpop__check" aria-hidden="true"></span>
+                                <span className="tagpop__name">{format}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Genres - FULL WIDTH */}
+                <div className="form-full">
+                  <div className="form-group">
+                    <label className="form-label">Genres</label>
+                    <div className="direct-tags-box">
+                      <ul className="direct-tags-grid">
+                        {ALL_GENRES.map((genre) => {
+                          const isSelected = preview.comic?.genres?.includes(genre);
+                          return (
+                            <li key={genre}>
+                              <button
+                                type="button"
+                                className={`tagpop__item ${isSelected ? 'tag-on' : 'tag-off'}`}
+                                disabled
+                                style={{ opacity: 1, cursor: 'default' }}
+                              >
+                                <span className="tagpop__check" aria-hidden="true"></span>
+                                <span className="tagpop__name">{genre}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : null}
           </div>
         </div>
@@ -446,41 +629,64 @@ export default function ModerationPanel() {
 
       {/* Chapter Preview Modal */}
       {preview.open && preview.type === 'chapter' && (
-        <div className="modal-overlay" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
-          <div className="modal-content modal-carousel" onClick={(e) => e.stopPropagation()}>
+        <div className="comic-form-container modal-overlay" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
+          <div className="comic-form-content" style={{ maxWidth: '800px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="comic-form-header">
+              <h3 className="comic-form-title">{preview.chapter?.title || 'Chapter Preview'}</h3>
+              <button type="button" className="comic-form-close-btn" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>
+                <X size={20} />
+              </button>
+            </div>
             {preview.isLoading ? (
-              <div className="modal-loading">Loading...</div>
-            ) : preview.images && preview.images.length > 0 ? (
-              <>
-                <div className="modal-header">
-                  <h3>{preview.chapter?.title}</h3>
-                  <button type="button" onClick={() => setPreview(prev => ({ ...prev, open: false }))}>×</button>
-                </div>
-                <div className="modal-carousel-body">
-                  <img src={`${API_UPLOADS}${preview.images[preview.currentImageIndex].urlPath}`} alt="Chapter page" className="modal-image-full" />
-                  <div className="modal-carousel-info">
-                    {preview.currentImageIndex + 1} / {preview.images.length} pages
-                  </div>
-                  <div className="modal-carousel-controls">
-                    <button
-                      type="button"
-                      onClick={() => setPreview(prev => ({ ...prev, currentImageIndex: Math.max(0, prev.currentImageIndex - 1) }))}
-                      disabled={preview.currentImageIndex === 0}
-                    >
-                      <ChevronLeft size={20} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPreview(prev => ({ ...prev, currentImageIndex: Math.min(preview.images.length - 1, prev.currentImageIndex + 1) }))}
-                      disabled={preview.currentImageIndex === preview.images.length - 1}
-                    >
-                      <ChevronRight size={20} />
-                    </button>
+              <div className="uempty">Loading...</div>
+            ) : preview.chapter?.images && preview.chapter.images.length > 0 ? (
+              <div className="comic-form">
+                <div className="form-full">
+                  <div className="form-row-2col">
+                    <div className="form-group">
+                      <label className="form-label">Chapter Number</label>
+                      <div className="form-input bg-sf-1">{preview.chapter.chapterNumber}</div>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Title</label>
+                      <div className="form-input bg-sf-1">{preview.chapter.title}</div>
+                    </div>
                   </div>
                 </div>
-              </>
+                <div className="form-full">
+                  <label className="form-label">Pages ({preview.currentImageIndex + 1} / {preview.chapter.images.length})</label>
+                  <div className="modal-carousel-body" style={{ background: 'var(--bg-sf-1)', borderRadius: '8px', padding: '10px', position: 'relative' }}>
+                    <img
+                      src={`${API_UPLOADS}${preview.chapter.images[preview.currentImageIndex].urlPath}`}
+                      alt="Chapter page"
+                      className="modal-image-full"
+                      style={{ maxHeight: '60vh', objectFit: 'contain', width: '100%' }}
+                    />
+                    <div className="modal-carousel-controls" style={{ position: 'absolute', top: '50%', left: 0, right: 0, transform: 'translateY(-50%)', display: 'flex', justifyContent: 'space-between', padding: '0 10px', pointerEvents: 'none' }}>
+                      <button
+                        type="button"
+                        className="ubtn ubtn--secondary ubtn--sm"
+                        style={{ pointerEvents: 'auto' }}
+                        onClick={() => setPreview(prev => ({ ...prev, currentImageIndex: Math.max(0, prev.currentImageIndex - 1) }))}
+                        disabled={preview.currentImageIndex === 0}
+                      >
+                        <ChevronLeft size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        className="ubtn ubtn--secondary ubtn--sm"
+                        style={{ pointerEvents: 'auto' }}
+                        onClick={() => setPreview(prev => ({ ...prev, currentImageIndex: Math.min(preview.chapter!.images!.length - 1, prev.currentImageIndex + 1) }))}
+                        disabled={preview.currentImageIndex === preview.chapter.images.length - 1}
+                      >
+                        <ChevronRight size={20} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <div className="modal-loading">No images available</div>
+              <div className="uempty">No images available</div>
             )}
           </div>
         </div>

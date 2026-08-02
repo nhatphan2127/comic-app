@@ -1,6 +1,6 @@
 // src/components/MangaReaderLayout.tsx
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { comicApi, chapterApi, API_UPLOADS } from '../services/api';
 
@@ -11,6 +11,8 @@ import type { Comic, Chapter } from '../types/types';
 export default function MangaReaderLayout() {
   const { comicUrl, chapterId } = useParams<{ comicUrl: string; chapterId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const cmId = searchParams.get('cm_id') || undefined;
   const location = useLocation();
   const { isLoggedIn } = useAuth();
 
@@ -643,7 +645,7 @@ export default function MangaReaderLayout() {
 
               {/* Ngắt CommentsSection dưới chân trang nếu đang bật sidebar bình luận (Tránh double load) */}
               {chapterDetails?.id && activeDialog !== 'comments' && (
-                <CommentsSection targetId={chapterDetails.id} type="chapter" />
+                <CommentsSection id={chapterId} targetId={cmId} type="chapter" />
               )}
             </div>
           )}
@@ -1092,7 +1094,7 @@ export default function MangaReaderLayout() {
         <div className="rpage-cmpanel__body" style={{ overflowY: 'auto', height: 'calc(100% - 60px)' }}>
           {/* Chỉ render bình luận bên trong sidebar khi sidebar được mở */}
           {chapterDetails?.id && activeDialog === 'comments' && (
-            <CommentsSection targetId={chapterDetails.id} type="chapter" />
+            <CommentsSection id={chapterId} targetId={cmId} type="chapter" />
           )}
         </div>
       </aside>

@@ -27,7 +27,7 @@ export const buildCommentTree = (flatComments, sortBy = 'best') => {
     const node = commentMap[c.id];
     if (c.parentCommentId && commentMap[c.parentCommentId]) {
       commentMap[c.parentCommentId].childCommment.push(node);
-    } else if (!c.parentCommentId) {
+    } else {
       roots.push(node);
     }
   });

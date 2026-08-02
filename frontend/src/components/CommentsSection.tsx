@@ -1,12 +1,834 @@
-//src/components/CommentsSection.tsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { comicApi, chapterApi } from '../services/api';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { comicApi, commentApi, chapterApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import AuthModal from '../layout/AuthModal';
 import type { Comment } from '../types/types';
 import '../assets/styles/CommentSection.css';
 import getAvatarBg from '../helpers/getAvatarBg';
 
+// ─── TỰ ĐỘNG ĐỌC VÀ ÁP DỤNG TRỰC TIẾP TỪ THƯ MỤC PUBLIC ───
+const emojiGlob = import.meta.glob('/src/assets/emojis/**/*.webp', { eager: true, import: 'default' }) as Record<string, string>;
+
+const CATEGORIZED_EMOJIS: Record<string, { code: string; name: string; url: string }[]> = {};
+const ALL_EMOJIS_MAP = new Map<string, string>();
+
+Object.entries(emojiGlob).forEach(([path, url]) => {
+  const match = path.match(/\/src\/assets\/emojis\/([^/]+)\/(.+)\.webp$/);
+  if (match) {
+    const [_, folderName, code] = match;
+    const categoryName = folderName.replace('___', ' & ');
+    
+    if (!CATEGORIZED_EMOJIS[categoryName]) {
+      CATEGORIZED_EMOJIS[categoryName] = [];
+    }
+    
+    CATEGORIZED_EMOJIS[categoryName].push({
+      code,
+      name: code.toUpperCase(),
+      url
+    });
+
+    const cleanCode = code.toLowerCase().replace('_fe0f', '');
+    ALL_EMOJIS_MAP.set(cleanCode, url);
+  }
+});
+
+const codeToUnicode = (code: string): string => {
+  if (code === 'PACMAN') return ':pacman:';
+  if (code === 'LIKE') return ':like:';
+  if (code === 'FACE_WITH_COLON_THREE') return ':colonthree:';
+  try {
+    return code
+      .split('_')
+      .map((hex) => String.fromCodePoint(parseInt(hex, 16)))
+      .join('');
+  } catch {
+    return `:${code}:`;
+  }
+};
+
+const charToCode = (char: string): string => {
+  return Array.from(char)
+    .map((c) => c.codePointAt(0)!.toString(16))
+    .filter((hex) => hex !== 'fe0f')
+    .join('_');
+};
+
+const getEmojiImgSrc = (partOrCode: string): string => {
+  let targetCode = partOrCode;
+  if (partOrCode.startsWith(':') && partOrCode.endsWith(':')) {
+    const short = partOrCode.slice(1, -1);
+    if (short === 'pacman') targetCode = 'PACMAN';
+    else if (short === 'like') targetCode = 'LIKE';
+    else if (short === 'colonthree') targetCode = 'FACE_WITH_COLON_THREE';
+    else targetCode = short;
+  } else if (partOrCode.length > 0 && !/[a-zA-Z0-9_]/.test(partOrCode[0])) {
+    targetCode = charToCode(partOrCode);
+  }
+  
+  const cleanTargetCode = targetCode.toLowerCase().replace('_fe0f', '');
+  return ALL_EMOJIS_MAP.get(cleanTargetCode) || '';
+};
+
+const insertFormatting = (
+  textarea: HTMLTextAreaElement,
+  before: string,
+  after: string,
+  setValue: React.Dispatch<React.SetStateAction<string>>
+) => {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const text = textarea.value;
+  const selected = text.substring(start, end);
+  const replacement = before + selected + after;
+  setValue(text.substring(0, start) + replacement + text.substring(end));
+  
+  setTimeout(() => {
+    textarea.focus();
+    textarea.setSelectionRange(start + before.length, start + before.length + selected.length);
+  }, 0);
+};
+
+const getUnicodeFlagIcon = (code: string) => {
+  return code
+    .toUpperCase()
+    .replace(/./g, (char) => String.fromCodePoint(char.charCodeAt(0) + 127397));
+};
+
+const FALLBACK_GIFS = [
+  { url: 'https://media.giphy.com/media/11Heub7KM9fGQ0/giphy.gif', title: 'Anime Happy' },
+  { url: 'https://media.giphy.com/media/mlvseq9yvZhba/giphy.gif', title: 'Cat Shocked' },
+  { url: 'https://media.giphy.com/media/10UUe8ZsLnaqwo/giphy.gif', title: 'Anime Dance' },
+  { url: 'https://media.giphy.com/media/dd9BKfspX29gI/giphy.gif', title: 'Thumbs Up' },
+  { url: 'https://media.giphy.com/media/S9oGIGwXf0HSM/giphy.gif', title: 'Cute Cry' },
+  { url: 'https://media.giphy.com/media/HteV6h0c06T6/giphy.gif', title: 'Anime Smile' },
+  { url: 'https://media.giphy.com/media/9PxJYX3gkbvUybHMBA/giphy.gif', title: 'Wow Anime' },
+  { url: 'https://media.giphy.com/media/3ornk57KwDXf81rjWM/giphy.gif', title: 'Popcorn Chill' },
+];
+
+function SpoilerText({ children }: { children: React.ReactNode }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <span 
+      className={`cm-spoiler ${revealed ? 'is-revealed' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        setRevealed(!revealed);
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+const getEmojiFallbackSrc = (e: React.SyntheticEvent<HTMLImageElement, Event>, code: string) => {
+  e.currentTarget.onerror = null;
+  e.currentTarget.src = `https://emoji.fbicons.net/fb24/${code}.webp`;
+};
+
+const MISC_FLAGS: string[] = []; 
+const FLAG_OBJECTS: { code: string }[] = [];
+
+function parseMarkdown(text: string): React.ReactNode[] {
+  const lines = text.split('\n');
+  return lines.map((line, lineIdx) => {
+    let isQuote = false;
+    let content = line;
+    if (line.startsWith('> ')) {
+      isQuote = true;
+      content = line.substring(2);
+    }
+    
+    const regex = /(\*\*.*?\*\*|\*.*?\*|\|\|.*?\|\||!\[.*?\]\(.*?\)|[\uD800-\uDBFF][\uDC00-\uDFFF][\u200D\uFE0F]*|[\u2600-\u27BF][\uFE0F]*|\:[a-zA-Z0-9_]+\:)/g;
+    const parts = content.split(regex);
+    const parsedInline = parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={index}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('*') && part.endsWith('*')) {
+        return <em key={index}>{part.slice(1, -1)}</em>;
+      }
+      if (part.startsWith('||') && part.endsWith('||')) {
+        return <SpoilerText key={index}>{part.slice(2, -2)}</SpoilerText>;
+      }
+      if (part.startsWith('![') && part.endsWith(')')) {
+        const match = part.match(/!\[(.*?)\]\((.*?)\)/);
+        if (match) {
+          return (
+            <img 
+              key={index} 
+              src={match[2]} 
+              alt={match[1]} 
+              className="cm-inline-img" 
+            />
+          );
+        }
+      }
+
+      const emojiUrl = getEmojiImgSrc(part);
+      if (emojiUrl) {
+        return (
+          <img
+            key={index}
+            src={emojiUrl}
+            onError={(e) => {
+              const code = part.startsWith(':') ? part.slice(1, -1) : charToCode(part);
+              getEmojiFallbackSrc(e, code);
+            }}
+            alt={part}
+            className="cm-inline-emoji"
+            style={{
+              width: '20px',
+              height: '20px',
+              display: 'inline-block',
+              verticalAlign: 'middle',
+              margin: '0 2px'
+            }}
+          />
+        );
+      }
+
+      return part;
+    });
+
+    if (isQuote) {
+      return (
+        <blockquote key={lineIdx} className="cm-quote">
+          {parsedInline}
+        </blockquote>
+      );
+    }
+
+    return <div key={lineIdx} className="cm-line">{parsedInline}</div>;
+  });
+}
+
+// ─── EMOJI SEPARATE POPUP (EXACT DEEP DARK MESSENGER LAYOUT) ───
+interface EmojiPopoverProps {
+  onClose: () => void;
+  onSelect: (emoji: string) => void;
+}
+
+function EmojiPopover({ onClose, onSelect }: EmojiPopoverProps) {
+  const [search, setSearch] = useState('');
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<'below' | 'above'>('below');
+
+  // Đóng khi bấm ra ngoài - Phiên bản tối giản không cần truyền Ref từ ngoài vào
+  useEffect(() => {
+    const clickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Nếu nhấn vào nút công cụ đang ở trạng thái active (mở chính nó), bỏ qua để onClick tự xử lý tắt
+      if (target.closest('.cm-editor__tool--active')) {
+        return;
+      }
+      if (popoverRef.current && !popoverRef.current.contains(target)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, [onClose]);
+
+  // SỬA LỖI GIẬT/CHỚP VỊ TRÍ: Chuyển sang dùng useLayoutEffect
+  useLayoutEffect(() => {
+    if (popoverRef.current) {
+      const rect = popoverRef.current.getBoundingClientRect();
+      const height = rect.height || 350;
+      const spaceBelow = window.innerHeight - rect.top;
+      if (spaceBelow < height && rect.top > height) {
+        setPosition('above');
+      } else {
+        setPosition('below');
+      }
+    }
+  }, []);
+
+  const groupedCategories = useMemo(() => {
+    const getCategoryIcon = (category: string) => {
+      switch (category) {
+        case 'Smileys & Emotion': return '😀';
+        case 'Gestures & Body': return '👋';
+        case 'People & Fantasy': return '🦸';
+        case 'Animals & Nature': return '🐶';
+        case 'Food & Drink': return '🍔';
+        case 'Travel & Places': return '✈️';
+        case 'Objects & Tools': return '💡';
+        case 'Symbols & Flags': return '🏁';
+        default: return '🌟';
+      }
+    };
+
+    return Object.entries(CATEGORIZED_EMOJIS).map(([catName, items]) => {
+      let catItems = [...items];
+      if (catName === 'Symbols & Flags') {
+        catItems = [
+          ...catItems,
+          ...MISC_FLAGS.map(f => ({ code: f, name: f, url: '', isNative: true })),
+          ...FLAG_OBJECTS.map(flag => ({ code: flag.code, name: flag.code, url: '', isFlag: true }))
+        ];
+      }
+
+      return {
+        name: catName,
+        icon: getCategoryIcon(catName),
+        items: catItems
+      };
+    });
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return groupedCategories;
+    return groupedCategories.map((cat) => ({
+      ...cat,
+      items: cat.items.filter((item) => 
+        item.name.toLowerCase().includes(search.toLowerCase()) ||
+        item.code.toLowerCase().includes(search.toLowerCase())
+      )
+    })).filter((cat) => cat.items.length > 0);
+  }, [search, groupedCategories]);
+
+  const scrollToSection = (catName: string) => {
+    const el = document.getElementById(`cat-${catName}`);
+    if (el && scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: el.offsetTop - scrollRef.current.offsetTop,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const handleEmojiClick = (code: string, isFlag?: boolean, isNative?: boolean) => {
+    if (isFlag) {
+      onSelect(getUnicodeFlagIcon(code));
+    } else if (isNative) {
+      onSelect(code);
+    } else {
+      onSelect(codeToUnicode(code));
+    }
+  };
+
+  const popoverStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    zIndex: 1000,
+    ...(position === 'above'
+      ? { bottom: '100%', top: 'auto', marginBottom: '8px' }
+      : { top: '100%', bottom: 'auto', marginTop: '8px' }
+    )
+  };
+
+  return (
+    <div className="fb-emoji-popup" ref={popoverRef} style={popoverStyle}>
+      <div className="fb-popup-search-box">
+        <svg className="fb-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          type="text"
+          className="fb-popup-input"
+          placeholder="Tìm kiếm biểu tượng cảm xúc"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          autoFocus
+        />
+      </div>
+
+      <div className="fb-popup-scroll-container" ref={scrollRef}>
+        {filtered.map((cat) => (
+          <div key={cat.name} id={`cat-${cat.name}`} className="fb-emoji-section">
+            <span className="fb-emoji-section__title">{cat.name}</span>
+            <div className="fb-emoji-grid">
+              {cat.items.map((item, idx) => {
+                if ('isFlag' in item && item.isFlag) {
+                  return (
+                    <button
+                      key={`${item.code}-${idx}`}
+                      type="button"
+                      className="fb-emoji-btn fb-flag-btn"
+                      onClick={() => handleEmojiClick(item.code, true)}
+                      style={{ fontSize: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      {getUnicodeFlagIcon(item.code)}
+                    </button>
+                  );
+                }
+
+                if ('isNative' in item && item.isNative) {
+                  return (
+                    <button
+                      key={`${item.code}-${idx}`}
+                      type="button"
+                      className="fb-emoji-btn"
+                      onClick={() => handleEmojiClick(item.code, false, true)}
+                    >
+                      {item.code}
+                    </button>
+                  );
+                }
+                
+                return (
+                  <button
+                    key={`${item.code}-${idx}`}
+                    type="button"
+                    className="fb-emoji-btn"
+                    title={item.name}
+                    onClick={() => handleEmojiClick(item.code)}
+                    style={{ padding: '4px' }}
+                  >
+                    <img
+                      src={item.url}
+                      onError={(e) => getEmojiFallbackSrc(e, item.code)}
+                      alt={item.name}
+                      style={{ width: '22px', height: '22px', display: 'block' }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {filtered.length === 0 && <div className="fb-popup-empty">Không tìm thấy kết quả.</div>}
+      </div>
+
+      {!search.trim() && (
+        <div className="fb-emoji-footer-nav" style={{ overflowX: 'auto', whiteSpace: 'nowrap' }}>
+          {groupedCategories.map((cat) => (
+            <button
+              key={cat.name}
+              type="button"
+              className="fb-footer-nav-btn"
+              title={cat.name}
+              onClick={() => scrollToSection(cat.name)}
+            >
+              {cat.icon}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── GIF SEPARATE POPUP (DOWNSAMPLED DUAL-API MULTI-FALLBACK) ───
+interface GifPopoverProps {
+  onClose: () => void;
+  onSelect: (gifUrl: string, gifTitle: string) => void;
+}
+
+function GifPopover({ onClose, onSelect }: GifPopoverProps) {
+  const [search, setSearch] = useState('');
+  const [gifs, setGifs] = useState<{ url: string; title: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<'below' | 'above'>('below');
+
+  // Đóng khi bấm ra ngoài - Phiên bản tối giản không cần truyền Ref từ ngoài vào
+  useEffect(() => {
+    const clickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Nếu nhấn vào nút công cụ đang ở trạng thái active (mở chính nó), bỏ qua để onClick tự xử lý tắt
+      if (target.closest('.cm-editor__tool--active')) {
+        return;
+      }
+      if (popoverRef.current && !popoverRef.current.contains(target)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, [onClose]);
+
+  // SỬA LỖI GIẬT/CHỚP VỊ TRÍ: Chuyển sang dùng useLayoutEffect
+  useLayoutEffect(() => {
+    if (popoverRef.current) {
+      const rect = popoverRef.current.getBoundingClientRect();
+      const height = rect.height || 350;
+      const spaceBelow = window.innerHeight - rect.top;
+      if (spaceBelow < height && rect.top > height) {
+        setPosition('above');
+      } else {
+        setPosition('below');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const delayDebounce = setTimeout(() => {
+      setLoading(true);
+
+      const fetchGifs = async () => {
+        const giphyKey = 'dc6zaTOxFJmzC'; 
+        const giphyUrl = search.trim()
+          ? `https://api.giphy.com/v1/gifs/search?api_key=${giphyKey}&q=${encodeURIComponent(search)}&limit=12`
+          : `https://api.giphy.com/v1/gifs/trending?api_key=${giphyKey}&limit=12`;
+
+        try {
+          const res = await fetch(giphyUrl, { signal: controller.signal });
+          if (!res.ok) throw new Error('Giphy failure');
+          const data = await res.json();
+          if (data && Array.isArray(data.data) && data.data.length > 0) {
+            const downsampled = data.data.map((item: any) => ({
+              url: item.images.fixed_width_small?.url || item.images.fixed_width_downsampled?.url || item.images.original?.url,
+              title: item.title || 'GIF'
+            }));
+            setGifs(downsampled);
+            return;
+          }
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') return;
+          console.warn('Giphy key expired or failed, attempting Tenor fallback search...');
+        }
+
+        try {
+          const tenorUrl = search.trim()
+            ? `https://g.tenor.com/v1/search?q=${encodeURIComponent(search)}&key=LIVDTRZ6A0VW&limit=12`
+            : `https://g.tenor.com/v1/trending?key=LIVDTRZ6A0VW&limit=12`;
+
+          const res = await fetch(tenorUrl, { signal: controller.signal });
+          if (!res.ok) throw new Error('Tenor lookup failed');
+          const data = await res.json();
+          if (data && Array.isArray(data.results)) {
+            const tenorGifs = data.results.map((item: any) => {
+              const mediaObj = item.media?.[0];
+              return {
+                url: mediaObj?.tinygif?.url || mediaObj?.gif?.url || '',
+                title: item.title || 'GIF'
+              };
+            });
+            setGifs(tenorGifs);
+            return;
+          }
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') return;
+          console.error('All remote APIs rate-limited. Displaying fallback reaction options.');
+        }
+
+        setGifs(FALLBACK_GIFS);
+      };
+
+      fetchGifs().finally(() => {
+        setLoading(false);
+      });
+    }, 450);
+
+    return () => {
+      controller.abort();
+      clearTimeout(delayDebounce);
+    };
+  }, [search]);
+
+  const handleGifClick = (gifUrl: string, title: string) => {
+    onSelect(gifUrl, title);
+    setSearch('');
+    onClose();
+  };
+
+  const popoverStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    zIndex: 1000,
+    ...(position === 'above'
+      ? { bottom: '100%', top: 'auto', marginBottom: '8px' }
+      : { top: '100%', bottom: 'auto', marginTop: '8px' }
+    )
+  };
+
+  return (
+    <div className="fb-gif-popup" ref={popoverRef} style={popoverStyle}>
+      <div className="fb-popup-search-box">
+        <svg className="fb-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          type="text"
+          className="fb-popup-input"
+          placeholder="Tìm kiếm GIF"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          autoFocus
+        />
+      </div>
+
+      <div className="fb-popup-scroll-container">
+        {loading ? (
+          <div className="fb-popup-empty">Đang tải GIF…</div>
+        ) : (
+          <div className="fb-gif-masonry">
+            {gifs.map((gif, idx) => (
+              <button
+                key={`${gif.url}-${idx}`}
+                type="button"
+                className="fb-gif-btn"
+                onClick={() => handleGifClick(gif.url, gif.title)}
+              >
+                <img src={gif.url} alt={gif.title} loading="lazy" />
+              </button>
+            ))}
+          </div>
+        )}
+        {!loading && gifs.length === 0 && <div className="fb-popup-empty">Không tìm thấy GIF nào.</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── REUSABLE COMMENT FORM EDITOR WITH SEPARATED POPUPS ───
+interface CommentFormEditorProps {
+  placeholder: string;
+  initialValue?: string;
+  onSubmit: (text: string) => Promise<void>;
+  onCancel?: () => void;
+  submitButtonText: string;
+  autoFocus?: boolean;
+}
+
+function CommentFormEditor({ placeholder, initialValue = '', onSubmit, onCancel, submitButtonText, autoFocus = false }: CommentFormEditorProps) {
+  const [text, setText] = useState(initialValue);
+  const [isPreview, setIsPreview] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [openPopup, setOpenPopup] = useState<'emoji' | 'gif' | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleInsert = (before: string, after: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    insertFormatting(textarea, before, after, setText);
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setText((prev) => prev + emoji);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = textarea.value;
+    setText(currentText.substring(0, start) + emoji + currentText.substring(end));
+    
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length);
+    }, 0);
+  };
+
+  const handleGifSelect = (gifUrl: string, gifTitle: string) => {
+    const textarea = textareaRef.current;
+    const replacement = `![${gifTitle}](${gifUrl})`;
+    if (!textarea) {
+      setText((prev) => prev + '\n' + replacement + '\n');
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = textarea.value;
+    setText(currentText.substring(0, start) + replacement + currentText.substring(end));
+    
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + replacement.length, start + replacement.length);
+    }, 0);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.ctrlKey && e.key === 'b') {
+      e.preventDefault();
+      handleInsert('**', '**');
+    } else if (e.ctrlKey && e.key === 'i') {
+      e.preventDefault();
+      handleInsert('*', '*');
+    } else if (e.ctrlKey && e.key === 'e') {
+      e.preventDefault();
+      handleInsert('||', '||');
+    }
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!text.trim() || isSending) return;
+    setIsSending(true);
+    try {
+      await onSubmit(text);
+      setText('');
+      setIsPreview(false);
+    } catch (err) {
+      console.error('Submit error:', err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <form className="cm-editor" onSubmit={handleFormSubmit}>
+      {isPreview ? (
+        <div className="cm-editor__input content-rendered markdown-preview">
+          {text.trim() ? parseMarkdown(text) : <span style={{ opacity: 0.5 }}>Nothing to preview…</span>}
+        </div>
+      ) : (
+        <textarea
+          ref={textareaRef}
+          className="input input--area cm-editor__input"
+          placeholder={placeholder}
+          rows={2}
+          style={{ height: '60px' }}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          autoFocus={autoFocus}
+        />
+      )}
+      <div style={{ height: 'auto', overflow: 'visible', transition: 'height 220ms' }}>
+        <div className="cm-editor__bar">
+          <div className="cm-editor__toolbar" role="toolbar" aria-label="Formatting" style={{ position: 'relative' }}>
+            <button 
+              type="button" 
+              className="cm-editor__tool" 
+              aria-label="Bold" 
+              title="Bold (Ctrl+B)"
+              onClick={() => handleInsert('**', '**')}
+              disabled={isPreview}
+            >
+              <strong>B</strong>
+            </button>
+            <button 
+              type="button" 
+              className="cm-editor__tool" 
+              aria-label="Italic" 
+              title="Italic (Ctrl+I)"
+              onClick={() => handleInsert('*', '*')}
+              disabled={isPreview}
+              style={{ fontStyle: 'italic' }}
+            >
+              I
+            </button>
+            <button 
+              type="button" 
+              className="cm-editor__tool" 
+              aria-label="Quote" 
+              title="Quote"
+              onClick={() => handleInsert('> ', '')}
+              disabled={isPreview}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 7h4v4H8c0 2 0 3 2 4"></path>
+                <path d="M15 7h4v4h-3c0 2 0 3 2 4"></path>
+              </svg>
+            </button>
+            <button 
+              type="button" 
+              className="cm-editor__tool" 
+              aria-label="Spoiler" 
+              title="Spoiler (Ctrl+E)"
+              onClick={() => handleInsert('||', '||')}
+              disabled={isPreview}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 3l18 18"></path>
+                <path d="M10.6 6.1A9.7 9.7 0 0 1 12 6c7 0 11 7 11 7a17.6 17.6 0 0 1-3.2 4.4"></path>
+                <path d="M6.6 6.6A17.7 17.7 0 0 0 1 13s4 7 11 7a9.7 9.7 0 0 0 5.4-1.6"></path>
+                <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+              </svg>
+            </button>
+            <div className="cm-editor__tool-wrap">
+              <button 
+                type="button" 
+                className="cm-editor__tool" 
+                aria-label="Image" 
+                title="Image"
+                onClick={() => {
+                  const url = prompt('Enter image URL:');
+                  if (url) {
+                    handleInsert(`![Image](${url})`, '');
+                  }
+                }}
+                disabled={isPreview}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                  <circle cx="9" cy="9" r="2"></circle>
+                  <path d="M21 15l-5-5L5 21"></path>
+                </svg>
+              </button>
+            </div>
+            
+            {/* Separate Emoji Popup Button */}
+            <div className="cm-editor__tool-wrap">
+              <button 
+                type="button" 
+                className={`cm-editor__tool ${openPopup === 'emoji' ? 'cm-editor__tool--active' : ''}`} 
+                aria-label="Biểu tượng cảm xúc" 
+                title="Emoji Picker"
+                onClick={() => setOpenPopup(openPopup === 'emoji' ? null : 'emoji')}
+                disabled={isPreview}
+              >
+                <img src={getEmojiImgSrc('1f600') || '/emojis/Smileys__Emotion/1f600.webp'} onError={(e) => getEmojiFallbackSrc(e, '1f600')} alt="😀" style={{ width: '15px', height: '15px' }} />
+              </button>
+              {openPopup === 'emoji' && (
+                <EmojiPopover
+                  onClose={() => setOpenPopup(null)}
+                  onSelect={handleEmojiSelect}
+                />
+              )}
+            </div>
+
+            {/* Separate GIF Popup Button */}
+            <div className="cm-editor__tool-wrap">
+              <button 
+                type="button" 
+                className={`cm-editor__tool ${openPopup === 'gif' ? 'cm-editor__tool--active' : ''}`} 
+                aria-label="GIF" 
+                title="GIF Search"
+                onClick={() => setOpenPopup(openPopup === 'gif' ? null : 'gif')}
+                disabled={isPreview}
+              >
+                🎬
+              </button>
+              {openPopup === 'gif' && (
+                <GifPopover
+                  onClose={() => setOpenPopup(null)}
+                  onSelect={handleGifSelect}
+                />
+              )}
+            </div>
+
+            {/* Preview Toggle */}
+            <button 
+              type="button" 
+              className={`cm-editor__tool ${isPreview ? 'cm-editor__tool--active' : ''}`} 
+              aria-pressed={isPreview} 
+              aria-label="Show preview" 
+              title="Show preview"
+              onClick={() => setIsPreview(!isPreview)}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+
+          <div className="cm-editor__actions">
+            {onCancel && (
+              <button type="button" className="ubtn ubtn--ghost" onClick={onCancel} disabled={isSending}>
+                Cancel
+              </button>
+            )}
+            <button type="submit" className="ubtn ubtn--primary" disabled={!text.trim() || isSending}>
+              {submitButtonText}
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+// ... [Giữ nguyên các helper, import và component phụ như EmojiPopover, GifPopover, CommentFormEditor] ...
 
 // ─── COMPONENT CON: RECURSIVE COMMENT NODE ───
 interface CommentNodeProps {
@@ -15,28 +837,36 @@ interface CommentNodeProps {
   onReplySubmit: (parentId: string, text: string) => Promise<void>;
   onReact: (commentId: string, reaction: 'like' | 'dislike' | 'none') => Promise<void>;
   onDelete?: (commentId: string) => Promise<void>;
+  onEdit?: (commentId: string, text: string) => Promise<void>;
   canInteract: boolean;
   onRequireAuth: () => void;
   currentUserId?: string;
+  targetId?: string; // <-- Nhận thêm targetId để so sánh highlight
 }
 
-function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, canInteract, onRequireAuth, currentUserId }: CommentNodeProps) {
+function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, onEdit, canInteract, onRequireAuth, currentUserId, targetId }: CommentNodeProps) {
   const formattedDate = comment.createdAt ? new Date(comment.createdAt).toLocaleDateString() : '';
   const userAvatar = comment.avatar || comment.user?.avatar;
   const userName = comment.displayName || comment.user?.displayName || 'Khách';
   const hasReplies = comment.childCommment && comment.childCommment.length > 0;
+  
+  const isEdited = comment.updatedAt && comment.updatedAt !== comment.createdAt;
 
-  // ─── TRẠNG THÁI HOẠT ĐỘNG (INTERACTIVE STATE) ───
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isReplying, setIsReplying] = useState<boolean>(false);
-  const [replyText, setReplyText] = useState<string>('');
-  const [isSending, setIsSending] = useState<boolean>(false);
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  
   const [currentReaction, setCurrentReaction] = useState<'like' | 'dislike' | 'none'>(comment.userReaction || 'none');
   const [likeCount, setLikeCount] = useState<number>(comment.like || 0);
   const [dislikeCount, setDislikeCount] = useState<number>(comment.dislike || 0);
 
-  // Đóng trình đơn hành động khi click ra ngoài
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState<'below' | 'above'>('below');
+
+  // Xác định xem nút này có phải là bình luận mục tiêu được highlight không
+  const isTargeted = comment.id === targetId;
+
   useEffect(() => {
     if (!isMenuOpen) return;
     const closeMenu = () => setIsMenuOpen(false);
@@ -44,12 +874,18 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
     return () => document.removeEventListener('click', closeMenu);
   }, [isMenuOpen]);
 
-  const handleCopyLink = () => {
-    const commentUrl = `${window.location.origin}${window.location.pathname}#cm-${comment.id}`;
-    navigator.clipboard.writeText(commentUrl)
-      .then(() => alert('Đã sao chép liên kết bình luận!'))
-      .catch((err) => console.error('Không thể sao chép liên kết:', err));
-  };
+  useEffect(() => {
+    if (isMenuOpen && menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      const height = rect.height || 120;
+      const spaceBelow = window.innerHeight - rect.top;
+      if (spaceBelow < height && rect.top > height) {
+        setMenuPosition('above');
+      } else {
+        setMenuPosition('below');
+      }
+    }
+  }, [isMenuOpen]);
 
   const handleDelete = async () => {
     if (!onDelete) return;
@@ -67,27 +903,6 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
     setLikeCount(comment.like || 0);
     setDislikeCount(comment.dislike || 0);
   }, [comment.userReaction, comment.like, comment.dislike]);
-
-  const handleReplyFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!replyText.trim() || isSending || !canInteract) {
-      if (!canInteract) {
-        onRequireAuth();
-      }
-      return;
-    }
-
-    setIsSending(true);
-    try {
-      await onReplySubmit(comment.id, replyText);
-      setReplyText('');
-      setIsReplying(false);
-    } catch (err) {
-      console.error('Lỗi khi gửi phản hồi:', err);
-    } finally {
-      setIsSending(false);
-    }
-  };
 
   const handleReaction = async (reaction: 'like' | 'dislike') => {
     if (!canInteract) {
@@ -115,10 +930,11 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
     }
   };
 
-  const isDeleted = !comment.content || comment.content.trim() === '';
+  const isCommentContentDeleted = !comment.content || comment.content.trim() === '';
+  const isOwnComment = currentUserId === (comment.user?.id || comment.userId);
 
   return (
-    <li className={`cm-item ${hasReplies ? 'cm-item--has-replies' : ''} ${isDeleted ? 'cm-item--highlight' : ''}`} id={`cm-${comment.id}`}>
+    <li className={`cm-item ${hasReplies ? 'cm-item--has-replies' : ''} ${isCommentContentDeleted ? 'cm-item--highlight' : ''} ${isTargeted ? 'cm-item--targeted' : ''}`} id={`cm-${comment.id}`}>
       <div className="cm-item__main">
         <a className="cm-item__avatar" href={`/u/${comment.user?.displayName || 'guest'}`} aria-label={userName}>
           {userAvatar ? (
@@ -137,9 +953,11 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
               <span className="cm-item__user">
                 <a href={`/u/${comment.user?.displayName || 'guest'}`}>{userName}</a>
               </span>
-              <span className="cm-item__time">{formattedDate}</span>
+              <span className="cm-item__time">
+                {formattedDate}
+                {isEdited && !isCommentContentDeleted ? ' · edited' : ''}
+              </span>
             </div>
-            {/* Thu gọn / Mở rộng bình luận */}
             <span 
               className="cm-item__collapser" 
               role="button" 
@@ -154,15 +972,31 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
 
           {!isCollapsed && (
             <>
-              <div className="cm-item__content content-rendered">
-                {isDeleted ? (
-                  <em>This comment has been deleted.</em>
-                ) : (
-                  comment.content
-                )}
-              </div>
+              {isEditing ? (
+                <CommentFormEditor
+                  placeholder="Edit your comment…"
+                  initialValue={comment.content}
+                  submitButtonText="Save"
+                  onCancel={() => setIsEditing(false)}
+                  onSubmit={async (newText) => {
+                    if (onEdit) {
+                      await onEdit(comment.id, newText);
+                    }
+                    setIsEditing(false);
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <div className="cm-item__content content-rendered">
+                  {isCommentContentDeleted ? (
+                    <em>This comment has been deleted.</em>
+                  ) : (
+                    parseMarkdown(comment.content)
+                  )}
+                </div>
+              )}
+
               <div className="cm-item__ctrls">
-                {/* Thích */}
                 <button type="button" className={`cm-item__ctrl cm-item__ctrl--like ${currentReaction === 'like' ? 'cm-item__ctrl--active' : ''}`} aria-pressed={currentReaction === 'like'} aria-label="Like" onClick={() => handleReaction('like')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <path d="M7 10v12"></path>
@@ -170,7 +1004,7 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
                   </svg>
                   <span>{likeCount}</span>
                 </button>
-                {/* Không thích */}
+
                 <button type="button" className={`cm-item__ctrl cm-item__ctrl--dislike ${currentReaction === 'dislike' ? 'cm-item__ctrl--active' : ''}`} aria-pressed={currentReaction === 'dislike'} aria-label="Dislike" onClick={() => handleReaction('dislike')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                     <path d="M17 14V2"></path>
@@ -178,7 +1012,7 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
                   </svg>
                   <span>{dislikeCount}</span>
                 </button>
-                {/* Phản hồi */}
+
                 <button 
                   type="button" 
                   className={`cm-item__ctrl cm-item__ctrl--reply ${isReplying ? 'cm-item__ctrl--active' : ''}`} 
@@ -219,23 +1053,36 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
                     <span>More</span>
                   </button>
                   {isMenuOpen && (
-                    <div className="fdrop__pop fdrop__pop--menu" role="menu">
-                      {currentUserId === (comment.user?.id || comment.userId) && !isDeleted && (
+                    <div 
+                      ref={menuRef}
+                      className="fdrop__pop fdrop__pop--menu" 
+                      role="menu"
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        zIndex: 100,
+                        ...(menuPosition === 'above'
+                          ? { bottom: '100%', top: 'auto', marginBottom: '4px' }
+                          : { top: '100%', bottom: 'auto', marginTop: '4px' }
+                        )
+                      }}
+                    >
+                      {isOwnComment ? (
                         <>
-                          <button type="button" className="fdrop__item" role="menuitem" onClick={() => alert('Edit function coming soon')}>
-                            Edit
-                          </button>
+                          {!isCommentContentDeleted && (
+                            <button type="button" className="fdrop__item" role="menuitem" onClick={() => setIsEditing(true)}>
+                              Edit
+                            </button>
+                          )}
                           <button type="button" className="fdrop__item" role="menuitem" onClick={handleDelete}>
                             Delete
                           </button>
                         </>
+                      ) : (
+                        <button type="button" className="fdrop__item" role="menuitem" onClick={() => alert('Đã báo cáo bình luận.')}>
+                          Report
+                        </button>
                       )}
-                      <button type="button" className="fdrop__item" role="menuitem" onClick={() => alert('Đã báo cáo bình luận.')}>
-                        Report
-                      </button>
-                      <button type="button" className="fdrop__item" role="menuitem" onClick={handleCopyLink}>
-                        Copy link
-                      </button>
                     </div>
                   )}
                 </div>
@@ -245,7 +1092,6 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
         </div>
       </div>
 
-      {/* Hiển thị bình luận con hoặc Trình soạn thảo phản hồi */}
       {!isCollapsed && (hasReplies || isReplying) && (
         <ul className="cm-item__replies">
           {isReplying && (
@@ -257,53 +1103,35 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
                   </span>
                 </span>
                 <div className="cm-item__detail">
-                  <form className="cm-editor" onSubmit={handleReplyFormSubmit}>
-                    <textarea
-                      className="input input--area cm-editor__input"
-                      placeholder={`Reply to ${userName}…`}
-                      rows={2}
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                    />
-                    <div style={{ height: 'auto', overflow: 'visible', transition: 'height 220ms' }}>
-                      <div className="cm-editor__bar">
-                        <div className="cm-editor__toolbar" role="toolbar" aria-label="Formatting">
-                          <button type="button" className="cm-editor__tool" aria-label="Bold" title="Bold (Ctrl+B)">
-                            <strong>B</strong>
-                          </button>
-                          <button type="button" className="cm-editor__tool" aria-label="Quote" title="Quote">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M7 7h4v4H8c0 2 0 3 2 4"></path>
-                              <path d="M15 7h4v4h-3c0 2 0 3 2 4"></path>
-                            </svg>
-                          </button>
-                          <button type="button" className="cm-editor__tool" aria-label="Spoiler" title="Spoiler (Ctrl+E)">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M3 3l18 18"></path>
-                              <path d="M10.6 6.1A9.7 9.7 0 0 1 12 6c7 0 11 7 11 7a17.6 17.6 0 0 1-3.2 4.4"></path>
-                              <path d="M6.6 6.6A17.7 17.7 0 0 0 1 13s4 7 11 7a9.7 9.7 0 0 0 5.4-1.6"></path>
-                              <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
-                            </svg>
-                          </button>
-                        </div>
-                        <div className="cm-editor__actions">
-                          <button type="button" className="ubtn ubtn--ghost" onClick={() => { setIsReplying(false); setReplyText(''); }}>
-                            Cancel
-                          </button>
-                          <button type="submit" className="ubtn ubtn--primary" disabled={!replyText.trim() || isSending}>
-                            Reply
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </form>
+                  <CommentFormEditor
+                    placeholder={`Reply to ${userName}…`}
+                    submitButtonText="Reply"
+                    onCancel={() => setIsReplying(false)}
+                    onSubmit={async (text) => {
+                      await onReplySubmit(comment.id, text);
+                      setIsReplying(false);
+                    }}
+                    autoFocus
+                  />
                 </div>
               </div>
             </li>
           )}
 
           {hasReplies && comment.childCommment!.map((child) => (
-            <CommentNode key={child.id} comment={child} depth={depth + 1} onReplySubmit={onReplySubmit} onReact={onReact} onDelete={onDelete} canInteract={canInteract} onRequireAuth={onRequireAuth} currentUserId={currentUserId} />
+            <CommentNode 
+              key={child.id} 
+              comment={child} 
+              depth={depth + 1} 
+              onReplySubmit={onReplySubmit} 
+              onReact={onReact} 
+              onDelete={onDelete} 
+              onEdit={onEdit}
+              canInteract={canInteract} 
+              onRequireAuth={onRequireAuth} 
+              currentUserId={currentUserId}
+              targetId={targetId}
+            />
           ))}
         </ul>
       )}
@@ -313,23 +1141,24 @@ function CommentNode({ comment, depth = 0, onReplySubmit, onReact, onDelete, can
 
 // ─── MAIN COMPONENT ───
 interface CommentsSectionProps {
-  comicId?: string;
-  targetId?: string;
+  id?: string;
+  targetId?: string; // cm_id từ URL
   type?: 'comic' | 'chapter';
 }
 
-export default function CommentsSection({ comicId, targetId, type = 'comic' }: CommentsSectionProps) {
-  const [commentsList, setCommentsList] = useState<Comment[]>([]);
-  const [comment, setComment] = useState<string>('');
+export default function CommentsSection({ id, targetId, type = 'comic' }: CommentsSectionProps) {
+  const [targetComment, setTargetComment] = useState<Comment | null>(null); // Lưu comment cụ thể
+  const [commentsList, setCommentsList] = useState<Comment[]>([]); // Lưu list comment còn lại
   const [sortBy, setSortBy] = useState<'best' | 'newest' | 'oldest'>('best');
   const [visibleCount, setVisibleCount] = useState(10);
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const { isLoggedIn, user } = useAuth();
-  const activeId = targetId || comicId || '';
+  const activeId = id || '';
   const username = user?.displayName || user?.userName || 'ReaderPro';
 
+  // Lấy các comment bình thường
   const fetchComments = async (currentSort: 'best' | 'newest' | 'oldest' = sortBy, reset = true, offsetValue = 0) => {
     if (!activeId) return;
 
@@ -353,15 +1182,45 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
     }
   };
 
+  // Logic gọi API: Ưu tiên lấy targetComment trước nếu có targetId
   useEffect(() => {
     setVisibleCount(10);
     setHasMore(false);
-    void fetchComments(sortBy, true, 0);
-  }, [activeId, type, sortBy]);
+    setTargetComment(null);
 
-  const handleCommentSubmitLocal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!comment.trim() || !activeId) return;
+    const loadData = async () => {
+
+      if (targetId) {
+        try {
+          const res = await commentApi.getDetail(targetId);
+          if (res && res.comment) {
+            setTargetComment(res.comment);
+          }
+        } catch (err) {
+          console.warn('Không tải được comment cụ thể (targetId):', err);
+        }
+      }
+      await fetchComments(sortBy, true, 0);
+    };
+
+    void loadData();
+  }, [activeId, type, sortBy, targetId]);
+
+  // Cuộn mượt màn hình tới comment mục tiêu khi nó được render xong
+  useLayoutEffect(() => {
+    if (targetId && targetComment) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`cm-${targetId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 500); // Khoảng hoãn nhỏ để DOM ổn định cấu trúc
+      return () => clearTimeout(timer);
+    }
+  }, [targetId, targetComment]);
+
+  const handleCommentSubmitLocal = async (text: string) => {
+    if (!activeId) return;
     if (!isLoggedIn) {
       setIsAuthModalOpen(true);
       return;
@@ -369,18 +1228,16 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
 
     try {
       if (type === 'comic') {
-        await comicApi.createComment(activeId, comment);
+        await comicApi.createComment(activeId, text);
       } else {
-        await chapterApi.createComment(activeId, comment);
+        await chapterApi.createComment(activeId, text);
       }
-      setComment('');
       await fetchComments(sortBy, true, 0);
     } catch (err) {
       console.error('Không thể gửi bình luận:', err);
     }
   };
 
-  // Hàm xử lý gửi phản hồi (Reply) cho một bình luận có sẵn
   const handleReplySubmit = async (parentId: string, text: string) => {
     if (!activeId || !isLoggedIn) {
       throw new Error('Please log in to reply.');
@@ -394,6 +1251,20 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
       await fetchComments(sortBy, true, 0);
     } catch (err) {
       console.error('Không thể gửi phản hồi:', err);
+      throw err;
+    }
+  };
+
+  const handleEditSubmit = async (commentId: string, text: string) => {
+    try {
+      if (type === 'comic') {
+        await comicApi.editComment(commentId, text);
+      } else {
+        await chapterApi.editComment(commentId, text);
+      }
+      await fetchComments(sortBy, true, 0);
+    } catch (err) {
+      console.error('Không thể sửa đổi bình luận:', err);
       throw err;
     }
   };
@@ -427,8 +1298,15 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
     await fetchComments(sortBy, false, nextOffset);
   };
 
-  const sortedComments = useMemo(() => {
-    const list = [...commentsList];
+  // Sử dụng useMemo lọc trùng lặp giữa (1) và (2) trước khi render
+  const filteredSortedComments = useMemo(() => {
+    let list = [...commentsList];
+    
+    // Loại bỏ các comment trùng với targetComment (nếu có)
+    if (targetComment) {
+      list = list.filter(c => c.id !== targetComment.id);
+    }
+
     if (sortBy === 'newest') {
       return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
@@ -436,14 +1314,15 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
       return list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     }
     return list.sort((a, b) => (b.like - b.dislike) - (a.like - a.dislike));
-  }, [commentsList, sortBy]);
+  }, [commentsList, sortBy, targetComment]);
 
   return (
     <section className="cm-widget mpage__sec">
-      {/* Header Widget */}
       <header className="cm-widget__head">
         <div className="cm-widget__title-row">
-          <div className="cm-widget__title">{commentsList.length} comments</div>
+          <div className="cm-widget__title">
+            {(commentsList.length + (targetComment ? 1 : 0))} comments
+          </div>
         </div>
         <div className="useg cm-widget__sort">
           <button
@@ -470,7 +1349,6 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
         </div>
       </header>
 
-      {/* Form Editor chính */}
       <div className="cm-item cm-item--editor">
         <div className="cm-item__main">
           <span className="cm-item__avatar" aria-hidden="true">
@@ -480,46 +1358,11 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
           </span>
           {isLoggedIn ? (
             <div className="cm-item__detail">
-              <form className="cm-editor" onSubmit={handleCommentSubmitLocal}>
-                <textarea
-                  className="input input--area cm-editor__input"
-                  placeholder="Share your thoughts about this series…"
-                  rows={2}
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                />
-                <div style={{ height: 'auto', overflow: 'visible', transition: 'height 220ms' }}>
-                  <div className="cm-editor__bar">
-                    <div className="cm-editor__toolbar" role="toolbar" aria-label="Formatting">
-                      <button type="button" className="cm-editor__tool" aria-label="Bold" title="Bold (Ctrl+B)">
-                        <strong>B</strong>
-                      </button>
-                      <button type="button" className="cm-editor__tool" aria-label="Quote" title="Quote">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M7 7h4v4H8c0 2 0 3 2 4"></path>
-                          <path d="M15 7h4v4h-3c0 2 0 3 2 4"></path>
-                        </svg>
-                      </button>
-                      <button type="button" className="cm-editor__tool" aria-label="Spoiler" title="Spoiler (Ctrl+E)">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 3l18 18"></path>
-                          <path d="M10.6 6.1A9.7 9.7 0 0 1 12 6c7 0 11 7 11 7a17.6 17.6 0 0 1-3.2 4.4"></path>
-                          <path d="M6.6 6.6A17.7 17.7 0 0 0 1 13s4 7 11 7a9.7 9.7 0 0 0 5.4-1.6"></path>
-                          <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="cm-editor__actions">
-                      <button type="button" className="ubtn ubtn--ghost" onClick={() => setComment('')}>
-                        Cancel
-                      </button>
-                      <button type="submit" className="ubtn ubtn--primary" disabled={!comment.trim()}>
-                        Send
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </form>
+              <CommentFormEditor
+                placeholder="Share your thoughts about this series…"
+                submitButtonText="Send"
+                onSubmit={handleCommentSubmitLocal}
+              />
             </div>
           ) : (
             <div className="cm-item__detail" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 0' }}>
@@ -532,20 +1375,48 @@ export default function CommentsSection({ comicId, targetId, type = 'comic' }: C
         </div>
       </div>
 
-      {/* Danh sách bình luận */}
       <ul className="cm-items">
-        {sortedComments.map((comment) => (
-          <CommentNode key={comment.id} comment={comment} depth={0} onReplySubmit={handleReplySubmit} onReact={handleReaction} onDelete={handleDeleteComment} canInteract={isLoggedIn} onRequireAuth={() => setIsAuthModalOpen(true)} currentUserId={user?.id} />
+        {/* 1. RENDER COMMENT MỤC TIÊU TRƯỚC (NẾU CÓ) */}
+        {targetComment && (
+          <CommentNode 
+            key={targetComment.id} 
+            comment={targetComment} 
+            depth={0} 
+            onReplySubmit={handleReplySubmit} 
+            onReact={handleReaction} 
+            onDelete={handleDeleteComment} 
+            onEdit={handleEditSubmit}
+            canInteract={isLoggedIn} 
+            onRequireAuth={() => setIsAuthModalOpen(true)} 
+            currentUserId={user?.id}
+            targetId={targetId}
+          />
+        )}
+
+        {/* 2. RENDER CÁC COMMENT CÒN LẠI KHÔNG TRÙNG LẶP */}
+        {filteredSortedComments.map((comment) => (
+          <CommentNode 
+            key={comment.id} 
+            comment={comment} 
+            depth={0} 
+            onReplySubmit={handleReplySubmit} 
+            onReact={handleReaction} 
+            onDelete={handleDeleteComment} 
+            onEdit={handleEditSubmit}
+            canInteract={isLoggedIn} 
+            onRequireAuth={() => setIsAuthModalOpen(true)} 
+            currentUserId={user?.id}
+            targetId={targetId}
+          />
         ))}
 
-        {sortedComments.length === 0 && (
+        {filteredSortedComments.length === 0 && !targetComment && (
           <li className="cm-item" style={{ padding: '24px', textAlign: 'center', opacity: 0.7 }}>
             No comments yet. Start the conversation!
           </li>
         )}
       </ul>
 
-      {/* Chân trang tải thêm */}
       {hasMore && (
         <div className="cm-foot">
           <button type="button" className="ubtn ubtn--soft cm-foot__btn" onClick={handleLoadMore} disabled={isLoading}>
