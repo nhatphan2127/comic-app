@@ -2,6 +2,7 @@ export interface User {
     // database thieu Contributor cho chapter
     id: string;
     avatar: string | null;
+    background: string | null;
     displayName: string | null;
     username: string | null;
     email: string | null;
@@ -15,6 +16,8 @@ export interface User {
         chapters?: number;
         comments?: number;
         likes?: number;
+        following?: number;
+        collections?: number;
     } | null;
     // Backwards-compatible individual count fields
     titlesCount?: number;

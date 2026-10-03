@@ -20,13 +20,43 @@ export async function getProfile(req, res, next) {
 
 export async function updateProfile(req, res, next) {
   try {
-    const { avatar, displayName, email, bio, socialLinks } = req.body;
+    const { avatar, background, displayName, username, email, bio, socialLinks } = req.body;
     const user = await userModel.findUserById(req.user.id);
     if (!user) {
       return res.status(404).json({ status: 'fail', message: 'User not found' });
     }
 
-    const updatedUser = await userModel.updateUser(req.user.id, { avatar, displayName, email, bio, socialLinks });
+    const updatedUser = await userModel.updateUser(req.user.id, { avatar, background, displayName, username, email, bio, socialLinks });
+
+    return res.json({ status: 'success', data: updatedUser });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function uploadAvatar(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: 'fail', message: 'Avatar file is required' });
+    }
+
+    const avatarUrl = `avatars/${req.file.filename}`;
+    const updatedUser = await userModel.updateUser(req.user.id, { avatar: avatarUrl });
+
+    return res.json({ status: 'success', data: updatedUser });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function uploadBackground(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: 'fail', message: 'Background file is required' });
+    }
+
+    const backgroundUrl = `backgrounds/${req.file.filename}`;
+    const updatedUser = await userModel.updateUser(req.user.id, { background: backgroundUrl });
 
     return res.json({ status: 'success', data: updatedUser });
   } catch (error) {

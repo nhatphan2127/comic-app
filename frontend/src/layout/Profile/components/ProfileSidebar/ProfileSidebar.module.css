@@ -1,0 +1,130 @@
+/* ==========================================
+   PROFILE SIDEBAR COMPONENT STYLES
+   (Trích xuất từ index.css)
+   ========================================== */
+
+.umenu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+}
+
+/* Mặc định trên Desktop: Ẩn nút Trigger toggle menu */
+.umenu__trigger {
+  display: none;
+}
+
+.umenu__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.umenu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-lg);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.umenu__item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.umenu__item.is-active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.umenu__item.is-active .umenu__icon {
+  color: var(--accent);
+}
+
+.umenu__icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
+  flex: none;
+}
+
+.umenu__text {
+  flex: 1;
+}
+
+.umenu__trigger-caret {
+  display: inline-flex;
+  color: var(--text-3);
+  margin-left: auto;
+  transition: transform 0.15s;
+  transform: rotate(90deg);
+}
+
+/* ==========================================
+   RESPONSIVE (Screen <= 960px)
+   ========================================== */
+
+@media (max-width: 960px) {
+  .umenu {
+    padding-top: 0;
+  }
+
+  .umenu__trigger {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-lg);
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+
+  .umenu__trigger:hover {
+    background: var(--surface-2);
+  }
+
+  .umenu__trigger .umenu__icon {
+    color: var(--accent);
+  }
+
+  .umenu.is-open .umenu__trigger-caret {
+    transform: rotate(-90deg);
+  }
+
+  .umenu__list {
+    display: none;
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    border: 0;
+    margin-top: 6px;
+    padding: 6px;
+  }
+
+  .umenu.is-open .umenu__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+}

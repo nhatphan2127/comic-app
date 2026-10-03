@@ -7,6 +7,8 @@ import './App.css'
 import MangaDetails from './pages/MangaDetail';
 import MangaReader from './pages/MangaReader';
 import UserProfile from './pages/UserProfile'
+import ProtectedRoute from './components/ProtectedRoute/ProtectedRoute';
+
 function App() {
   const { theme } = useTheme();
 
@@ -25,7 +27,14 @@ function App() {
             <Route path="comics/:comicUrl/:chapterId" element={<MangaReader />} />
 
             {/* 2. Thêm Route cho trang cá nhân tại đây */}
-            <Route path="/profile" element={<UserProfile />} />
+            <Route 
+              path="/profile" 
+              element={
+                <ProtectedRoute>
+                  <UserProfile />
+                </ProtectedRoute>
+              } 
+            />
 
             {/* <Route path="*" element={<NotFound />} /> */}
 

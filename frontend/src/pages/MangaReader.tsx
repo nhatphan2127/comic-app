@@ -1,4 +1,4 @@
-import MangaReaderLayout from "../layout/MangaReaderLayout.tsx"
+import MangaReaderLayout from "../layout/MangaReaderLayout/MangaReaderLayout.tsx"
 
 
 export default function Home() {

@@ -344,6 +344,26 @@ export const userApi = {
       headers: getAuthHeaders(),
       body: JSON.stringify({ newPassword, confirmPassword }),
     }),
+
+  // Update current user's avatar by file upload
+  uploadAvatar: (avatarFile: File) => {
+    const formData = new FormData();
+    formData.append('avatar', avatarFile);
+    return multipartRequest<UserProfile>('/user/profile/avatar', formData, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+    });
+  },
+
+  // Update current user's background by file upload
+  uploadBackground: (backgroundFile: File) => {
+    const formData = new FormData();
+    formData.append('background', backgroundFile);
+    return multipartRequest<UserProfile>('/user/profile/background', formData, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+    });
+  },
   
   // FollowingTitlesPanel.tsx
   getFollowingList: () =>

@@ -1,8 +1,11 @@
 import express from 'express';
 import { authenticateToken } from '../middlewares/authMiddleware.js';
+import upload from '../middlewares/uploadMiddleware.js';
 import {
   getProfile,
   updateProfile,
+  uploadAvatar,
+  uploadBackground,
   updatePassword,
   updatePreferences,
   getFollowingList,
@@ -24,6 +27,8 @@ import {
 const router = express.Router();
 router.get('/profile', authenticateToken, getProfile);
 router.put('/profile', authenticateToken, updateProfile);
+router.put('/profile/avatar', authenticateToken, upload.single('avatar'), uploadAvatar);
+router.put('/profile/background', authenticateToken, upload.single('background'), uploadBackground);
 router.put('/password-reset', authenticateToken, updatePassword);
 router.get('/following', authenticateToken, getFollowingList);
 router.get('/following/categories', authenticateToken, getFollowingCategories);

@@ -5,8 +5,10 @@ import fs from 'node:fs';
 const storageRoot = path.join(process.cwd(), 'storage');
 const comicsFolder = path.join(storageRoot, 'comics');
 const chapterImagesFolder = path.join(storageRoot, 'chapter-images');
+const userAvatarsFolder = path.join(storageRoot, 'avatars');
+const userBackgroundsFolder = path.join(storageRoot, 'backgrounds');
 
-[comicsFolder, chapterImagesFolder].forEach((folder) => {
+[comicsFolder, chapterImagesFolder, userAvatarsFolder, userBackgroundsFolder].forEach((folder) => {
   if (!fs.existsSync(folder)) {
     fs.mkdirSync(folder, { recursive: true });
   }
@@ -14,7 +16,16 @@ const chapterImagesFolder = path.join(storageRoot, 'chapter-images');
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
-    const folder = file.fieldname === 'coverImage' ? comicsFolder : chapterImagesFolder;
+    let folder;
+    if (file.fieldname === 'coverImage') {
+      folder = comicsFolder;
+    } else if (file.fieldname === 'avatar') {
+      folder = userAvatarsFolder;
+    } else if (file.fieldname === 'background') {
+      folder = userBackgroundsFolder;
+    } else {
+      folder = chapterImagesFolder;
+    }
     cb(null, folder);
   },
   filename(req, file, cb) {

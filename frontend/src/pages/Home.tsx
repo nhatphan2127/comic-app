@@ -1,15 +1,14 @@
-import Header from "../layout/Header.tsx"
-import Footer from '../layout/Footer.tsx'
-import Main from '../layout/Main.tsx'
+import HeaderLayout from "../layout/HeaderLayout/HeaderLayout.tsx"
+import FooterLayout from '../layout/FooterLayout/FooterLayout.tsx'
+import MainLayout from '../layout/MainLayout/MainLayout.tsx'
 
 
 export default function Home() {
     return (
         <>
-        
-            <Header></Header>
-            <Main></Main>
-            <Footer></Footer>
+            <HeaderLayout></HeaderLayout>
+            <MainLayout></MainLayout>
+            <FooterLayout></FooterLayout>
         </>
     )
 }

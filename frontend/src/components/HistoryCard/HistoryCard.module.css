@@ -1,0 +1,166 @@
+/* ==========================================================================
+   HISTORY CARD MODULE CSS
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Grid Container (Dành cho danh sách HistoryCard nếu cần)
+   -------------------------------------------------------------------------- */
+.hgrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    display: grid;
+}
+
+/* --------------------------------------------------------------------------
+   2. History Item Card
+   -------------------------------------------------------------------------- */
+.hitem {
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    color: inherit;
+    grid-template-columns: 56px 1fr;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    text-decoration: none;
+    transition: background .12s;
+    display: grid;
+    position: relative;
+    overflow: hidden;
+}
+
+.hitem:hover {
+    background: var(--surface-2);
+}
+
+/* Poster Image */
+.hitem__poster {
+    border-radius: 4px;
+    flex-shrink: 0;
+    width: 56px;
+    height: 78px;
+    overflow: hidden;
+}
+
+.hitem__poster img {
+    object-fit: cover;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Body Content */
+.hitem__body {
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    display: flex;
+}
+
+.hitem__title {
+    font-size: var(--text-lg);
+    color: var(--text);
+    -webkit-line-clamp: 2;
+    word-break: break-word;
+    -webkit-box-orient: vertical;
+    font-weight: 600;
+    line-height: 1.3;
+    transition: color .15s;
+    display: -webkit-box;
+    overflow: hidden;
+}
+
+.hitem:hover .hitem__title {
+    color: var(--accent);
+}
+
+.hitem__meta {
+    font-size: var(--text-sm);
+    color: var(--text-3);
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    display: flex;
+}
+
+.hitem__ch,
+.hitem__time {
+    font-weight: 400;
+    font-size: inherit;
+    font-family: inherit;
+}
+
+.hitem__ch {
+    color: var(--text-2);
+    align-items: center;
+    gap: 4px;
+    display: inline-flex;
+}
+
+.hitem__ch svg {
+    color: var(--text-3);
+    flex-shrink: 0;
+}
+
+.hitem__time {
+    color: var(--text-3);
+}
+
+/* --------------------------------------------------------------------------
+   3. Action Button (Remove)
+   -------------------------------------------------------------------------- */
+.hitem__remove {
+    width: 22px;
+    height: 22px;
+    color: var(--text-3);
+    cursor: pointer;
+    opacity: 0;
+    background: 0 0;
+    border: 0;
+    border-radius: 6px;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
+    transition: background .12s, color .12s, opacity .12s;
+    display: inline-flex;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+}
+
+.hitem:hover .hitem__remove,
+.hitem__remove:focus-visible {
+    opacity: 1;
+}
+
+.hitem__remove:hover {
+    color: var(--danger);
+    background: var(--bg-2);
+}
+
+/* --------------------------------------------------------------------------
+   4. Progress Bar
+   -------------------------------------------------------------------------- */
+.hitem__progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgb(var(--text-rgb) / .1);
+    overflow: hidden;
+}
+
+.hitem__progress-bar {
+    height: 100%;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+/* --------------------------------------------------------------------------
+   5. Responsive
+   -------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+    .hgrid {
+        grid-template-columns: 1fr;
+    }
+}

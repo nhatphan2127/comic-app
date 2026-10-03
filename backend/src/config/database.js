@@ -20,12 +20,20 @@ const db = await open({
   driver: sqlite3.Database,
 });
 
+// Ensure the background column exists for older database versions
+try {
+  await db.exec(`ALTER TABLE users ADD COLUMN background TEXT;`);
+} catch (error) {
+  // Ignore errors if the column already exists or the table does not exist yet.
+}
+
 // 1. Tạo các bảng cấu trúc cơ sở dữ liệu trước để đảm bảo chúng luôn tồn tại
 await db.exec(`
   -- 1. Table User
   CREATE TABLE IF NOT EXISTS users (
     id TEXT NOT NULL PRIMARY KEY,
     avatar TEXT,
+    background TEXT,
     displayName TEXT,
     username TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,

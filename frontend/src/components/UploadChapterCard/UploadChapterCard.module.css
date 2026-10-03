@@ -1,0 +1,337 @@
+/* ==========================================================================
+   CHAPTER CARD & ROW MODULE CSS (ChapterCard & ChapterRow)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Poster Component
+   -------------------------------------------------------------------------- */
+.poster {
+    aspect-ratio: 200/280;
+    border-radius: var(--radius);
+    background: linear-gradient(110deg, var(--surface) 0%, var(--surface-2) 40%, var(--surface) 60%, var(--surface) 100%);
+    box-shadow: var(--shadow-poster);
+    isolation: isolate;
+    background-size: 250% 100%;
+    transition: transform .2s;
+    animation: poster-shimmer 1.6s linear infinite;
+    position: relative;
+    overflow: hidden;
+}
+
+@keyframes poster-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    to {
+        background-position: -150% 0;
+    }
+}
+
+.poster svg,
+.poster img {
+    object-fit: cover;
+    background: var(--surface);
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.poster img[src]:not([src=""]) {
+    z-index: 1;
+    position: relative;
+}
+
+.poster:has(img[src]:not([src=""])) {
+    background: var(--surface);
+    animation: none;
+}
+
+.poster--md {
+    width: 100%;
+}
+
+.poster--sm {
+    width: 100%;
+    border-radius: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   2. ChapterCard Component (Grid / Compact View)
+   -------------------------------------------------------------------------- */
+.card {
+    color: var(--text);
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding-bottom: 6px;
+    display: flex;
+    text-decoration: none;
+}
+
+.card__poster-wrap {
+    position: relative;
+    overflow: visible;
+}
+
+.card__poster-overlay {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 5;
+    display: flex;
+    gap: 4px;
+}
+
+/* Status Badges cho Card Overlay */
+.status-badge {
+    font-size: var(--text-2xs);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    font-family: var(--f-mono);
+    border-radius: 4px;
+    padding: 2px 6px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    color: #fff;
+}
+
+.status-pending {
+    background: rgba(217, 156, 86, 0.85);
+}
+
+.status-accept {
+    background: rgba(34, 197, 94, 0.85);
+}
+
+.status-reject {
+    background: rgba(239, 68, 68, 0.85);
+}
+
+.card__body {
+    text-align: center;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding: 0 2px;
+    display: flex;
+}
+
+.card__title {
+    font-size: var(--text-base);
+    letter-spacing: -.005em;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    margin-top: 4px;
+    font-weight: 600;
+    line-height: 1.3;
+    transition: color .15s;
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--text);
+}
+
+.card:hover .card__title {
+    color: var(--accent);
+}
+
+.card__chapter-meta {
+    font-size: var(--text-xs);
+    color: var(--text-2);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.card__meta {
+    font-size: var(--text-sm);
+    color: var(--text-3);
+    white-space: nowrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 0 2px;
+    display: flex;
+}
+
+.card__time {
+    font-family: var(--f-mono);
+    font-size: var(--text-xs);
+    color: var(--text-3);
+}
+
+/* Compact Modifier */
+.card--compact {
+    padding-bottom: 0;
+}
+
+.card--compact .card__poster-wrap {
+    border-radius: var(--radius-sm);
+    transition: transform .15s;
+    overflow: hidden;
+}
+
+.card--compact:hover .card__poster-wrap {
+    transform: translateY(-2px);
+}
+
+.card--compact .card__body {
+    text-align: left;
+    gap: 4px;
+    padding: 0;
+}
+
+.card--compact .card__title {
+    margin-top: 0;
+    font-weight: 500;
+}
+
+.card--compact .card__meta {
+    font-size: var(--text-sm);
+    gap: 8px;
+    padding: 0;
+}
+
+/* --------------------------------------------------------------------------
+   3. ChapterRow Component (List View)
+   -------------------------------------------------------------------------- */
+.ulrow {
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    grid-template-columns: 52px 1fr auto;
+    grid-template-areas: "poster body actions";
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    transition: background .12s;
+    display: grid;
+    list-style: none;
+    position: relative;
+    cursor: pointer;
+}
+
+.ulrow:hover {
+    background: var(--surface-2);
+}
+
+/* Trạng thái chưa đọc (Unread indicator bar) */
+.ulrow.is-unread {
+    padding-left: 19px;
+}
+
+.ulrow.is-unread::before {
+    content: "";
+    background: var(--accent);
+    border-radius: 2px;
+    width: 3px;
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 0;
+}
+
+.ulrow__poster {
+    grid-area: poster;
+    width: 52px;
+    height: 72px;
+    box-shadow: var(--shadow-poster);
+    border-radius: 4px;
+    display: block;
+    overflow: hidden;
+}
+
+.ulrow__body {
+    grid-area: body;
+    min-width: 0;
+}
+
+.ulrow__title {
+    color: var(--text);
+    font-weight: 600;
+    font-size: var(--text-lg);
+    text-decoration: none;
+    transition: color .15s;
+}
+
+.ulrow__title:hover {
+    color: var(--accent);
+}
+
+.ulrow__meta {
+    font-size: var(--text-sm);
+    color: var(--text-3);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    display: flex;
+}
+
+.ulrow__text-meta {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.ulrow__dot {
+    background: var(--text-4);
+    border-radius: 50%;
+    width: 2px;
+    height: 2px;
+}
+
+.ulrow__actions {
+    grid-area: actions;
+    align-items: center;
+    gap: 8px;
+    display: flex;
+}
+
+/* Badge hiển thị trạng thái duyệt của ChapterRow */
+.ulrow__folder {
+    background: var(--bg-2);
+    color: var(--text-2);
+    font-size: var(--text-xs);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-family: var(--f-mono);
+    white-space: nowrap;
+    border-radius: 999px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-weight: 600;
+    display: inline-flex;
+}
+
+/* Trạng thái duyệt theo từng màu sắc */
+.ulrow__folder.status-pending {
+    color: #d99c56;
+    background: rgba(217, 156, 86, 0.15);
+}
+
+.ulrow__folder.status-accept {
+    color: var(--success, #22c55e);
+    background: rgba(34, 197, 94, 0.15);
+}
+
+.ulrow__folder.status-reject {
+    color: var(--danger, #ef4444);
+    background: rgba(239, 68, 68, 0.15);
+}
+
+/* --------------------------------------------------------------------------
+   4. Responsive
+   -------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+    .ulrow {
+        grid-template-columns: 52px 1fr;
+        grid-template-areas: "poster body" "actions actions";
+        align-items: start;
+    }
+
+    .ulrow__actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+}

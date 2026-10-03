@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export async function findUserById(id) {
   return await db.get(
-    'SELECT id, avatar, displayName, username, email, bio, socialLinks, role, isBanned FROM users WHERE id = ?',
+    'SELECT id, avatar, background, displayName, username, email, bio, socialLinks, role, isBanned FROM users WHERE id = ?',
     [id]
   );
 }
@@ -33,18 +33,46 @@ export async function createUser(username, password, email, displayName) {
   return { id, username, displayName, role: 'user' };
 }
 
-export async function updateUser(id, { avatar, displayName, email, bio, socialLinks }) {
-  await db.run(
-    `UPDATE users SET 
-      avatar = COALESCE(?, avatar), 
-      displayName = COALESCE(?, displayName), 
-      email = COALESCE(?, email), 
-      bio = COALESCE(?, bio), 
-      socialLinks = COALESCE(?, socialLinks), 
-      updatedAt = CURRENT_TIMESTAMP 
-     WHERE id = ?`,
-    [avatar, displayName, email, bio, socialLinks, id]
-  );
+export async function updateUser(id, { avatar, background, displayName, username, email, bio, socialLinks }) {
+  const updates = [];
+  const values = [];
+
+  if (avatar !== undefined) {
+    updates.push('avatar = ?');
+    values.push(avatar === '' ? null : avatar);
+  }
+  if (background !== undefined) {
+    updates.push('background = ?');
+    values.push(background === '' ? null : background);
+  }
+  if (displayName !== undefined) {
+    updates.push('displayName = ?');
+    values.push(displayName);
+  }
+  if (username !== undefined) {
+    updates.push('username = ?');
+    values.push(username);
+  }
+  if (email !== undefined) {
+    updates.push('email = ?');
+    values.push(email);
+  }
+  if (bio !== undefined) {
+    updates.push('bio = ?');
+    values.push(bio);
+  }
+  if (socialLinks !== undefined) {
+    updates.push('socialLinks = ?');
+    values.push(socialLinks);
+  }
+
+  if (updates.length === 0) {
+    return await findUserById(id);
+  }
+
+  updates.push('updatedAt = CURRENT_TIMESTAMP');
+  const query = `UPDATE users SET ${updates.join(', ')} WHERE id = ?`;
+  await db.run(query, [...values, id]);
   return await findUserById(id);
 }
 

@@ -1,0 +1,424 @@
+/* ==========================================================================
+   UploadComicCard.module.css
+   Trích xuất từ index.css & ComicForm.css
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Badge Trạng thái Đóng góp (Status Badges)
+   -------------------------------------------------------------------------- */
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-pending {
+  background: #d97706;
+}
+
+.status-accept {
+  background: #16a34a;
+}
+
+.status-reject {
+  background: #dc2626;
+}
+
+/* --------------------------------------------------------------------------
+   2. Poster Common Styles
+   -------------------------------------------------------------------------- */
+.poster {
+  aspect-ratio: 200 / 280;
+  border-radius: var(--radius);
+  background: linear-gradient(
+    110deg,
+    var(--surface) 0%,
+    var(--surface-2) 40%,
+    var(--surface) 60%,
+    var(--surface) 100%
+  );
+  box-shadow: var(--shadow-poster);
+  isolation: isolate;
+  background-size: 250% 100%;
+  transition: transform 0.2s;
+  animation: poster-shimmer 1.6s linear infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes poster-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -150% 0;
+  }
+}
+
+.poster svg,
+.poster img {
+  object-fit: cover;
+  background: var(--surface);
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.poster img[src]:not([src=""]) {
+  z-index: 1;
+  position: relative;
+}
+
+.poster:has(img[src]:not([src=""])) {
+  background: var(--surface);
+  animation: none;
+}
+
+.poster--sm {
+  width: 52px;
+  height: 72px;
+  aspect-ratio: 5 / 7;
+}
+
+.poster--md {
+  width: 100px;
+  aspect-ratio: 200 / 280;
+}
+
+/* --------------------------------------------------------------------------
+   3. Component: ComicCard
+   -------------------------------------------------------------------------- */
+.card {
+  color: var(--text);
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-bottom: 6px;
+  display: flex;
+  text-decoration: none;
+}
+
+.card--compact {
+  display: flex;
+  flex-direction: row;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 0.6rem;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  padding-bottom: 0;
+}
+
+.card--compact:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.card__poster-wrap {
+  position: relative;
+  overflow: visible;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.card__poster-overlay {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.card__body {
+  text-align: left;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex: 1;
+}
+
+.card__meta {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  white-space: nowrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0;
+  display: flex;
+}
+
+.card__demographic {
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.card__time {
+  font-family: var(--f-mono);
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.card__title {
+  font-size: var(--text-base);
+  letter-spacing: -0.005em;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  margin-top: 0;
+  font-weight: 500;
+  line-height: 1.3;
+  transition: color 0.15s;
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text);
+}
+
+.card:hover .card__title {
+  color: var(--accent);
+}
+
+.card__types {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   4. Component: ComicRow
+   -------------------------------------------------------------------------- */
+.ulrow {
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  grid-template-columns: 52px 1fr auto;
+  grid-template-areas: "poster body actions";
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  transition: background 0.12s;
+  display: grid;
+  list-style: none;
+}
+
+.ulrow:hover {
+  background: var(--surface-2);
+}
+
+.ulrow__poster {
+  grid-area: poster;
+  width: 52px;
+  height: 72px;
+  box-shadow: var(--shadow-poster);
+  border-radius: 4px;
+  display: block;
+  overflow: hidden;
+}
+
+.ulrow__body {
+  grid-area: body;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ulrow__title {
+  color: var(--text);
+  font-weight: 500;
+  font-size: var(--text-lg);
+  text-decoration: none;
+  transition: color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ulrow__title:hover {
+  color: var(--accent);
+}
+
+.ulrow__meta {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  display: flex;
+}
+
+.ulrow__dot {
+  background: var(--text-4);
+  border-radius: 50%;
+  width: 2px;
+  height: 2px;
+  display: inline-block;
+}
+
+.ulrow__status {
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  font-family: var(--f-mono);
+  color: var(--text-2);
+  align-items: center;
+  display: inline-flex;
+}
+
+.ulrow__status--releasing {
+  color: var(--success);
+}
+
+.ulrow__text-meta {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.text-capitalize {
+  text-transform: capitalize;
+}
+
+.ulrow__actions {
+  grid-area: actions;
+  align-items: center;
+  gap: 8px;
+  display: flex;
+}
+
+.ulrow__folder {
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: var(--text-md);
+  white-space: nowrap;
+  border-radius: 999px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-weight: 500;
+  display: inline-flex;
+}
+
+.ulrow:hover .ulrow__folder {
+  background: var(--bg);
+}
+
+.ulrow__rating {
+  position: relative;
+}
+
+.ulrow__rating-btn {
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: var(--text-md);
+  cursor: pointer;
+  white-space: nowrap;
+  border: 0;
+  border-radius: 999px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-weight: 500;
+  line-height: 1;
+  display: inline-flex;
+}
+
+.ulrow__rating-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.ulrow__rating-btn.is-rated {
+  color: var(--accent);
+}
+
+/* Color badges cho Rating */
+.rating-safe {
+  color: #22a06b;
+  background: rgba(34, 160, 107, 0.16);
+}
+
+.rating-suggestive {
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.16);
+}
+
+.rating-erotica {
+  color: #ec4899;
+  background: rgba(236, 72, 153, 0.16);
+}
+
+.rating-pornographic {
+  color: var(--danger);
+  background: rgb(var(--danger-rgb) / 0.16);
+}
+
+/* --------------------------------------------------------------------------
+   5. Buttons (Button UI Components)
+   -------------------------------------------------------------------------- */
+.ubtn {
+  min-height: var(--ctrl-md);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-md);
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+  background: 0 0;
+  border: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+  display: inline-flex;
+}
+
+.ubtn--sm {
+  min-height: var(--ctrl-sm);
+  font-size: var(--text-sm);
+  padding: 0 10px;
+}
+
+.ubtn--ghost {
+  color: var(--text-2);
+  background: 0 0;
+}
+
+.ubtn--ghost:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   6. Responsive Layouts
+   -------------------------------------------------------------------------- */
+@media (max-width: 600px) {
+  .ulrow {
+    grid-template-columns: 52px 1fr;
+    grid-template-areas:
+      "poster body"
+      "actions actions";
+    align-items: start;
+  }
+
+  .ulrow__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .card--compact {
+    flex-direction: column;
+  }
+}

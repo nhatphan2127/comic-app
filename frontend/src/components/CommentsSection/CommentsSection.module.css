@@ -1,0 +1,930 @@
+.cm-item__ctrl--like.cm-item__ctrl--active {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.cm-item__ctrl--dislike.cm-item__ctrl--active {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.cm-item__ctrl--active {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+
+
+/* ─── RICH CONTENT RENDER & PREVIEW ─── */
+.cm-line {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.cm-quote {
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  padding-left: 10px;
+  margin: 6px 0;
+  opacity: 0.85;
+  font-style: italic;
+}
+
+.cm-inline-img {
+  max-width: 100%;
+  max-height: 250px;
+  display: block;
+  border-radius: 6px;
+  margin: 6px 0;
+}
+
+.markdown-preview {
+  min-height: 60px;
+  padding: 10px 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.02);
+  margin-bottom: 8px;
+}
+
+/* ─── INTERACTIVE SPOILERS ─── */
+.cm-spoiler {
+  background-color: #333333;
+  color: #333333;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+  transition: background-color 0.2s, color 0.2s;
+  user-select: none;
+}
+.cm-spoiler.is-revealed {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  user-select: auto;
+}
+
+/* ─── EMOJI PICKER POPUP ─── */
+.emoji-picker-dropdown {
+  position: absolute;
+  bottom: 115%;
+  left: 0;
+  z-index: 100;
+  background-color: #1a1a1a; /* Dark-friendly background */
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  min-width: 170px;
+}
+
+.emoji-item {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s;
+}
+
+.emoji-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+
+/* ─── FACEBOOK DARK-THEME POPOVERS ─── */
+.fb-emoji-popup,
+.fb-gif-popup {
+  position: absolute;
+  bottom: 110%;
+  left: 0;
+  z-index: 120;
+  width: 295px;
+  background-color: #242526; /* Deep Dark */
+  border: 1px solid #3e4042;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: 10px 0 0;
+}
+
+/* Rounded search bars with integrated search icon */
+.fb-popup-search-box {
+  margin: 0 12px 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fb-search-icon {
+  position: absolute;
+  left: 12px;
+  color: #b0b3b8;
+  pointer-events: none;
+}
+
+.fb-popup-input {
+  width: 100%;
+  height: 36px;
+  border-radius: 18px !important;
+  border: none !important;
+  background-color: #3a3b3c !important;
+  color: #e4e6eb !important;
+  padding: 0 16px 0 34px !important;
+  font-size: 14px;
+  outline: none;
+}
+
+.fb-popup-input::placeholder {
+  color: #b0b3b8;
+}
+
+/* Scrollable Container and Sections */
+.fb-popup-scroll-container {
+  height: 220px;
+  overflow-y: auto;
+  padding: 0 12px 10px;
+  scrollbar-width: thin;
+}
+
+.fb-emoji-section__title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #8a8d91;
+  margin: 10px 0 6px;
+  letter-spacing: 0.5px;
+}
+
+/* Grid for Emojis */
+.fb-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+}
+
+.fb-emoji-btn {
+  background: none;
+  border: none;
+  font-size: 21px;
+  cursor: pointer;
+  padding: 4px 0;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease, background-color 0.1s;
+}
+
+.fb-emoji-btn:hover {
+  background-color: #3a3b3c;
+  transform: scale(1.2);
+}
+
+/* Tab Categories Footer (Emojis Popover Bottom Navigation) */
+.fb-emoji-footer-nav {
+  display: flex;
+  border-top: 1px solid #3e4042;
+  background-color: #18191a;
+  padding: 6px 4px;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.fb-footer-nav-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background-color 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fb-footer-nav-btn:hover {
+  background-color: #3a3b3c;
+}
+
+/* Optimized Masonry-Style Column Layout for GIFs */
+.fb-gif-masonry {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.fb-gif-btn {
+  background-color: #18191a;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.fb-gif-btn:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.fb-gif-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fb-popup-empty {
+  text-align: center;
+  padding: 50px 10px;
+  font-size: 13px;
+  color: #b0b3b8;
+}
+
+
+/* Đường viền nét đứt (dashed border) bao quanh comment mục tiêu */
+.cm-item--targeted > .cm-item__main {
+  border: 2px dashed #7a5238; /* Sử dụng mã màu thương hiệu của bạn */
+  border-radius: 8px;
+  padding: 10px;
+  background-color: rgba(122, 82, 56, 0.05); /* Nền nhạt nổi bật */
+  animation: borderPulse 2.5s infinite ease-in-out;
+}
+
+/* Hiệu ứng nhịp thở giúp viền nét đứt sinh động hơn giống preview */
+@keyframes borderPulse {
+  0%, 100% {
+    border-color: #7a5238;
+  }
+  50% {
+    border-color: rgba(122, 82, 56, 0.2);
+  }
+}
+
+
+/* ==========================================================================
+   COMMENTS SECTION MODULE CSS
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Base Component Utilities (Avatar, Buttons, Segmented Controls)
+   -------------------------------------------------------------------------- */
+.uavatar {
+    color: #ffffffeb;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    vertical-align: middle;
+    border-radius: 50%;
+    flex-shrink: 0;
+    justify-content: center;
+    align-items: center;
+    font-weight: 600;
+    line-height: 1;
+    display: inline-flex;
+    overflow: hidden;
+}
+
+.uavatar > img {
+    object-fit: cover;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.uavatar > svg {
+    width: 55%;
+    height: 55%;
+}
+
+.uavatar--guest {
+    background: var(--surface-2);
+    color: var(--text-3);
+}
+
+.ubtn {
+    min-height: var(--ctrl-md);
+    border-radius: var(--radius-sm);
+    font: inherit;
+    font-size: var(--text-md);
+    cursor: pointer;
+    color: var(--text);
+    white-space: nowrap;
+    background: 0 0;
+    border: 0;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    font-weight: 500;
+    transition: background .12s, color .12s;
+    display: inline-flex;
+    text-decoration: none;
+}
+
+.ubtn--sm {
+    min-height: var(--ctrl-sm);
+    font-size: var(--text-sm);
+    padding: 0 10px;
+}
+
+.ubtn--primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+.ubtn--primary:hover {
+    background: var(--accent-2);
+}
+
+.ubtn--soft {
+    background: var(--surface);
+    color: var(--text-2);
+}
+
+.ubtn--soft:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.ubtn--ghost {
+    color: var(--text-2);
+    background: 0 0;
+}
+
+.ubtn--ghost:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.ubtn--danger {
+    background: var(--danger);
+    color: #fff;
+}
+
+.ubtn--danger:hover {
+    background: rgb(var(--danger-rgb) / .85);
+}
+
+.useg {
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    gap: 2px;
+    padding: 3px;
+    display: inline-flex;
+}
+
+.useg__btn {
+    min-height: var(--ctrl-sm);
+    color: var(--text-3);
+    font: inherit;
+    font-size: var(--text-md);
+    cursor: pointer;
+    background: 0 0;
+    border: 0;
+    border-radius: 5px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    font-weight: 500;
+    transition: background .12s, color .12s;
+    display: inline-flex;
+}
+
+.useg__btn:hover {
+    color: var(--text);
+}
+
+.useg__btn.is-on {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   2. Comment Section Container & Header
+   -------------------------------------------------------------------------- */
+.mpage__sec {
+    flex-direction: column;
+    gap: 14px;
+    display: flex;
+}
+
+.cm-widget {
+    --cm-connection-color: rgb(var(--text-rgb) / .1);
+    flex-direction: column;
+    gap: 14px;
+    display: flex;
+}
+
+.cm-widget__head {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    display: flex;
+}
+
+.cm-widget__head .cm-widget__sort {
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.cm-widget__title-row {
+    align-items: center;
+    gap: 8px;
+    display: inline-flex;
+}
+
+.cm-widget__title {
+    font-size: var(--text-base);
+    color: var(--text-2);
+    margin: 0;
+    font-weight: 500;
+}
+
+.cm-widget__sort {
+    flex-shrink: 0;
+}
+
+.cm-items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --------------------------------------------------------------------------
+   3. Comment Item / Node Component
+   -------------------------------------------------------------------------- */
+.cm-item {
+    --cm-avatar-width: 2.2rem;
+    padding-bottom: 1rem;
+    transition: background .2s;
+    position: relative;
+}
+
+.cm-item--collapsed {
+    padding-bottom: .5rem;
+}
+
+.cm-item--editor .cm-item__main {
+    align-items: flex-start;
+    margin-top: 16px;
+}
+
+.cm-item__main {
+    align-items: flex-start;
+    display: flex;
+    position: relative;
+}
+
+.cm-item--has-replies > .cm-item__main {
+    padding-bottom: 1rem;
+}
+
+.cm-item--has-replies > .cm-item__main:before {
+    content: "";
+    background: var(--cm-connection-color);
+    width: 1px;
+    left: calc(var(--cm-avatar-width) * .5);
+    top: calc(var(--cm-avatar-width) + .5rem);
+    position: absolute;
+    bottom: 0;
+}
+
+.cm-item__avatar {
+    flex-shrink: 0;
+    margin-right: .5rem;
+    text-decoration: none;
+    display: inline-flex;
+}
+
+.cm-item__detail {
+    flex-direction: column;
+    flex-grow: 1;
+    justify-content: center;
+    min-width: 0;
+    display: flex;
+}
+
+.cm-item__header {
+    align-items: flex-start;
+    gap: 8px;
+    padding-right: 2rem;
+    display: flex;
+    position: relative;
+}
+
+.cm-item__header-main {
+    flex-direction: column;
+    flex: 1;
+    gap: 1px;
+    min-width: 0;
+    display: flex;
+}
+
+.cm-item__user {
+    font-weight: 700;
+    font-size: var(--text-base);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: .3rem;
+    line-height: 1.2;
+    display: inline-flex;
+}
+
+.cm-item__user a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.cm-item__user a:hover {
+    color: var(--accent);
+}
+
+.cm-item__user a.is-banned {
+    text-decoration: line-through;
+}
+
+.cm-item__badge {
+    font-size: var(--text-2xs);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: rgb(var(--accent-rgb) / .12);
+    border-radius: 4px;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    font-weight: 600;
+    display: inline-flex;
+}
+
+.cm-item__badge--pinned svg {
+    color: currentColor;
+}
+
+.cm-item__mod {
+    color: var(--success, #2bb673);
+    flex-shrink: 0;
+    justify-content: center;
+    align-items: center;
+    display: inline-flex;
+}
+
+.cm-item__time {
+    color: var(--text-3);
+    font-size: var(--text-xs);
+    line-height: 1.2;
+}
+
+.cm-item__collapser {
+    cursor: pointer;
+    color: var(--text-3);
+    opacity: .35;
+    -webkit-user-select: none;
+    user-select: none;
+    justify-content: center;
+    align-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    transition: all .2s;
+    display: flex;
+    position: absolute;
+    top: 0;
+    right: .5rem;
+}
+
+.cm-item__collapser:hover,
+.cm-item__main:hover .cm-item__collapser {
+    color: var(--accent);
+    opacity: 1;
+}
+
+.cm-item__collapser i {
+    font-style: normal;
+    font-size: var(--text-lg);
+    line-height: 1;
+}
+
+.cm-item__content {
+    color: var(--text-2);
+    overflow-wrap: anywhere;
+    margin: .3rem 0;
+}
+
+/* Controls & Actions */
+.cm-item__ctrls {
+    font-size: var(--text-sm);
+    flex-wrap: wrap;
+    align-items: center;
+    display: flex;
+}
+
+.cm-item__ctrl {
+    color: var(--text-3);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: inherit;
+    background: 0 0;
+    border: 0;
+    align-items: center;
+    margin-right: 1.5rem;
+    padding: 0;
+    display: inline-flex;
+}
+
+.cm-item__ctrl:hover {
+    color: var(--text);
+}
+
+.cm-item__ctrl--active {
+    color: var(--accent);
+}
+
+.cm-item__ctrl--dislike.cm-item__ctrl--active {
+    color: var(--danger);
+}
+
+.cm-item__ctrl span {
+    margin-left: .25rem;
+}
+
+/* Replies List Nesting */
+.cm-item__replies {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    position: relative;
+}
+
+.cm-item__replies > .cm-item {
+    padding-left: var(--cm-avatar-width);
+    position: relative;
+}
+
+.cm-item__replies > .cm-item:before {
+    content: "";
+    border-bottom: 1px solid var(--cm-connection-color);
+    border-bottom-left-radius: calc(var(--cm-avatar-width) * .5);
+    width: calc(var(--cm-avatar-width) * .5 - .5rem);
+    height: calc(var(--cm-avatar-width) * .5);
+    left: calc(var(--cm-avatar-width) * .5);
+    position: absolute;
+    top: 0;
+}
+
+.cm-item__replies > .cm-item:after {
+    content: "";
+    background: var(--cm-connection-color);
+    width: 1px;
+    left: calc(var(--cm-avatar-width) * .5);
+    position: absolute;
+    top: 0;
+    bottom: 0;
+}
+
+.cm-item__replies > .cm-item:last-child:before {
+    border-left: 1px solid var(--cm-connection-color);
+}
+
+.cm-item__replies > .cm-item:last-child:after {
+    display: none;
+}
+
+/* --------------------------------------------------------------------------
+   4. Comment Editor Form (CommentFormEditor)
+   -------------------------------------------------------------------------- */
+.cm-editor {
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    display: flex;
+}
+
+.cm-item__header + .cm-editor {
+    margin-top: 5px;
+}
+
+.cm-editor__input {
+    resize: vertical;
+    width: 100%;
+    min-height: 60px;
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-md);
+    border: 0;
+    outline: none;
+    padding: 8px 12px;
+    line-height: 1.5;
+    transition: background .12s, box-shadow .12s;
+}
+
+.cm-editor__input:hover {
+    background: var(--surface-3);
+}
+
+.cm-editor__input:focus {
+    background: var(--surface-2);
+    box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / .22);
+}
+
+.cm-editor__bar {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    display: flex;
+}
+
+.cm-editor__toolbar {
+    flex-wrap: wrap;
+    flex: auto;
+    align-items: center;
+    gap: 4px;
+    display: flex;
+}
+
+.cm-editor__actions {
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+    display: flex;
+}
+
+.cm-editor__tool {
+    cursor: pointer;
+    min-width: 28px;
+    height: 28px;
+    color: var(--text-2);
+    font-size: var(--text-sm);
+    background: 0 0;
+    border: 1px solid #0000;
+    border-radius: 4px;
+    justify-content: center;
+    align-items: center;
+    padding: 0 6px;
+    font-family: inherit;
+    display: inline-flex;
+}
+
+.cm-editor__tool:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text);
+    border-color: rgb(var(--text-rgb) / .08);
+}
+
+.cm-editor__tool:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+}
+
+.cm-editor__tool.is-on {
+    color: var(--accent);
+}
+
+.cm-editor__preview {
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    min-height: 60px;
+    color: var(--text);
+    word-break: break-word;
+    border: 0;
+    padding: 10px 12px;
+    line-height: 1.5;
+}
+
+.cm-editor__error {
+    background: rgb(var(--danger-rgb, 223 79 79) / .08);
+    border: 1px solid rgb(var(--danger-rgb, 223 79 79) / .25);
+    border-left: 3px solid var(--danger, #df4f4f);
+    border-radius: var(--radius-sm);
+    color: var(--danger, #df4f4f);
+    font-size: var(--text-sm);
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 8px 0 0;
+    padding: 8px 12px;
+    line-height: 1.4;
+    display: flex;
+}
+
+/* --------------------------------------------------------------------------
+   5. Rich Content Formatting (Quotes, Spoilers, Images, Links)
+   -------------------------------------------------------------------------- */
+.content-rendered b,
+.content-rendered strong {
+    font-weight: 600;
+}
+
+.content-rendered a {
+    color: var(--accent);
+    text-decoration: underline;
+    -webkit-text-decoration-color: rgb(var(--accent-rgb) / .45);
+    text-decoration-color: rgb(var(--accent-rgb) / .45);
+    text-underline-offset: 2px;
+    word-break: break-word;
+    text-decoration-thickness: 1px;
+    transition: color .15s, text-decoration-color .15s;
+}
+
+.content-rendered a:hover {
+    color: var(--accent-2);
+    text-decoration-color: currentColor;
+}
+
+.content-rendered a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+.rich-quote {
+    border-left: 3px solid rgb(var(--accent-rgb) / .5);
+    background: rgb(var(--text-rgb) / .04);
+    color: var(--text-2);
+    border-radius: 0 4px 4px 0;
+    margin: 4px 0;
+    padding: 4px 10px;
+}
+
+.rich-spoiler {
+    background: var(--text);
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 4px;
+    transition: background .12s, color .12s;
+}
+
+.rich-spoiler:hover,
+.rich-spoiler.is-revealed {
+    background: rgb(var(--text-rgb) / .15);
+    color: var(--text);
+    filter: none;
+    cursor: default;
+}
+
+.rich-img {
+    border-radius: var(--radius-sm);
+    max-width: 240px;
+    max-height: 240px;
+    margin: 6px 0;
+    display: block;
+}
+
+/* --------------------------------------------------------------------------
+   6. Footer & Load More
+   -------------------------------------------------------------------------- */
+.cm-foot {
+    justify-content: center;
+    margin-top: 1rem;
+    display: flex;
+}
+
+.cm-foot__btn {
+    justify-content: center;
+    width: 100%;
+}
+
+.cm-spinner {
+    animation: cm-spin .8s linear infinite;
+}
+
+@keyframes cm-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --------------------------------------------------------------------------
+   7. Responsive
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+    .cm-item {
+        --cm-avatar-width: 2rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .cm-item__ctrl--reply span {
+        display: none;
+    }
+}

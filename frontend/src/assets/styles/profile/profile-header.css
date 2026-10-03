@@ -1,0 +1,257 @@
+/* Container chính của Profile */
+.uprofile {
+  position: relative;
+  margin-bottom: 24px;
+  background: #f9f9f9;
+  border: 1px solid #c0c0c0;
+  overflow: hidden;
+}
+
+/* Ẩn input file nhưng vẫn giữ lại khả năng focus cho bàn phím */
+.uprofile__hidden-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Banner có thể nhấn được */
+.uprofile__banner {
+  position: relative;
+  display: block;
+  /* Chuyển thành khối chứa liên kết */
+  width: 100%;
+  height: 220px;
+  background: #dbdbdb;
+  border-bottom: 1.5px solid #8e8e8e;
+  box-sizing: border-box;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.uprofile__banner-image {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+/* Lớp phủ mờ mặc định của banner */
+.uprofile__banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.25s ease;
+}
+
+/* Hiệu ứng mờ hơn khi hover hoặc focus ảnh bìa */
+.uprofile__banner:hover .uprofile__banner-overlay,
+.uprofile__banner:focus-within .uprofile__banner-overlay {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* Chữ gợi ý thay đổi ảnh bìa */
+.uprofile__banner-edit-text {
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  background: rgba(0, 0, 0, 0.75);
+  padding: 8px 16px;
+  border-radius: 20px;
+}
+
+.uprofile__banner:hover .uprofile__banner-edit-text,
+.uprofile__banner:focus-within .uprofile__banner-edit-text {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Hàng chứa thông tin */
+.uprofile__profile-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 24px 24px;
+  background: #f9f9f9;
+}
+
+/* Vùng bọc Avatar có kích thước cố định bằng avatar + viền */
+.uprofile__avatar-wrap {
+  position: relative;
+  margin-left: 40px;
+  z-index: 2;
+  margin-top: -70px;
+  /* Đẩy riêng avatar đè lên banner */
+  width: 122px;
+  height: 122px;
+  border-radius: 50%;
+  background: #f9f9f9;
+  /* Đồng bộ nền để che khuyết điểm viền banner */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-sizing: border-box;
+
+}
+
+/* Ảnh đại diện bên trong */
+.uprofile__avatar {
+  width: 152px !important;
+  height: 152px !important;
+  border-radius: 50%;
+  border: 6px solid #f9f9f9;
+  background: #dbdbdb;
+  object-fit: cover;
+  display: block;
+  text-align: center;
+  line-height: 152px;
+  box-sizing: border-box;
+}
+
+/* Lớp phủ mờ dạng tròn cho Avatar */
+.uprofile__avatar-hover-overlay {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 1.4rem;
+  opacity: 0;
+  transition: background 0.25s ease, opacity 0.25s ease;
+}
+
+/* Hiệu ứng khi hover hoặc focus ảnh đại diện */
+.uprofile__avatar-wrap:hover .uprofile__avatar-hover-overlay,
+.uprofile__avatar-wrap:focus-within .uprofile__avatar-hover-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 1;
+}
+
+/* Thông tin người dùng */
+.uprofile__info-actions {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.uprofile__identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.uprofile__name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #000000;
+}
+
+.uprofile__username {
+  font-size: 0.95rem;
+  color: #555555;
+}
+
+/* Khối các nút hành động */
+.uprofile__actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.uprofile__action-card {
+  min-width: 110px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  border: none;
+  background: #dbdbdb;
+  color: #333333;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: background 0.2s ease;
+}
+
+.uprofile__action-card:hover {
+  background: #cccccc;
+}
+
+.uprofile__action-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #000000;
+}
+
+.uprofile__action-label {
+  font-size: 0.85rem;
+  color: #555555;
+}
+
+/* Giao diện di động */
+@media (max-width: 980px) {
+  .uprofile__profile-row {
+    padding: 16px 16px 20px;
+  }
+
+  .uprofile__info-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .uprofile__actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .uprofile__profile-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .uprofile__avatar-wrap {
+    margin-top: -60px;
+    width: 102px;
+    height: 102px;
+  }
+
+  .uprofile__avatar {
+    width: 90px !important;
+    height: 90px !important;
+    border-width: 4px;
+  }
+
+  .uprofile__avatar-hover-overlay {
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+    font-size: 1.1rem;
+  }
+}

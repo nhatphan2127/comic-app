@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import Header from '../layout/Header.tsx';
+import HeaderLayout from '../layout/HeaderLayout/HeaderLayout.tsx';
 import UserProfilePage from '../layout/Profile/UserProfileLayout.tsx';
 import { userApi } from '../services/api';
 import type { UserProfile } from '../types/types.ts';
@@ -41,7 +41,7 @@ export default function Home() {
 
     return (
         <>
-            <Header />
+            <HeaderLayout />
             <UserProfilePage user={user} loading={loading} error={error} />
         </>
     );
