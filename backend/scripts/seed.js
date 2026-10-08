@@ -1,7 +1,9 @@
 // scripts/seed.js
 
-import db from '../src/config/database.js';
+import { withTransaction } from '../src/config/database.js';
+import * as models from '../src/models/index.js';
 import { v4 as uuidv4 } from 'uuid';
+import { hashPassword } from '../src/services/authService.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -197,376 +199,298 @@ async function seedDatabase() {
     console.log('🌱 Bắt đầu tiến trình dọn dẹp và nạp dữ liệu (SQLite Seeding)...');
 
     // 1. Dọn dẹp tất cả bảng theo trình tự khóa ngoại
-    await db.exec(`
-      DELETE FROM sessions;
-      DELETE FROM notifications;
-      DELETE FROM moderation_logs;
-      DELETE FROM edit_requests;
-      DELETE FROM chapter_comment_reactions;
-      DELETE FROM comic_comment_reactions;
-      DELETE FROM chapter_comments;
-      DELETE FROM comic_comments;
-      DELETE FROM following;
-      DELETE FROM bookmarks;
-      DELETE FROM following;
-      DELETE FROM following_categories;
-      DELETE FROM rating_history;
-      DELETE FROM read_history;
-      DELETE FROM chapter_images;
-      DELETE FROM chapters;
-      DELETE FROM comic_contributors;
-      DELETE FROM comic_other_names;
-      DELETE FROM comic_formats;
-      DELETE FROM comic_genres;
-      DELETE FROM comics;
-      DELETE FROM formats;
-      DELETE FROM genres;
-      DELETE FROM artist;
-      DELETE FROM author;
-      DELETE FROM user_preferences;
-      DELETE FROM users;
-    `);
+    const tablesInDeleteOrder = [
+      'Session', 'Notification', 'Report', 'ModerationLog', 'EditRequest',
+      'ChapterCommentReaction', 'ComicCommentReaction', 'ChapterComment', 'ComicComment',
+      'Following', 'FollowingCategory', 'RatingHistory', 'ReadHistory',
+      'ChapterImage', 'ChapterContributor', 'Chapter',
+      'ComicContributor', 'ComicOtherName', 'ComicFormat', 'ComicGenre', 'Comic',
+      'Format', 'Genre', 'Artist', 'Author', 'UserPreference', 'User',
+    ];
+    for (const name of tablesInDeleteOrder) {
+      await models[name].destroy({ where: {} });
+    }
     console.log('🧹 Đã xóa sạch dữ liệu cũ trong các bảng thành công.');
 
     const dummyImageBuffer = loadOrCreateDummyImage();
-    await db.run('BEGIN TRANSACTION');
+    await withTransaction(async () => {
+      // ========== 2. NẠP BẢNG USERS & PREFERENCES ==========
+      console.log('👥 Đang tạo 5 người dùng mẫu...');
+      const userIds = {};
+      const listUserIds = [];
 
-    // ========== 2. NẠP BẢNG USERS & PREFERENCES ==========
-    console.log('👥 Đang tạo 5 người dùng mẫu...');
-    const userIds = {};
-    const listUserIds = [];
+      for (const user of sampleUsers) {
+        const userId = uuidv4();
+        userIds[user.username] = userId;
+        listUserIds.push(userId);
 
-    for (const user of sampleUsers) {
-      const userId = uuidv4();
-      userIds[user.username] = userId;
-      listUserIds.push(userId);
+        await models.User.create({
+          id: userId, displayName: user.displayName, username: user.username,
+          password: await hashPassword(user.password), email: user.email, bio: user.bio, role: user.role,
+        });
 
-      await db.run(
-        `INSERT INTO users (id, avatar, displayName, username, password, email, bio, socialLinks, role)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, ?)`,
-        [userId, user.displayName, user.username, user.password, user.email, user.bio, user.role]
-      );
+        await models.UserPreference.create({ userId, theme: 'light', filter: 1 });
+      }
 
-      await db.run(
-        `INSERT INTO user_preferences (userId, theme, filter)
-         VALUES (?, ?, ?)`,
-        [userId, 'light', 1]
-      );
-    }
+      // ========== 3. NẠP DANH MỤC THỰC THỂ (Authors, Artists, Genres, Formats) ==========
+      console.log('🏷️  Đang nạp danh mục chuẩn hóa...');
 
-    // ========== 3. NẠP DANH MỤC THỰC THỂ (Authors, Artists, Genres, Formats) ==========
-    console.log('🏷️  Đang nạp danh mục chuẩn hóa...');
+      const authors = [
+        { id: uuidv4(), name: 'Ngã Cật Tây Hồng Thị', bio: 'Tác giả tiên hiệp hàng đầu Trung Quốc.' },
+        { id: uuidv4(), name: 'Đường Gia Tam Thiếu', bio: 'Tác giả của bộ Đấu La Đại Lục nổi tiếng.' },
+        { id: uuidv4(), name: 'Eiichiro Oda', bio: 'Huyền thoại sáng tác One Piece.' },
+        { id: uuidv4(), name: 'Chugong', bio: 'Tác giả tiểu thuyết mạng Solo Leveling.' },
+        { id: uuidv4(), name: 'One', bio: 'Tác giả của One-Punch Man và Mob Psycho 100.' }
+      ];
+      for (const aut of authors) {
+        await models.Author.create(aut);
+      }
 
-    const authors = [
-      { id: uuidv4(), name: 'Ngã Cật Tây Hồng Thị', bio: 'Tác giả tiên hiệp hàng đầu Trung Quốc.' },
-      { id: uuidv4(), name: 'Đường Gia Tam Thiếu', bio: 'Tác giả của bộ Đấu La Đại Lục nổi tiếng.' },
-      { id: uuidv4(), name: 'Eiichiro Oda', bio: 'Huyền thoại sáng tác One Piece.' },
-      { id: uuidv4(), name: 'Chugong', bio: 'Tác giả tiểu thuyết mạng Solo Leveling.' },
-      { id: uuidv4(), name: 'One', bio: 'Tác giả của One-Punch Man và Mob Psycho 100.' }
-    ];
-    for (const aut of authors) {
-      await db.run(`INSERT INTO author (id, name, bio) VALUES (?, ?, ?)`, [aut.id, aut.name, aut.bio]);
-    }
+      const artists = [
+        { id: uuidv4(), name: 'Murata Yusuke', bio: 'Họa sĩ thiên tài vẽ One Punch Man.' },
+        { id: uuidv4(), name: 'Takeshi Obata', bio: 'Minh họa tuyệt đẹp cho Death Note.' },
+        { id: uuidv4(), name: 'Inoue Takehiko', bio: 'Tác giả kiêm họa sĩ Vagabond, Slam Dunk.' },
+        { id: uuidv4(), name: 'Jang Sung-rak', bio: 'Cố họa sĩ minh họa Solo Leveling xuất sắc.' }
+      ];
+      for (const art of artists) {
+        await models.Artist.create(art);
+      }
 
-    const artists = [
-      { id: uuidv4(), name: 'Murata Yusuke', bio: 'Họa sĩ thiên tài vẽ One Punch Man.' },
-      { id: uuidv4(), name: 'Takeshi Obata', bio: 'Minh họa tuyệt đẹp cho Death Note.' },
-      { id: uuidv4(), name: 'Inoue Takehiko', bio: 'Tác giả kiêm họa sĩ Vagabond, Slam Dunk.' },
-      { id: uuidv4(), name: 'Jang Sung-rak', bio: 'Cố họa sĩ minh họa Solo Leveling xuất sắc.' }
-    ];
-    for (const art of artists) {
-      await db.run(`INSERT INTO artist (id, name, bio) VALUES (?, ?, ?)`, [art.id, art.name, art.bio]);
-    }
+      const genresList = [
+        { id: uuidv4(), name: 'Action', description: 'Hành động kịch tính' },
+        { id: uuidv4(), name: 'Adventure', description: 'Phiêu lưu khám phá' },
+        { id: uuidv4(), name: 'Comedy', description: 'Hài hước hóm hỉnh' },
+        { id: uuidv4(), name: 'Drama', description: 'Chính kịch, sâu sắc' },
+        { id: uuidv4(), name: 'Fantasy', description: 'Kỳ ảo, phép thuật' },
+        { id: uuidv4(), name: 'Isekai', description: 'Chuyển sinh sang thế giới khác' },
+        { id: uuidv4(), name: 'Martial Arts', description: 'Võ thuật, kiếm hiệp' },
+        { id: uuidv4(), name: 'Romance', description: 'Lãng mạn, tình cảm' }
+      ];
+      for (const gen of genresList) {
+        await models.Genre.create(gen);
+      }
 
-    const genresList = [
-      { id: uuidv4(), name: 'Action', description: 'Hành động kịch tính' },
-      { id: uuidv4(), name: 'Adventure', description: 'Phiêu lưu khám phá' },
-      { id: uuidv4(), name: 'Comedy', description: 'Hài hước hóm hỉnh' },
-      { id: uuidv4(), name: 'Drama', description: 'Chính kịch, sâu sắc' },
-      { id: uuidv4(), name: 'Fantasy', description: 'Kỳ ảo, phép thuật' },
-      { id: uuidv4(), name: 'Isekai', description: 'Chuyển sinh sang thế giới khác' },
-      { id: uuidv4(), name: 'Martial Arts', description: 'Võ thuật, kiếm hiệp' },
-      { id: uuidv4(), name: 'Romance', description: 'Lãng mạn, tình cảm' }
-    ];
-    for (const gen of genresList) {
-      await db.run(`INSERT INTO genres (id, name, description) VALUES (?, ?, ?)`, [gen.id, gen.name, gen.description]);
-    }
+      const formatsList = [
+        { id: uuidv4(), name: 'Manga', description: 'Truyện tranh Nhật Bản' },
+        { id: uuidv4(), name: 'Manhwa', description: 'Truyện tranh Hàn Quốc' },
+        { id: uuidv4(), name: 'Manhua', description: 'Truyện tranh Trung Quốc' },
+        { id: uuidv4(), name: 'Webtoon', description: 'Truyện định dạng số' }
+      ];
+      for (const form of formatsList) {
+        await models.Format.create(form);
+      }
 
-    const formatsList = [
-      { id: uuidv4(), name: 'Manga', description: 'Truyện tranh Nhật Bản' },
-      { id: uuidv4(), name: 'Manhwa', description: 'Truyện tranh Hàn Quốc' },
-      { id: uuidv4(), name: 'Manhua', description: 'Truyện tranh Trung Quốc' },
-      { id: uuidv4(), name: 'Webtoon', description: 'Truyện định dạng số' }
-    ];
-    for (const form of formatsList) {
-      await db.run(`INSERT INTO formats (id, name, description) VALUES (?, ?, ?)`, [form.id, form.name, form.description]);
-    }
+      // ========== 4. NẠP TRUYỆN TRANH (COMICS - 92 BỘ) ==========
+      const sampleComics = generateSampleComics(92);
+      console.log(`📚 Đang khởi tạo ${sampleComics.length} truyện tranh ngẫu nhiên cùng các liên kết chuẩn hóa...`);
+      const comicIds = [];
+      const chapterIdsByComic = {};
 
-    // ========== 4. NẠP TRUYỆN TRANH (COMICS - 92 BỘ) ==========
-    const sampleComics = generateSampleComics(92);
-    console.log(`📚 Đang khởi tạo ${sampleComics.length} truyện tranh ngẫu nhiên cùng các liên kết chuẩn hóa...`);
-    const comicIds = [];
-    const chapterIdsByComic = {};
+      for (let i = 0; i < sampleComics.length; i++) {
+        const comic = sampleComics[i];
+        const comicId = uuidv4();
+        comicIds.push(comicId);
+        chapterIdsByComic[comicId] = [];
 
-    for (let i = 0; i < sampleComics.length; i++) {
-      const comic = sampleComics[i];
-      const comicId = uuidv4();
-      comicIds.push(comicId);
-      chapterIdsByComic[comicId] = [];
+        const coverUrl = `comics/${comicId}.png`;
+        const randomAuthor = authors[Math.floor(Math.random() * authors.length)];
+        const randomArtist = artists[Math.floor(Math.random() * artists.length)];
+        const randomRating = (Math.random() * 1.5 + 3.5).toFixed(1);
 
-      const coverUrl = `comics/${comicId}.png`;
-      const randomAuthor = authors[Math.floor(Math.random() * authors.length)];
-      const randomArtist = artists[Math.floor(Math.random() * artists.length)];
-      const randomRating = (Math.random() * 1.5 + 3.5).toFixed(1);
+        // Lưu file ảnh tượng trưng
+        try {
+          fs.writeFileSync(path.join(comicCoversDir, `${comicId}.png`), dummyImageBuffer);
+        } catch (err) { }
 
-      // Lưu file ảnh tượng trưng
-      try {
-        fs.writeFileSync(path.join(comicCoversDir, `${comicId}.png`), dummyImageBuffer);
-      } catch (err) { }
-
-      // Thêm truyện
-      await db.run(
-        `INSERT INTO comics (
-          id, name, types, contentRating, demographic, description, rating, coverUrl, 
-          view, follow, releaseStatus, visibility, url, releasingYear, authorId, artistId
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', ?, ?, ?, ?)`,
-        [
-          comicId,
-          comic.name,
-          comic.types,
-          comic.contentRating,
-          comic.demographic,
-          comic.description,
-          parseFloat(randomRating),
+        // Thêm truyện
+        await models.Comic.create({
+          id: comicId,
+          name: comic.name,
+          types: comic.types,
+          contentRating: comic.contentRating,
+          demographic: comic.demographic,
+          description: comic.description,
+          rating: parseFloat(randomRating),
           coverUrl,
-          Math.floor(Math.random() * 150000) + 100,
-          Math.floor(Math.random() * 9000) + 5,
-          comic.releaseStatus,
-          comic.url,
-          comic.releasingYear,
-          randomAuthor.id,
-          randomArtist.id
-        ]
-      );
+          view: Math.floor(Math.random() * 150000) + 100,
+          follow: Math.floor(Math.random() * 9000) + 5,
+          releaseStatus: comic.releaseStatus,
+          visibility: 'public',
+          url: comic.url,
+          releasingYear: comic.releasingYear,
+          authorId: randomAuthor.id,
+          artistId: randomArtist.id,
+        });
 
-      // Gán Thể loại ngẫu nhiên (1-3 genres)
-      const shuffledGen = [...genresList].sort(() => 0.5 - Math.random()).slice(0, Math.floor(Math.random() * 3) + 1);
-      for (const gen of shuffledGen) {
-        await db.run(`INSERT INTO comic_genres (comicId, genreId) VALUES (?, ?)`, [comicId, gen.id]);
-      }
+        // Gán Thể loại ngẫu nhiên (1-3 genres)
+        const shuffledGen = [...genresList].sort(() => 0.5 - Math.random()).slice(0, Math.floor(Math.random() * 3) + 1);
+        for (const gen of shuffledGen) {
+          await models.ComicGenre.create({ comicId, genreId: gen.id });
+        }
 
-      // Gán Định dạng ngẫu nhiên (1 format)
-      const randomFormat = formatsList[Math.floor(Math.random() * formatsList.length)];
-      await db.run(`INSERT INTO comic_formats (comicId, formatId) VALUES (?, ?)`, [comicId, randomFormat.id]);
+        // Gán Định dạng ngẫu nhiên (1 format)
+        const randomFormat = formatsList[Math.floor(Math.random() * formatsList.length)];
+        await models.ComicFormat.create({ comicId, formatId: randomFormat.id });
 
-      // Tên thay thế phụ
-      await db.run(
-        `INSERT INTO comic_other_names (id, comicId, name, country) VALUES (?, ?, ?, ?)`,
-        [uuidv4(), comicId, `Tên Khác Của ${comic.name}`, 'vi']
-      );
+        // Tên thay thế phụ
+        await models.ComicOtherName.create({ id: uuidv4(), comicId, name: `Tên Khác Của ${comic.name}`, country: 'vi' });
 
-      // Người đăng đóng góp
-      const contributorId = i % 2 === 0 ? userIds.creator1 : userIds.creator2;
-      await db.run(
-        `INSERT INTO comic_contributors (comicId, userId, role, status, unread, updatedAt) VALUES (?, ?, 'uploader', 'accept', 0, CURRENT_TIMESTAMP)`,
-        [comicId, contributorId]
-      );
+        // Người đăng đóng góp
+        const contributorId = i % 2 === 0 ? userIds.creator1 : userIds.creator2;
+        await models.ComicContributor.create({ comicId, userId: contributorId, role: 'uploader', status: 'accept', unread: 0 });
 
-      // ========== 5. NẠP CHƯƠNG TRUYỆN & ẢNH (CHAPTERS & IMAGES) ==========
-      // Mỗi bộ truyện chứa từ 4 đến 8 chương độc lập
-      const numChapters = Math.floor(Math.random() * 5) + 4;
-      for (let j = 1; j <= numChapters; j++) {
-        const chapterId = uuidv4();
-        chapterIdsByComic[comicId].push(chapterId);
+        // ========== 5. NẠP CHƯƠNG TRUYỆN & ẢNH (CHAPTERS & IMAGES) ==========
+        // Mỗi bộ truyện chứa từ 4 đến 8 chương độc lập
+        const numChapters = Math.floor(Math.random() * 5) + 4;
+        for (let j = 1; j <= numChapters; j++) {
+          const chapterId = uuidv4();
+          chapterIdsByComic[comicId].push(chapterId);
 
-        await db.run(
-          `INSERT INTO chapters (id, comicId, title, chapterNumber, visibility, url)
-           VALUES (?, ?, ?, ?, 'public', ?)`,
-          [
-            chapterId,
+          await models.Chapter.create({
+            id: chapterId,
             comicId,
-            `Chương ${j}: Hành trình mới bắt đầu`,
-            j,
-            `${comic.url}-chuong-${j}`
-          ]
-        );
+            title: `Chương ${j}: Hành trình mới bắt đầu`,
+            chapterNumber: j,
+            visibility: 'public',
+            url: `${comic.url}-chuong-${j}`,
+          });
 
-        // Mỗi chương chứa 4 trang ảnh
-        for (let page = 1; page <= 4; page++) {
-          const imageId = uuidv4();
-          const imagePath = `chapter-images/${imageId}.png`;
+          // Mỗi chương chứa 4 trang ảnh
+          for (let page = 1; page <= 4; page++) {
+            const imageId = uuidv4();
+            const imagePath = `chapter-images/${imageId}.png`;
 
-          try {
-            fs.writeFileSync(path.join(chapterImagesDir, `${imageId}.png`), dummyImageBuffer);
-          } catch (err) { }
+            try {
+              fs.writeFileSync(path.join(chapterImagesDir, `${imageId}.png`), dummyImageBuffer);
+            } catch (err) { }
 
-          await db.run(
-            `INSERT INTO chapter_images (id, chapterId, urlPath, pageNumber)
-             VALUES (?, ?, ?, ?)`,
-            [imageId, chapterId, imagePath, page]
-          );
+            await models.ChapterImage.create({ id: imageId, chapterId, urlPath: imagePath, pageNumber: page });
+          }
+
+          // Thêm chapter_contributors
+          await models.ChapterContributor.create({ chapterId, userId: contributorId, role: 'contributor', status: 'accept', unread: 0 });
         }
-
-        // Thêm chapter_contributors
-        await db.run(
-          `INSERT INTO chapter_contributors (chapterId, userId, role, status, unread, updatedAt) VALUES (?, ?, 'contributor', 'accept', 0, CURRENT_TIMESTAMP)`,
-          [chapterId, contributorId]
-        );
       }
-    }
 
-    // ========== 6. NẠP CÁC LƯỢT TƯƠNG TÁC (Bookmarks, Follow, Rating, History) ==========
-    console.log('❤️  Đang thiết lập quan hệ tương tác người dùng...');
-    const defaultCategoryIds = {};
-    const defaultCategoryNames = ['Reading', 'Completed', 'On-Hold', 'Plan to Read', 'Dropped'];
-    for (const categoryName of defaultCategoryNames) {
-      const categoryId = uuidv4();
-      await db.run(
-        `INSERT INTO following_categories (id, category, userId) VALUES (?, ?, NULL)`,
-        [categoryId, categoryName]
-      );
-      defaultCategoryIds[categoryName] = categoryId;
-    }
+      // ========== 6. NẠP CÁC LƯỢT TƯƠNG TÁC (Follow, Rating, History) ==========
+      console.log('❤️  Đang thiết lập quan hệ tương tác người dùng...');
+      const defaultCategoryIds = {};
+      const defaultCategoryNames = ['Reading', 'Completed', 'On-Hold', 'Plan to Read', 'Dropped'];
+      for (const categoryName of defaultCategoryNames) {
+        const categoryId = uuidv4();
+        await models.FollowingCategory.create({ id: categoryId, category: categoryName, userId: null });
+        defaultCategoryIds[categoryName] = categoryId;
+      }
 
-    for (const comicId of comicIds) {
+      for (const comicId of comicIds) {
+        for (const userId of listUserIds) {
+          // Tỷ lệ Follow: 40%
+          if (Math.random() > 0.6) {
+            const categoryName = defaultCategoryNames[Math.floor(Math.random() * defaultCategoryNames.length)];
+            await models.Following.create({ id: uuidv4(), userId, comicId, followingCategoryId: defaultCategoryIds[categoryName] });
+          }
+
+          // Tỷ lệ Đánh giá: 40% (Từ 1 đến 5 sao)
+          if (Math.random() > 0.6) {
+            await models.RatingHistory.create({ userId, comicId, rating: Math.floor(Math.random() * 5) + 1 });
+          }
+        }
+      }
+
+      // Lịch sử đọc (Read History)
       for (const userId of listUserIds) {
-        // Tỷ lệ Follow: 40%
-        if (Math.random() > 0.6) {
-          const categoryName = defaultCategoryNames[Math.floor(Math.random() * defaultCategoryNames.length)];
-          await db.run(
-            `INSERT INTO following (id, userId, comicId, followingCategoryId) VALUES (?, ?, ?, ?)`,
-            [uuidv4(), userId, comicId, defaultCategoryIds[categoryName]]
-          );
-        }
-
-        // Tỷ lệ Bookmark: 30%
-        if (Math.random() > 0.7) {
-          await db.run(
-            `INSERT INTO bookmarks (userId, comicId) VALUES (?, ?)`,
-            [userId, comicId]
-          );
-        }
-
-        // Tỷ lệ Đánh giá: 40% (Từ 1 đến 5 sao)
-        if (Math.random() > 0.6) {
-          await db.run(
-            `INSERT INTO rating_history (userId, comicId, rating) VALUES (?, ?, ?)`,
-            [userId, comicId, Math.floor(Math.random() * 5) + 1]
-          );
+        // Đọc ngẫu nhiên 10 truyện khác nhau
+        const shuffledComics = [...comicIds].sort(() => 0.5 - Math.random()).slice(0, 10);
+        for (const comicId of shuffledComics) {
+          const chaps = chapterIdsByComic[comicId];
+          if (chaps && chaps.length > 0) {
+            const readCount = Math.min(chaps.length, 3);
+            for (let r = 0; r < readCount; r++) {
+              await models.ReadHistory.bulkCreate(
+                [{ userId, chapterId: chaps[r], scrollPosition: Math.floor(Math.random() * 2000), currentPage: Math.floor(Math.random() * 20) + 1 }],
+                { ignoreDuplicates: true }
+              );
+            }
+          }
         }
       }
-    }
 
-    // Lịch sử đọc (Read History)
-    for (const userId of listUserIds) {
-      // Đọc ngẫu nhiên 10 truyện khác nhau
-      const shuffledComics = [...comicIds].sort(() => 0.5 - Math.random()).slice(0, 10);
-      for (const comicId of shuffledComics) {
-        const chaps = chapterIdsByComic[comicId];
-        if (chaps && chaps.length > 0) {
-          const readCount = Math.min(chaps.length, 3);
-          for (let r = 0; r < readCount; r++) {
-            await db.run(
-              `INSERT OR IGNORE INTO read_history (userId, chapterId, scrollPosition, currentPage) VALUES (?, ?, ?, ?)`,
-              [userId, chaps[r], Math.floor(Math.random() * 2000), Math.floor(Math.random() * 20) + 1]
+      // ========== 7. NẠP BÌNH LUẬN & PHẢN HỒI (Comments & Reactions) ==========
+      console.log('💬 Đang xây dựng hệ thống bình luận và biểu cảm cảm xúc...');
+      const allComicComments = [];
+
+      for (const comicId of comicIds) {
+        // Mỗi truyện có 2 bình luận gốc
+        for (let c = 0; c < 2; c++) {
+          const commentId = uuidv4();
+          const authorId = listUserIds[Math.floor(Math.random() * listUserIds.length)];
+          const content = comicCommentTemplates[Math.floor(Math.random() * comicCommentTemplates.length)];
+          const likes = Math.floor(Math.random() * 20);
+          const dislikes = Math.floor(Math.random() * 3);
+
+          await models.ComicComment.create({ id: commentId, comicId, userId: authorId, content, parentCommentId: null, likes, dislikes });
+          allComicComments.push({ id: commentId, userId: authorId });
+
+          // Bình luận phản hồi (1 phản hồi)
+          const replyId = uuidv4();
+          const replyAuthorId = listUserIds.find(id => id !== authorId) || authorId;
+          const replyContent = comicReplyTemplates[Math.floor(Math.random() * comicReplyTemplates.length)];
+
+          await models.ComicComment.create({
+            id: replyId, comicId, userId: replyAuthorId, content: replyContent, parentCommentId: commentId,
+            likes: Math.floor(Math.random() * 5), dislikes: 0,
+          });
+        }
+      }
+
+      // Thêm lượt bày tỏ cảm xúc Thích/Ghét (Comic Comment Reactions)
+      for (const comm of allComicComments.slice(0, 50)) { // Tạo mẫu cho 50 bình luận đầu
+        for (const userId of listUserIds) {
+          if (Math.random() > 0.5) {
+            const rType = Math.random() > 0.2 ? 'like' : 'dislike';
+            await models.ComicCommentReaction.bulkCreate(
+              [{ userId, commentId: comm.id, reactionType: rType }],
+              { ignoreDuplicates: true }
             );
           }
         }
       }
-    }
 
-    // ========== 7. NẠP BÌNH LUẬN & PHẢN HỒI (Comments & Reactions) ==========
-    console.log('💬 Đang xây dựng hệ thống bình luận và biểu cảm cảm xúc...');
-    const allComicComments = [];
-
-    for (const comicId of comicIds) {
-      // Mỗi truyện có 2 bình luận gốc
-      for (let c = 0; c < 2; c++) {
-        const commentId = uuidv4();
-        const authorId = listUserIds[Math.floor(Math.random() * listUserIds.length)];
-        const content = comicCommentTemplates[Math.floor(Math.random() * comicCommentTemplates.length)];
-        const likes = Math.floor(Math.random() * 20);
-        const dislikes = Math.floor(Math.random() * 3);
-
-        await db.run(
-          `INSERT INTO comic_comments (id, comicId, userId, content, parentCommentId, likes, dislikes)
-           VALUES (?, ?, ?, ?, NULL, ?, ?)`,
-          [commentId, comicId, authorId, content, likes, dislikes]
-        );
-        allComicComments.push({ id: commentId, userId: authorId });
-
-        // Bình luận phản hồi (1 phản hồi)
-        const replyId = uuidv4();
-        const replyAuthorId = listUserIds.find(id => id !== authorId) || authorId;
-        const replyContent = comicReplyTemplates[Math.floor(Math.random() * comicReplyTemplates.length)];
-
-        await db.run(
-          `INSERT INTO comic_comments (id, comicId, userId, content, parentCommentId, likes, dislikes)
-           VALUES (?, ?, ?, ?, ?, ?, 0)`,
-          [replyId, comicId, replyAuthorId, replyContent, commentId, Math.floor(Math.random() * 5)]
-        );
-      }
-    }
-
-    // Thêm lượt bày tỏ cảm xúc Thích/Ghét (Comic Comment Reactions)
-    for (const comm of allComicComments.slice(0, 50)) { // Tạo mẫu cho 50 bình luận đầu
+      // ========== 8. THÔNG BÁO & PHIÊN HOẠT ĐỘNG (Notifications & Sessions) ==========
+      console.log('🔔 Đang phân bổ thông báo và phiên hoạt động...');
       for (const userId of listUserIds) {
-        if (Math.random() > 0.5) {
-          const rType = Math.random() > 0.2 ? 'like' : 'dislike';
-          await db.run(
-            `INSERT OR IGNORE INTO comic_comment_reactions (userId, commentId, reactionType) VALUES (?, ?, ?)`,
-            [userId, comm.id, rType]
-          );
-        }
-      }
-    }
-
-    // ========== 8. THÔNG BÁO & PHIÊN HOẠT ĐỘNG (Notifications & Sessions) ==========
-    console.log('🔔 Đang phân bổ thông báo và phiên hoạt động...');
-    for (const userId of listUserIds) {
-      // Mỗi user nhận 3 thông báo mẫu
-      for (let n = 1; n <= 3; n++) {
-        await db.run(
-          `INSERT INTO notifications (id, userId, title, content, type, redirectPath, isRead)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            uuidv4(),
+        // Mỗi user nhận 3 thông báo mẫu
+        for (let n = 1; n <= 3; n++) {
+          await models.Notification.create({
+            id: uuidv4(),
             userId,
-            `Hệ thống nâng cấp`,
-            `Hệ thống nền tảng truyện tranh vừa cập nhật thành công lên cấu trúc chuẩn hóa mới.`,
-            `system`,
-            `/`,
-            Math.random() > 0.6 ? 1 : 0
-          ]
-        );
+            title: 'Hệ thống nâng cấp',
+            content: 'Hệ thống nền tảng truyện tranh vừa cập nhật thành công lên cấu trúc chuẩn hóa mới.',
+            type: 'system',
+            redirectPath: '/',
+            isRead: Math.random() > 0.6 ? 1 : 0,
+          });
+        }
+
+        // Khởi tạo phiên
+        await models.Session.create({
+          id: uuidv4(),
+          userId,
+          token: `token_demo_for_${userId.substring(0, 8)}`,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        });
       }
 
-      // Khởi tạo phiên
-      await db.run(
-        `INSERT INTO sessions (id, userId, token, expiresAt)
-         VALUES (?, ?, ?, ?)`,
-        [
-          uuidv4(),
-          userId,
-          `token_demo_for_${userId.substring(0, 8)}`,
-          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-        ]
-      );
-    }
-
-    await db.run('COMMIT');
-    console.log('\n✨ ĐÃ HOÀN THÀNH TIẾN TRÌNH NẠP DỮ LIỆU MẪU THÀNH CÔNG!');
-    console.log(`📊 Tổng kết thực thể đã nạp:`);
-    console.log(`   - Người dùng hệ thống: ${sampleUsers.length} tài khoản`);
-    console.log(`   - Tác giả & Họa sĩ chuẩn hóa: ${authors.length} tác giả, ${artists.length} họa sĩ`);
-    console.log(`   - Tổng bộ truyện độc lập: ${sampleComics.length} bộ truyện`);
-    console.log(`   - Toàn bộ bình luận, biểu cảm, thông báo, mối quan hệ thực thể đã liên kết mượt mà.`);
+      console.log('\n✨ ĐÃ HOÀN THÀNH TIẾN TRÌNH NẠP DỮ LIỆU MẪU THÀNH CÔNG!');
+      console.log(`📊 Tổng kết thực thể đã nạp:`);
+      console.log(`   - Người dùng hệ thống: ${sampleUsers.length} tài khoản`);
+      console.log(`   - Tác giả & Họa sĩ chuẩn hóa: ${authors.length} tác giả, ${artists.length} họa sĩ`);
+      console.log(`   - Tổng bộ truyện độc lập: ${sampleComics.length} bộ truyện`);
+      console.log(`   - Toàn bộ bình luận, biểu cảm, thông báo, mối quan hệ thực thể đã liên kết mượt mà.`);
+    });
 
     process.exit(0);
   } catch (error) {
-    try {
-      await db.run('ROLLBACK');
-    } catch (e) { }
     console.error('❌ Đã xảy ra lỗi nghiêm trọng khi nạp dữ liệu:', error);
     process.exit(1);
   }

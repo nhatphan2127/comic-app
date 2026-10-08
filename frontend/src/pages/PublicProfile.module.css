@@ -1,0 +1,125 @@
+.page {
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+  padding: var(--sp-6) var(--page-pad) var(--sp-10);
+}
+
+.head {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+}
+
+.banner {
+  height: 160px;
+  background: linear-gradient(135deg, var(--brand-tint), var(--surface-3)) center / cover no-repeat;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-4);
+  margin-top: -52px;
+  padding: 0 var(--sp-6);
+}
+
+.avatar {
+  border: 4px solid var(--surface);
+}
+
+.identity {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: var(--sp-2);
+}
+
+.name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.handle {
+  margin: 2px 0 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.bio {
+  margin: var(--sp-4) var(--sp-6) 0;
+  color: var(--fg-soft);
+  white-space: pre-line;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  margin: var(--sp-3) var(--sp-6) 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.facts span,
+.facts a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.facts a {
+  color: var(--brand);
+}
+
+.facts a:hover {
+  text-decoration: underline;
+}
+
+.stats {
+  display: flex;
+  gap: var(--sp-8);
+  margin: var(--sp-5) 0 0;
+  padding: var(--sp-4) var(--sp-6);
+  border-top: 1px solid var(--line);
+}
+
+.stats div {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.stats dd {
+  margin: 0;
+  color: var(--fg-strong);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+
+.stats dt {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.section {
+  margin-top: var(--sp-8);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+
+@media (max-width: 560px) {
+  .stats {
+    gap: var(--sp-5);
+  }
+}

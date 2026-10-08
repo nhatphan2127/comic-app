@@ -1,9 +1,21 @@
 import { useMemo, useState } from 'react';
-import { 
-  Archive, ArrowLeftRight, Bell, Bookmark, Clock3, 
-  MessageSquare, Rss, Settings, Upload, User, Users,
+import {
+  Bell,
+  BookUp,
+  Bookmark,
+  ChevronDown,
+  Clock3,
+  Flag,
+  LayoutDashboard,
+  MessageSquare,
+  ShieldCheck,
+  Upload,
+  User,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../../../../context/AuthContext';
+import cx from '../../../../helpers/cx';
+import { canContribute, canModerate, isAdmin as isAdminRole } from '../../../../helpers/roles';
 import style from './ProfileSidebar.module.css';
 
 interface Props {
@@ -14,108 +26,81 @@ interface Props {
 interface SidebarItem {
   id: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
+  group: 'Account' | 'Library' | 'Contribute' | 'Staff';
 }
 
 export default function ProfileSidebar({ activeTab, setActiveTab }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
-  const role = (user?.role || '').toLowerCase();
-  const isModerator = role === 'moderator' || role === 'admin';
-  const isAdmin = role === 'admin';
+  const isContributor = canContribute(user?.role);
+  const isModerator = canModerate(user?.role);
+  const isAdmin = isAdminRole(user?.role);
 
-  const sidebarItems = useMemo<SidebarItem[]>(() => [
-    { id: 'edit-profile', label: 'Edit Profile', icon: 'user' },
-    { id: 'following-titles', label: 'Following Titles', icon: 'bookmark' },
-    { id: 'read-history', label: 'Read History', icon: 'clock' },
-    { id: 'notifications', label: 'Notifications', icon: 'bell' },
-    { id: 'comments', label: 'Comments', icon: 'chat' },
-    { id: 'chapter-uploads', label: 'Chapters Upload', icon: 'upload' },
-    { id: 'comic-suggestions', label: 'Comic Suggestion', icon: 'upload' },
-    ...(isModerator ? [{ id: 'moderation-queue', label: 'Moderation Queue', icon: 'archive' }] : []),
-    ...(isAdmin ? [{ id: 'admin-dashboard', label: 'Admin Dashboard', icon: 'cog' }] : []),
-  ], [isAdmin, isModerator]);
+  const items = useMemo<SidebarItem[]>(
+    () => [
+      { id: 'edit-profile', label: 'Edit profile', icon: User, group: 'Account' },
+      { id: 'notifications', label: 'Notifications', icon: Bell, group: 'Account' },
+      { id: 'comments', label: 'Comments', icon: MessageSquare, group: 'Account' },
+      { id: 'following-titles', label: 'Following', icon: Bookmark, group: 'Library' },
+      { id: 'read-history', label: 'Reading history', icon: Clock3, group: 'Library' },
+      // Uploading needs the contributor role (the API answers 403 otherwise).
+      ...(isContributor
+        ? [
+            { id: 'chapter-uploads', label: 'Chapter uploads', icon: Upload, group: 'Contribute' as const },
+            { id: 'comic-suggestions', label: 'Suggest a comic', icon: BookUp, group: 'Contribute' as const },
+          ]
+        : []),
+      ...(isModerator
+        ? [
+            { id: 'moderation-queue', label: 'Moderation queue', icon: ShieldCheck, group: 'Staff' as const },
+            { id: 'reports', label: 'Reports', icon: Flag, group: 'Staff' as const },
+          ]
+        : []),
+      ...(isAdmin ? [{ id: 'admin-dashboard', label: 'Admin dashboard', icon: LayoutDashboard, group: 'Staff' as const }] : []),
+    ],
+    [isAdmin, isModerator, isContributor],
+  );
 
-  const activeItem = sidebarItems.find((item) => item.id === activeTab) || sidebarItems[0];
+  const groups = useMemo(() => {
+    const map = new Map<string, SidebarItem[]>();
+    items.forEach((item) => map.set(item.group, [...(map.get(item.group) ?? []), item]));
+    return [...map.entries()];
+  }, [items]);
+
+  const active = items.find((item) => item.id === activeTab) ?? items[0];
+  const ActiveIcon = active.icon;
 
   return (
-    <aside className={`${style['umenu']} ${isOpen ? style['is-open'] || 'is-open' : ''}`}>
-      <button
-        type="button"
-        className={style['umenu__trigger']}
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <span className={style['umenu__icon']}>
-          <SidebarIcon type={activeItem.icon} />
-        </span>
-        <span className={style['umenu__text']}>{activeItem.label}</span>
-        <span className={style['umenu__trigger-caret']} aria-hidden="true">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M9 6l6 6-6 6"></path>
-          </svg>
-        </span>
+    <aside className={cx(style.sidebar, isOpen && style.open)}>
+      <button type="button" className={style.trigger} aria-expanded={isOpen} onClick={() => setIsOpen((v) => !v)}>
+        <ActiveIcon size={16} />
+        <span>{active.label}</span>
+        <ChevronDown size={16} className={style.caret} />
       </button>
 
-      <ul className={style['umenu__list']}>
-        {sidebarItems.map((item) => {
-          const isActive = activeTab === item.id;
-          return (
-            <li key={item.id}>
+      <nav className={style.nav} aria-label="Profile sections">
+        {groups.map(([group, groupItems]) => (
+          <div key={group} className={style.group}>
+            <span className={style.groupLabel}>{group}</span>
+            {groupItems.map(({ id, label, icon: Icon }) => (
               <button
+                key={id}
                 type="button"
-                className={`${style['umenu__item']} ${isActive ? style['is-active'] || 'is-active' : ''}`}
+                className={cx(style.item, activeTab === id && style.itemOn)}
+                aria-current={activeTab === id ? 'page' : undefined}
                 onClick={() => {
-                  setActiveTab(item.id);
+                  setActiveTab(id);
                   setIsOpen(false);
                 }}
               >
-                <span className={style['umenu__icon']}>
-                  <SidebarIcon type={item.icon} />
-                </span>
-                <span className={style['umenu__text']}>{item.label}</span>
+                <Icon size={16} />
+                {label}
               </button>
-            </li>
-          );
-        })}
-      </ul>
+            ))}
+          </div>
+        ))}
+      </nav>
     </aside>
   );
-}
-
-function SidebarIcon({ type }: { type: string }) {
-  const iconProps = {
-    width: 16,
-    height: 16,
-    strokeWidth: 1.8,
-    'aria-hidden': true,
-  };
-
-  switch (type) {
-    case 'user':
-      return <User {...iconProps} />;
-    case 'users':
-      return <Users {...iconProps} />;
-    case 'bookmark':
-      return <Bookmark {...iconProps} />;
-    case 'clock':
-      return <Clock3 {...iconProps} />;
-    case 'archive':
-      return <Archive {...iconProps} />;
-    case 'rss':
-      return <Rss {...iconProps} />;
-    case 'bell':
-      return <Bell {...iconProps} />;
-    case 'chat':
-      return <MessageSquare {...iconProps} />;
-    case 'upload':
-      return <Upload {...iconProps} />;
-    case 'exchange':
-      return <ArrowLeftRight {...iconProps} />;
-    case 'cog':
-      return <Settings {...iconProps} />;
-    default:
-      return null;
-  }
 }

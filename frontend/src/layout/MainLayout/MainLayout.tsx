@@ -1,56 +1,56 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { LayoutGrid, List } from 'lucide-react';
 import type { Comic } from '../../types/types';
 import ComicCardList from '../../components/ComicCard/ComicCard';
+import HeroCarousel from '../../components/HeroCarousel/HeroCarousel';
 import Pagination from '../../components/Pagination/Pagination';
 import PopularCard from '../../components/PopularCard/PopularCard';
+import ContinueReading from '../../components/ContinueReading/ContinueReading';
+import { comicApi } from '../../services/api';
+import useContentFilter from '../../hooks/useContentFilter';
+import cx from '../../helpers/cx';
 import styles from './MainLayout.module.css';
-import { comicApi, getStoredContentFilter, type ContentFilter } from '../../services/api';
-import { LayoutGrid, List } from 'lucide-react';
+
+type ViewMode = 'grid' | 'list';
+
+const VIEW_MODES: { mode: ViewMode; label: string; icon: typeof LayoutGrid }[] = [
+  { mode: 'grid', label: 'Grid view', icon: LayoutGrid },
+  { mode: 'list', label: 'List view', icon: List },
+];
 
 export default function MainLayout() {
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const contentFilter = useContentFilter();
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [page, setPage] = useState(1);
   const [comics, setComics] = useState<Comic[]>([]);
   const [popularComics, setPopularComics] = useState<Comic[]>([]);
+  const [topRated, setTopRated] = useState<Comic[]>([]);
+  const [isTopRatedLoading, setIsTopRatedLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
-  const [isChangingPage, setIsChangingPage] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contentFilter, setContentFilter] = useState<ContentFilter>(() => getStoredContentFilter());
 
-  // Fetch standard comics on page change
   useEffect(() => {
     let cancelled = false;
+    setIsLoading(true);
+    setError(null);
 
-    const fetchComics = async () => {
-      if (page === 1) {
-        setIsLoading(true);
-      } else {
-        setIsChangingPage(true);
-      }
-      setError(null);
+    comicApi
+      .list(page, contentFilter)
+      .then((data) => {
+        if (cancelled) return;
+        setComics(data.comics || []);
+        setTotalPages(Math.max(1, data.metadata?.totalPages || 1));
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Could not connect to the server');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
 
-      try {
-        const data = await comicApi.list(page, contentFilter);
-        if (!cancelled) {
-          setComics(data.comics || []);
-          const totalPagesFromApi = data.metadata?.totalPages || 1;
-          setTotalPages(Math.max(1, totalPagesFromApi));
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          const errorMessage = err instanceof Error ? err.message : 'An error occurred while connecting to the server';
-          setError(errorMessage);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-          setIsChangingPage(false);
-        }
-      }
-    };
-
-    fetchComics();
     return () => {
       cancelled = true;
     };
@@ -59,98 +59,91 @@ export default function MainLayout() {
   useEffect(() => {
     let cancelled = false;
 
-    const fetchPopularComics = async () => {
-      try {
-        const data = await comicApi.getPopular(contentFilter);
-        if (!cancelled) {
-          setPopularComics(data || []);
-        }
-      } catch (err) {
-        console.error('Could not fetch the popular comic list:', err);
-      }
-    };
+    comicApi
+      .getPopular(contentFilter)
+      .then((data) => {
+        if (!cancelled) setPopularComics(data || []);
+      })
+      .catch((err) => console.error('Could not fetch popular comics:', err));
 
-    fetchPopularComics();
     return () => {
       cancelled = true;
     };
   }, [contentFilter]);
 
   useEffect(() => {
-    const handleFilterChanged = () => {
-      setContentFilter(getStoredContentFilter());
-    };
+    let cancelled = false;
+    setIsTopRatedLoading(true);
 
-    window.addEventListener('content-filter-changed', handleFilterChanged);
-    window.addEventListener('storage', handleFilterChanged);
+    comicApi
+      .getTopRated(8, contentFilter)
+      .then((data) => {
+        if (!cancelled) setTopRated(data || []);
+      })
+      .catch((err) => console.error('Could not fetch top rated comics:', err))
+      .finally(() => {
+        if (!cancelled) setIsTopRatedLoading(false);
+      });
 
     return () => {
-      window.removeEventListener('content-filter-changed', handleFilterChanged);
-      window.removeEventListener('storage', handleFilterChanged);
+      cancelled = true;
     };
-  }, []);
+  }, [contentFilter]);
+
+  const changePage = (next: number) => {
+    setPage(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const isFirstLoad = isLoading && comics.length === 0;
 
   return (
-    <div className={styles['main-layout-container']}>
-      <div className={styles['main-content-column']}>
+    <div className={styles.page}>
+      <div className={styles.hero}>
+        <HeroCarousel comics={topRated} isLoading={isTopRatedLoading} />
+      </div>
 
-        {/* SECTION: LAST UPDATE */}
-        <section className={styles['manga-section']}>
-          <div className={styles['main-section-header']}>
-            <div className={styles['section-title-left']}>
-              <h2>Last update</h2>
-            </div>
+      <ContinueReading />
 
-            {/* View Mode Switcher */}
-            <div className={styles['view-mode-toggle']}>
-              <button
-                className={`${styles['tab-btn']} ${viewMode === 'grid' ? styles['active'] : ''}`}
-                onClick={() => setViewMode('grid')}
-                title="Grid view"
-                aria-label="Grid view"
-              >
-                <LayoutGrid size={18} strokeWidth={2} />
-              </button>
-
-              <button
-                className={`${styles['tab-btn']} ${viewMode === 'list' ? styles['active'] : ''}`}
-                onClick={() => setViewMode('list')}
-                title="List view"
-                aria-label="List view"
-              >
-                <List size={18} strokeWidth={2} />
-              </button>
-            </div>
+      <section className={styles.main} aria-labelledby="latest-heading">
+        <header className={styles.sectionHead}>
+          <div>
+            <h2 id="latest-heading" className={styles.title}>
+              Latest updates
+            </h2>
+            <p className={styles.subtitle}>Fresh chapters from the titles you love</p>
           </div>
 
-          {isLoading && comics.length === 0 ? (
-            <div className={styles['loading-container']}>
-              <p>Loading comics...</p>
+          <div className={styles.viewToggle} role="group" aria-label="View mode">
+            {VIEW_MODES.map(({ mode, label, icon: Icon }) => (
+              <button
+                key={mode}
+                type="button"
+                className={cx(styles.viewBtn, viewMode === mode && styles.viewBtnOn)}
+                onClick={() => setViewMode(mode)}
+                aria-label={label}
+                aria-pressed={viewMode === mode}
+                title={label}
+              >
+                <Icon size={16} />
+              </button>
+            ))}
+          </div>
+        </header>
+
+        {isFirstLoad ? (
+          <p className={styles.state}>Loading comics…</p>
+        ) : error ? (
+          <p className={cx(styles.state, styles.stateError)}>{error}</p>
+        ) : (
+          <>
+            <div className={cx(styles.results, isLoading && styles.resultsLoading)} aria-busy={isLoading}>
+              <ComicCardList comics={comics} viewMode={viewMode} />
             </div>
-          ) : error ? (
-            <div className={styles['error-container']}>
-              <p>{error}</p>
-            </div>
-          ) : (
-            <>
-              <div className={styles['content-shell']}>
-                <ComicCardList comics={comics} viewMode={viewMode} />
-                {isChangingPage && (
-                  <div className={styles['page-loading-overlay']}>
-                    <p>Đang tải trang mới...</p>
-                  </div>
-                )}
-              </div>
-              <Pagination
-                currentPage={page}
-                totalPages={totalPages}
-                onPageChange={setPage}
-                isLoading={isChangingPage}
-              />
-            </>
-          )}
-        </section>
-      </div>
+            <Pagination currentPage={page} totalPages={totalPages} onPageChange={changePage} isLoading={isLoading} />
+          </>
+        )}
+      </section>
 
       <PopularCard popularComics={popularComics} />
     </div>

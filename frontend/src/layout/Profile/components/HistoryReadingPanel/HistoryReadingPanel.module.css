@@ -1,77 +1,11 @@
-/* ==========================================
-   HISTORY READING PANEL STYLES
-   ========================================== */
-
-/* Shell & Container */
-.user-content {
-  min-width: 0;
-}
-
-/* Page View & Header */
-.uview {
-  flex-direction: column;
-  gap: 20px;
-  display: flex;
-}
-
-.uview__head {
-  flex-direction: column;
-  gap: 6px;
-  display: flex;
-}
-
-.uview__head--row {
-  flex-flow: wrap;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-}
-
-.uview__title {
-  font-size: var(--text-2xl);
-  letter-spacing: -0.01em;
-  color: var(--text);
-  margin: 0;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.uview__sub {
-  color: var(--text-3);
-  font-size: var(--text-base);
-  margin: 0;
-}
-
-.uview__pager {
-  justify-content: center;
-  margin-top: 4px;
-  display: flex;
-}
-
-/* History Cards Grid Layout */
-.hgrid {
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+.grid {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--sp-3);
 }
 
-/* Loading, Error & Empty Container */
-.empty-state-container {
-  background: var(--surface);
-  border-radius: var(--radius);
-  color: var(--text-3);
-  font-size: var(--text-base);
-  text-align: center;
-  padding: 40px 20px;
-}
-
-.empty-state-container p {
-  margin: 0;
-}
-
-/* Responsive Grid */
-@media (max-width: 600px) {
-  .hgrid {
+@media (max-width: 520px) {
+  .grid {
     grid-template-columns: 1fr;
   }
 }

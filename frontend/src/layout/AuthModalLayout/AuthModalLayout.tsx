@@ -1,96 +1,49 @@
-import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState } from 'react';
+import Modal from '../../components/Modal/Modal';
 import LoginForm from '../../components/LoginForm/LoginForm';
 import RegisterForm from '../../components/RegisterForm/RegisterForm';
-import styles from './AuthModalLayout.module.css';
+import ForgotPasswordForm from '../../components/ForgotPasswordForm/ForgotPasswordForm';
 
-import { X } from 'lucide-react';
-
-export type AuthMode = 'login' | 'register';
+export type AuthMode = 'login' | 'register' | 'forgot';
 
 type AuthModalProps = {
   isOpen: boolean;
   onClose: () => void;
 };
 
+const COPY: Record<AuthMode, { title: string; subtitle: string }> = {
+  login: {
+    title: 'Welcome back',
+    subtitle: 'Sign in to sync your library and reading progress.',
+  },
+  register: {
+    title: 'Create your account',
+    subtitle: 'Follow series, save your progress and join the discussion.',
+  },
+  forgot: {
+    title: 'Reset your password',
+    subtitle: 'Enter the email of your account and we will send you a link.',
+  },
+};
+
 export default function AuthModalLayout({ isOpen, onClose }: AuthModalProps) {
   const [mode, setMode] = useState<AuthMode>('login');
 
-  // Reset trạng thái về 'login' khi modal đóng/mở
+  // Always reopen on the login screen.
   useEffect(() => {
-    if (!isOpen) {
-      setMode('login');
-    }
+    if (!isOpen) setMode('login');
   }, [isOpen]);
 
-  // Xử lý sự kiện nhấn phím Escape và khóa cuộn nền (body scroll)
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    // Khóa scroll của body
-    const originalStyle = window.getComputedStyle(document.body).overflow;
-    document.body.style.overflow = 'hidden';
-
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      // Trả lại trạng thái scroll ban đầu khi đóng hoặc unmount
-      document.body.style.overflow = originalStyle;
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
-
-  const modalContent = (
-    <div 
-      className={styles['auth']} 
-      role="dialog" 
-      aria-modal="true" 
-      onClick={onClose}
-    >
-      <div className={styles['auth__card']} onClick={(e) => e.stopPropagation()}>
-        <button 
-          className={styles['auth__close']} 
-          onClick={onClose} 
-          aria-label="Close modal"
-        >
-          <X className={styles['close-icon'] || 'close-icon'} strokeWidth={2} size={20} />
-        </button>
-        
-          {mode === 'login' ? (
-            <>
-              <h2 className={styles['auth__title']}>Welcome back</h2>
-              <p className={styles['auth__sub']}>
-                Sign in to sync your library and reading progress.
-              </p>
-              <LoginForm 
-                onSwitch={() => setMode('register')} 
-                onSuccess={onClose} 
-              />
-            </>
-          ) : (
-            <>
-              <h2 className={styles['auth__title']}>Create your account</h2>
-              <p className={styles['auth__sub']}>
-                Sign up to follow series, save reading progress, and join the discussion.
-              </p>
-              <RegisterForm 
-                onSwitch={() => setMode('login')} 
-                onSuccess={() => setMode('login')} 
-              />
-            </>
-          )}
-        </div>
-      </div>
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="sm" title={COPY[mode].title} subtitle={COPY[mode].subtitle}>
+      {mode === 'login' ? (
+        <LoginForm onSwitch={() => setMode('register')} onForgot={() => setMode('forgot')} onSuccess={onClose} />
+      ) : mode === 'register' ? (
+        // Registering also signs in, so the modal just closes.
+        <RegisterForm onSwitch={() => setMode('login')} onSuccess={onClose} />
+      ) : (
+        <ForgotPasswordForm onBack={() => setMode('login')} />
+      )}
+    </Modal>
   );
-
-  // Render modal vào document.body để tránh xung đột layout CSS
-  return createPortal(modalContent, document.body);
 }

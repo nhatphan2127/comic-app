@@ -1,0 +1,162 @@
+.root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--fg-mute);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--h-md);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: border-color var(--t-fast);
+}
+
+.field:hover {
+  border-color: var(--line-strong);
+}
+
+.fieldOpen {
+  border-color: var(--brand);
+}
+
+.value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  flex-shrink: 0;
+  color: var(--fg-mute);
+  transition: transform var(--t-fast);
+}
+
+.fieldOpen .caret {
+  transform: rotate(180deg);
+}
+
+.pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: max(100%, 200px);
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-3);
+  animation: drop 0.14s var(--ease);
+}
+
+.popRight {
+  left: auto;
+  right: 0;
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 8px var(--sp-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.item:hover {
+  background: var(--surface-2);
+  color: var(--fg-strong);
+}
+
+.itemOn {
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.itemDanger:hover {
+  background: var(--err-tint);
+  color: var(--err);
+}
+
+.itemIcon {
+  display: inline-flex;
+  color: var(--fg-mute);
+}
+
+.itemText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 4px;
+  color: var(--on-brand);
+}
+
+.markRadio {
+  border-radius: 50%;
+}
+
+.markOn {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.menuLabel {
+  padding: 6px var(--sp-3) 4px;
+  color: var(--fg-faint);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}

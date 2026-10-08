@@ -1,12 +1,11 @@
-import HeaderLayout from "../layout/HeaderLayout/HeaderLayout.tsx"
-import MangaDetailLayout from "../layout/MangaDetailLayout/MangaDetailLayout.tsx"
+import HeaderLayout from '../layout/HeaderLayout/HeaderLayout';
+import MangaDetailLayout from '../layout/MangaDetailLayout/MangaDetailLayout';
 
-
-export default function Home() {
-    return (
-        <>
-            <HeaderLayout/>
-            <MangaDetailLayout/>
-        </>
-    )
+export default function MangaDetail() {
+  return (
+    <>
+      <HeaderLayout />
+      <MangaDetailLayout />
+    </>
+  );
 }

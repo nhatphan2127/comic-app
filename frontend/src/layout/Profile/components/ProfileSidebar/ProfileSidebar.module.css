@@ -1,130 +1,122 @@
-/* ==========================================
-   PROFILE SIDEBAR COMPONENT STYLES
-   (Trích xuất từ index.css)
-   ========================================== */
-
-.umenu {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-top: 8px;
+.sidebar {
+  position: sticky;
+  top: calc(var(--header-h) + var(--sp-4));
+  align-self: start;
 }
 
-/* Mặc định trên Desktop: Ẩn nút Trigger toggle menu */
-.umenu__trigger {
+.trigger {
   display: none;
 }
 
-.umenu__list {
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.group {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
-.umenu__item {
+.groupLabel {
+  padding: 0 var(--sp-3) 4px;
+  color: var(--fg-faint);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-3);
   width: 100%;
-  padding: 10px 12px;
+  padding: 9px var(--sp-3);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-sm);
   background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--text-lg);
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+  font-weight: 500;
   text-align: left;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--t-fast), color var(--t-fast);
 }
 
-.umenu__item:hover {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.umenu__item.is-active {
+.item:hover {
   background: var(--surface-2);
-  color: var(--text);
+  color: var(--fg-strong);
 }
 
-.umenu__item.is-active .umenu__icon {
-  color: var(--accent);
+.itemOn,
+.itemOn:hover {
+  background: var(--brand-tint);
+  color: var(--brand);
+  font-weight: 600;
 }
 
-.umenu__icon {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  color: var(--text-3);
-  flex: none;
+.itemOn::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
 }
 
-.umenu__text {
-  flex: 1;
-}
-
-.umenu__trigger-caret {
-  display: inline-flex;
-  color: var(--text-3);
-  margin-left: auto;
-  transition: transform 0.15s;
-  transform: rotate(90deg);
-}
-
-/* ==========================================
-   RESPONSIVE (Screen <= 960px)
-   ========================================== */
-
-@media (max-width: 960px) {
-  .umenu {
-    padding-top: 0;
+@media (max-width: 900px) {
+  .sidebar {
+    position: relative;
+    top: 0;
+    z-index: 10;
   }
 
-  .umenu__trigger {
+  .trigger {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--sp-3);
     width: 100%;
-    padding: 12px 14px;
-    border: 0;
-    border-radius: var(--radius-sm);
+    height: var(--h-lg);
+    padding: 0 var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
     background: var(--surface);
-    color: var(--text);
-    font: inherit;
-    font-size: var(--text-lg);
-    cursor: pointer;
-    transition: background 0.12s;
+    color: var(--fg-strong);
+    font-weight: 600;
   }
 
-  .umenu__trigger:hover {
-    background: var(--surface-2);
+  .caret {
+    margin-left: auto;
+    transition: transform var(--t-fast);
   }
 
-  .umenu__trigger .umenu__icon {
-    color: var(--accent);
+  .open .caret {
+    transform: rotate(180deg);
   }
 
-  .umenu.is-open .umenu__trigger-caret {
-    transform: rotate(-90deg);
-  }
-
-  .umenu__list {
+  .nav {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
     display: none;
-    background: var(--surface);
-    border-radius: var(--radius-sm);
-    border: 0;
-    margin-top: 6px;
-    padding: 6px;
+    box-shadow: var(--sh-3);
   }
 
-  .umenu.is-open .umenu__list {
+  .open .nav {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+  }
+
+  .itemOn::before {
+    display: none;
   }
 }

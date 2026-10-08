@@ -1,0 +1,168 @@
+.form {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--sp-5) var(--sp-6);
+}
+
+.coverCol,
+.mainCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.full {
+  grid-column: 1 / -1;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+
+.triple {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--fg-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.req {
+  margin-left: 3px;
+  color: var(--brand);
+}
+
+.placeholder {
+  color: var(--fg-faint);
+}
+
+.static {
+  min-height: var(--h-lg);
+  padding: 10px var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-alt);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.staticLong {
+  min-height: 132px;
+  white-space: pre-wrap;
+}
+
+/* ---------- Cover ---------- */
+.cover {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--bg-alt);
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.coverPick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: 100%;
+  border: 2px dashed var(--line-strong);
+  border-radius: inherit;
+  background: transparent;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  transition: border-color var(--t-fast), color var(--t-fast);
+}
+
+.coverPick:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.coverRemove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+}
+
+.coverRemove:hover {
+  background: var(--err);
+}
+
+/* ---------- Tags ---------- */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg-soft);
+  font-size: var(--fs-xs);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+
+.tag:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--fg-strong);
+}
+
+.tag:disabled {
+  cursor: default;
+}
+
+.tagOn,
+.tagOn:hover:not(:disabled) {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+@media (max-width: 760px) {
+  .form {
+    grid-template-columns: 1fr;
+  }
+
+  .coverCol .cover {
+    max-width: 200px;
+  }
+
+  .triple {
+    grid-template-columns: 1fr;
+  }
+}

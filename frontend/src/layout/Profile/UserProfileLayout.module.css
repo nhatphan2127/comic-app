@@ -1,56 +1,27 @@
-/* ==========================================
-   USER PROFILE LAYOUT STYLES
-   (Trích xuất từ index.css)
-   ========================================== */
-
-.user-main {
-  max-width: var(--container);
-  padding: 24px var(--gutter) 64px;
-  margin: 0 auto;
-}
-
-.user-wrap {
+.page {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--sp-6);
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  padding: var(--sp-6) var(--page-pad) var(--sp-10);
 }
 
-.user-shell {
+.shell {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 240px minmax(0, 1fr);
   align-items: start;
-  gap: 36px;
+  gap: var(--sp-6);
 }
 
-.user-content {
+.content {
   min-width: 0;
 }
 
-/* Thẻ chứa thông báo khi không có dữ liệu hoặc lỗi (dựa trên .uempty / .uview__empty trong index.css) */
-.empty-state-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  background: var(--surface);
-  border-radius: var(--radius);
-  color: var(--text-2);
-  font-size: var(--text-base);
-  padding: 48px 16px;
-}
-
-.empty-state-container p {
-  margin: 0;
-}
-
-/* ==========================================
-   RESPONSIVE (Screen <= 960px)
-   ========================================== */
-
-@media (max-width: 960px) {
-  .user-shell {
+@media (max-width: 900px) {
+  .shell {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: var(--sp-4);
   }
 }

@@ -1,48 +1,39 @@
 import { useEffect, useState } from 'react';
-import HeaderLayout from '../layout/HeaderLayout/HeaderLayout.tsx';
-import UserProfilePage from '../layout/Profile/UserProfileLayout.tsx';
+import HeaderLayout from '../layout/HeaderLayout/HeaderLayout';
+import UserProfileLayout from '../layout/Profile/UserProfileLayout';
 import { userApi } from '../services/api';
-import type { UserProfile } from '../types/types.ts';
+import { useAuth } from '../context/AuthContext';
+import type { UserProfile as UserProfileData } from '../types/types';
 
-export default function Home() {
-    const [user, setUser] = useState<UserProfile | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+export default function UserProfile() {
+  const [user, setUser] = useState<UserProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { updateUser } = useAuth();
 
-    useEffect(() => {
-        let isMounted = true;
+  // Keep the stored role in step with the server, so a newly promoted contributor sees their tools.
+  useEffect(() => {
+    if (user?.role) updateUser({ role: user.role });
+  }, [user?.role, updateUser]);
 
-        const loadProfile = async () => {
-            try {
-                setLoading(true);
-                setError(null);
-                const profile = await userApi.getProfile();
+  useEffect(() => {
+    let cancelled = false;
 
-                if (isMounted) {
-                    setUser(profile ?? null);
-                }
-            } catch (err) {
-                if (isMounted) {
-                    setError(err instanceof Error ? err.message : 'Không thể tải thông tin hồ sơ.');
-                }
-            } finally {
-                if (isMounted) {
-                    setLoading(false);
-                }
-            }
-        };
+    userApi
+      .getProfile()
+      .then((profile) => !cancelled && setUser(profile ?? null))
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : 'Không thể tải thông tin hồ sơ.'))
+      .finally(() => !cancelled && setLoading(false));
 
-        loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-    return (
-        <>
-            <HeaderLayout />
-            <UserProfilePage user={user} loading={loading} error={error} />
-        </>
-    );
+  return (
+    <>
+      <HeaderLayout />
+      <UserProfileLayout user={user} loading={loading} error={error} onUserUpdated={setUser} />
+    </>
+  );
 }

@@ -1,0 +1,48 @@
+/* Small centred pages: password reset, not found. */
+.wrap {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - 160px);
+  padding: var(--sp-8) var(--page-pad);
+}
+
+.card {
+  width: min(420px, 100%);
+  padding: var(--sp-8) var(--sp-6);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--sh-2);
+}
+
+.title {
+  margin: 0 0 var(--sp-5);
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.text {
+  margin: 0 0 var(--sp-5);
+  color: var(--fg-mute);
+}
+
+.center {
+  text-align: center;
+}
+
+.code {
+  margin: 0;
+  color: var(--brand);
+  font-size: 64px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-3);
+}

@@ -1,0 +1,2183 @@
+openapi: 3.1.0
+info:
+  title: Comic Platform API
+  version: 1.0.0
+  description: |
+    REST API of the comic reading platform.
+
+    **Conventions** (details in `backend/docs/api-conventions.md`)
+    - Base URL: `/api/v1`. Breaking changes ship as `/api/v2`; v1 keeps working.
+    - Success: `{ "data": ... }`. A page of a collection: `{ "data": [...], "meta": { page, pageSize, totalItems, totalPages } }`.
+    - Errors: RFC 9457 `application/problem+json` (`type`, `title`, `status`, `detail`, `instance`).
+    - Pagination: `?page=1&pageSize=20` (1-based). Sorting: `?sort=-rating,name` (`-` = descending).
+      Multi-value filters: comma-separated or repeated (`?contentRating=safe,suggestive`).
+    - Create → `201` + `Location` header. Delete / nothing to return → `204`.
+    - Authentication: `Authorization: Bearer <token>` from `POST /auth/login`.
+servers:
+  - url: /api/v1
+    description: Version 1 (this server)
+
+tags:
+  - name: Auth
+  - name: Me
+    description: Resources that belong to the logged-in user.
+  - name: Users
+    description: Public profiles.
+  - name: Comics
+  - name: Chapters
+  - name: Comments
+  - name: Reports
+    description: Readers flagging a comic or a comment.
+  - name: Moderation
+    description: Admins and moderators.
+  - name: Admin
+    description: Admins only.
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------------------------------------------------------------- Auth
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userName, password, email, displayName]
+              properties:
+                userName: { type: string, pattern: '^[A-Za-z0-9_.-]{3,32}$' }
+                password: { type: string, minLength: 6, maxLength: 72 }
+                email: { type: string, format: email }
+                displayName: { type: string, minLength: 1, maxLength: 50 }
+      responses:
+        '201':
+          description: Account created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      userName: { type: string }
+                      displayName: { type: string }
+                      role: { $ref: '#/components/schemas/Role' }
+                      createdAt: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and get a session token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userName, password]
+              properties:
+                userName: { type: string, description: Username or email. }
+                password: { type: string }
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      expiresAt: { type: string, format: date-time }
+                      user:
+                        type: object
+                        properties:
+                          id: { type: string }
+                          userName: { type: string }
+                          role: { $ref: '#/components/schemas/Role' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: End the current session
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/password-reset:
+    post:
+      tags: [Auth]
+      summary: Email a password reset link
+      description: Always 204, whether or not the email is registered. The link is valid for 30 minutes.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/password-reset/confirm:
+    post:
+      tags: [Auth]
+      summary: Set a new password with the token from the reset email
+      description: Every session of the account is logged out.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword, confirmPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 6, maxLength: 72 }
+                confirmPassword: { type: string }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ---------------------------------------------------------------- Me
+  /me:
+    get:
+      tags: [Me]
+      summary: My profile
+      responses:
+        '200': { $ref: '#/components/responses/UserProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Me]
+      summary: Update my profile (only the fields sent change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string }
+                username: { type: string }
+                email: { type: string }
+                bio: { type: string }
+                socialLinks: { type: string }
+                avatar: { type: string, description: Empty string removes the image. }
+                background: { type: string, description: Empty string removes the image. }
+      responses:
+        '200': { $ref: '#/components/responses/UserProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /me/avatar:
+    put:
+      tags: [Me]
+      summary: Replace my avatar
+      requestBody: { $ref: '#/components/requestBodies/SingleImage' }
+      responses:
+        '200': { $ref: '#/components/responses/UserProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /me/background:
+    put:
+      tags: [Me]
+      summary: Replace my profile background
+      requestBody: { $ref: '#/components/requestBodies/SingleImage' }
+      responses:
+        '200': { $ref: '#/components/responses/UserProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /me/password:
+    put:
+      tags: [Me]
+      summary: Change my password (logs out my other sessions)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword, confirmPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 6, maxLength: 72 }
+                confirmPassword: { type: string }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/preferences:
+    patch:
+      tags: [Me]
+      summary: Update my preferences (only the fields sent change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Preferences' }
+      responses:
+        '200':
+          description: The stored preferences.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Preferences' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/following:
+    get:
+      tags: [Me]
+      summary: Comics I follow (all of them, grouped by category on the client)
+      responses:
+        '200':
+          description: Followed comics with category and reading progress.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FollowingEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/following/{comicId}:
+    parameters:
+      - { $ref: '#/components/parameters/comicId' }
+    get:
+      tags: [Me]
+      summary: Do I follow this comic?
+      description: '`200` with the follow record, or `404` when not followed.'
+      responses:
+        '200': { $ref: '#/components/responses/Follow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Me]
+      summary: Follow a comic, or move it to another category
+      description: Idempotent. `201` when the comic was not followed yet, `200` otherwise.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoryId: { type: [string, 'null'] }
+      responses:
+        '200': { $ref: '#/components/responses/Follow' }
+        '201':
+          description: Now following.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Follow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Me]
+      summary: Unfollow a comic (idempotent)
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/following-categories:
+    get:
+      tags: [Me]
+      summary: My following categories (shared defaults first)
+      responses:
+        '200':
+          description: Categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FollowingCategory' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Me]
+      summary: Create a category
+      requestBody: { $ref: '#/components/requestBodies/CategoryName' }
+      responses:
+        '201':
+          description: Created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FollowingCategory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /me/following-categories/{categoryId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Me]
+      summary: Rename one of my categories
+      requestBody: { $ref: '#/components/requestBodies/CategoryName' }
+      responses:
+        '200':
+          description: Renamed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/FollowingCategory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Me]
+      summary: Delete one of my categories (its comics stay followed, without a category)
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /me/ratings/{comicId}:
+    parameters:
+      - { $ref: '#/components/parameters/comicId' }
+    put:
+      tags: [Me]
+      summary: Set my rating for a comic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        '200':
+          description: Rating stored; the comic's new average.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      comicId: { type: string }
+                      userRating: { type: integer }
+                      averageRating: { type: number }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Me]
+      summary: Remove my rating (idempotent)
+      responses:
+        '200':
+          description: Rating removed; the comic's new average.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      comicId: { type: string }
+                      userRating: { type: integer, enum: [0] }
+                      averageRating: { type: number }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /me/history:
+    get:
+      tags: [Me]
+      summary: My reading history, most recent first
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+      responses:
+        '200':
+          description: A page of history entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/HistoryEntry' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    delete:
+      tags: [Me]
+      summary: Clear my whole reading history
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/history/{chapterId}:
+    parameters:
+      - { $ref: '#/components/parameters/chapterId' }
+    put:
+      tags: [Me]
+      summary: Save my reading progress in a chapter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPage]
+              properties:
+                currentPage: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      chapterId: { type: string }
+                      currentPage: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Me]
+      summary: Remove one chapter from my history
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/notifications:
+    get:
+      tags: [Me]
+      summary: My notifications, newest first
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - name: isRead
+          in: query
+          description: Only read (`true`) or unread (`false`) notifications.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: A page of notifications.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/notifications/{notificationId}:
+    parameters:
+      - name: notificationId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Me]
+      summary: Mark a notification read or unread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isRead]
+              properties:
+                isRead: { type: boolean }
+      responses:
+        '200':
+          description: The updated notification.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Notification' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /me/comments:
+    get:
+      tags: [Me]
+      summary: Comments I wrote (on comics and chapters)
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - name: sort
+          in: query
+          description: 'Fields: `createdAt`, `likes`, `replyCount`. Default `-createdAt`.'
+          schema: { type: string, example: -likes }
+      responses:
+        '200':
+          description: A page of my comments.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/UserComment' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/contributions/comics:
+    get:
+      tags: [Me]
+      summary: Comics I uploaded, with their review status
+      responses:
+        '200': { $ref: '#/components/responses/ContributionList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/contributions/chapters:
+    get:
+      tags: [Me]
+      summary: Chapters I uploaded, with their review status
+      responses:
+        '200': { $ref: '#/components/responses/ContributionList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ---------------------------------------------------------------- Users
+  /users/{userId}:
+    get:
+      tags: [Users]
+      summary: Someone's public profile (404 for banned users)
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/userId' }
+      responses:
+        '200':
+          description: The public profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PublicProfile' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /users/{userId}/comments:
+    get:
+      tags: [Users]
+      summary: Someone's visible comments (not banned, not on hidden content)
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/userId' }
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - name: sort
+          in: query
+          description: 'Fields: `createdAt`, `likes`, `replyCount`. Default `-createdAt`.'
+          schema: { type: string, example: -likes }
+      responses:
+        '200':
+          description: A page of comments.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/UserComment' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Comics
+  /comics:
+    get:
+      tags: [Comics]
+      summary: Search, filter, sort and paginate public comics
+      description: |
+        Replaces the old `/comics/popular`, `/comics/top-rated` and `/comics/search`:
+        - popular: `?sort=-view&pageSize=10`
+        - top rated: `?sort=-rating,-view&pageSize=8`
+        - search: `?q=one&pageSize=6` (exact name matches first unless `sort` is given)
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - name: sort
+          in: query
+          description: 'Fields: `createdAt`, `updatedAt`, `name`, `view`, `follow`, `rating`. Default `-createdAt`.'
+          schema: { type: string, example: '-rating,-view' }
+        - name: q
+          in: query
+          description: Text contained in the name, the url slug, an alternative name, the author or the artist.
+          schema: { type: string }
+        - name: contentRating
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: '#/components/schemas/ContentRating' } }
+        - name: type
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string, enum: [manga, manhwa, manhua, other] } }
+        - name: demographic
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string, enum: [josei, seinen, shoujo, shounen] } }
+        - name: releaseStatus
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string, enum: [releasing, finished, on hiatus, discontinued] } }
+        - name: genre
+          in: query
+          description: Genre names (case-insensitive); a comic matches if it has any of them.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: format
+          in: query
+          description: Format names (case-insensitive); a comic matches if it has any of them.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: A page of comics.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ComicSummary' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      tags: [Comics]
+      summary: Upload a new comic (contributor, moderator, admin)
+      description: Goes to the moderation queue unless auto-accept is on.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ComicInput'
+                - type: object
+                  required: [coverImage]
+                  properties:
+                    coverImage: { type: string, format: binary }
+      responses:
+        '201':
+          description: Created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ComicWriteResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /comics/{comicId}:
+    get:
+      tags: [Comics]
+      summary: A public comic, by id or url slug
+      description: With a token, `userRating` is the viewer's own rating.
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/comicIdOrSlug' }
+      responses:
+        '200':
+          description: The comic.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ComicDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    patch:
+      tags: [Comics]
+      summary: Edit a comic I contribute to (sends it back to moderation)
+      parameters:
+        - { $ref: '#/components/parameters/comicId' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ComicInput'
+                - type: object
+                  properties:
+                    coverImage: { type: string, format: binary, description: Optional new cover. }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ComicWriteResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /comics/{comicId}/chapters:
+    get:
+      tags: [Chapters]
+      summary: Public chapters of a comic
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/comicIdOrSlug' }
+        - { $ref: '#/components/parameters/page' }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+        - name: sort
+          in: query
+          description: 'Fields: `chapterNumber`, `createdAt`, `updatedAt`. Default `chapterNumber`.'
+          schema: { type: string, example: -chapterNumber }
+      responses:
+        '200':
+          description: A page of chapters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChapterSummary' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    post:
+      tags: [Chapters]
+      summary: Upload a chapter (contributor, moderator, admin)
+      parameters:
+        - { $ref: '#/components/parameters/comicId' }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [title, chapterNumber, url, images]
+              properties:
+                title: { type: string }
+                chapterNumber: { type: number, minimum: 0 }
+                url: { type: string, description: Unique slug. }
+                images:
+                  type: array
+                  maxItems: 50
+                  description: Pages, in reading order.
+                  items: { type: string, format: binary }
+      responses:
+        '201':
+          description: Created.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      chapterId: { type: string }
+                      chapterNumber: { type: number }
+                      title: { type: string }
+                      imagesCount: { type: integer }
+                      status: { $ref: '#/components/schemas/ReviewStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+
+  /comics/{comicId}/comments:
+    parameters:
+      - { $ref: '#/components/parameters/comicId' }
+    get:
+      tags: [Comments]
+      summary: Comments on a comic
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/commentPageSize' }
+        - { $ref: '#/components/parameters/commentSort' }
+      responses:
+        '200': { $ref: '#/components/responses/CommentPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Comments]
+      summary: Comment on a comic
+      requestBody: { $ref: '#/components/requestBodies/NewComment' }
+      responses:
+        '201': { $ref: '#/components/responses/CommentCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /comics/{comicId}/contributors:
+    get:
+      tags: [Moderation]
+      summary: Contributors of a comic (admin, moderator)
+      parameters:
+        - { $ref: '#/components/parameters/comicId' }
+      responses:
+        '200': { $ref: '#/components/responses/ContributorList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /comics/{comicId}/contributors/{userId}:
+    patch:
+      tags: [Moderation]
+      summary: Accept or reject a contributor's comic submission (admin, moderator)
+      parameters:
+        - { $ref: '#/components/parameters/comicId' }
+        - { $ref: '#/components/parameters/userId' }
+      requestBody: { $ref: '#/components/requestBodies/ReviewDecision' }
+      responses:
+        '200': { $ref: '#/components/responses/ContributorUpdated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Chapters
+  /chapters/{chapterId}:
+    get:
+      tags: [Chapters]
+      summary: Read a chapter (pages + my saved progress)
+      description: With a token the chapter is also recorded in the reader's history.
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/chapterId' }
+      responses:
+        '200':
+          description: The chapter.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ChapterDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /chapters/{chapterId}/comments:
+    parameters:
+      - { $ref: '#/components/parameters/chapterId' }
+    get:
+      tags: [Comments]
+      summary: Comments on a chapter
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/commentPageSize' }
+        - { $ref: '#/components/parameters/commentSort' }
+      responses:
+        '200': { $ref: '#/components/responses/CommentPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Comments]
+      summary: Comment on a chapter
+      requestBody: { $ref: '#/components/requestBodies/NewComment' }
+      responses:
+        '201': { $ref: '#/components/responses/CommentCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /chapters/{chapterId}/contributors:
+    get:
+      tags: [Moderation]
+      summary: Contributors of a chapter (admin, moderator)
+      parameters:
+        - { $ref: '#/components/parameters/chapterId' }
+      responses:
+        '200': { $ref: '#/components/responses/ContributorList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /chapters/{chapterId}/contributors/{userId}:
+    patch:
+      tags: [Moderation]
+      summary: Accept or reject a contributor's chapter submission (admin, moderator)
+      parameters:
+        - { $ref: '#/components/parameters/chapterId' }
+        - { $ref: '#/components/parameters/userId' }
+      requestBody: { $ref: '#/components/requestBodies/ReviewDecision' }
+      responses:
+        '200': { $ref: '#/components/responses/ContributorUpdated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Comments
+  /comments/{commentId}:
+    parameters:
+      - { $ref: '#/components/parameters/commentId' }
+    get:
+      tags: [Comments]
+      summary: A comment with all of its replies
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: The comment.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/Comment'
+                      - type: object
+                        properties:
+                          type: { $ref: '#/components/schemas/CommentTargetType' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Comments]
+      summary: Edit my comment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Edited.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      type: { $ref: '#/components/schemas/CommentTargetType' }
+                      content: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Comments]
+      summary: Delete my comment (soft delete; replies stay)
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /comments/{commentId}/reaction:
+    parameters:
+      - { $ref: '#/components/parameters/commentId' }
+    put:
+      tags: [Comments]
+      summary: Set my reaction (idempotent)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [like, dislike] }
+      responses:
+        '200':
+          description: My reaction and the new counters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      commentId: { type: string }
+                      userReaction: { type: string, enum: [like, dislike] }
+                      likes: { type: integer }
+                      dislikes: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Comments]
+      summary: Remove my reaction (idempotent)
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Reports
+  /reports:
+    post:
+      tags: [Reports]
+      summary: Report a comic or a comment to the moderators
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetType, targetId, reason]
+              properties:
+                targetType: { $ref: '#/components/schemas/ReportTargetType' }
+                targetId: { type: string }
+                reason: { type: string, maxLength: 100, example: Spam }
+                details: { type: string, maxLength: 1000 }
+      responses:
+        '201':
+          description: Report filed.
+          headers:
+            Location: { $ref: '#/components/headers/Location' }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      targetType: { $ref: '#/components/schemas/ReportTargetType' }
+                      targetId: { type: string }
+                      reason: { type: string }
+                      details: { type: [string, 'null'] }
+                      status: { $ref: '#/components/schemas/ReportStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---------------------------------------------------------------- Moderation
+  /moderation/queue:
+    get:
+      tags: [Moderation]
+      summary: Comics and chapters by review status, in one response
+      parameters:
+        - name: comicStatus
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: '#/components/schemas/QueueStatus' } }
+        - name: chapterStatus
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: '#/components/schemas/QueueStatus' } }
+      responses:
+        '200':
+          description: Both lists, most recently updated first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      comics:
+                        type: array
+                        items: { $ref: '#/components/schemas/StaffComic' }
+                      chapters:
+                        type: array
+                        items: { $ref: '#/components/schemas/StaffChapter' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /moderation/comics:
+    get:
+      tags: [Moderation]
+      summary: Every comic, for review
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { $ref: '#/components/parameters/statusFilter' }
+        - { $ref: '#/components/parameters/visibilityFilter' }
+        - { $ref: '#/components/parameters/staffComicSort' }
+      responses:
+        '200': { $ref: '#/components/responses/StaffComicPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /moderation/comics/{comicId}:
+    parameters:
+      - { $ref: '#/components/parameters/comicId' }
+    get:
+      tags: [Moderation]
+      summary: Full details of any comic (hidden or pending too)
+      responses:
+        '200':
+          description: The comic.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ComicDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Moderation]
+      summary: Accept or reject a comic (and all its contributor rows)
+      requestBody: { $ref: '#/components/requestBodies/ReviewDecision' }
+      responses:
+        '200': { $ref: '#/components/responses/ReviewResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /moderation/chapters:
+    get:
+      tags: [Moderation]
+      summary: Every chapter, for review
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { $ref: '#/components/parameters/statusFilter' }
+        - { $ref: '#/components/parameters/visibilityFilter' }
+        - { $ref: '#/components/parameters/staffChapterSort' }
+      responses:
+        '200': { $ref: '#/components/responses/StaffChapterPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /moderation/chapters/{chapterId}:
+    patch:
+      tags: [Moderation]
+      summary: Accept or reject a chapter (and all its contributor rows)
+      parameters:
+        - { $ref: '#/components/parameters/chapterId' }
+      requestBody: { $ref: '#/components/requestBodies/ReviewDecision' }
+      responses:
+        '200': { $ref: '#/components/responses/ReviewResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /moderation/comments/{commentId}:
+    delete:
+      tags: [Moderation]
+      summary: Remove anyone's comment
+      parameters:
+        - { $ref: '#/components/parameters/commentId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /moderation/reports:
+    get:
+      tags: [Moderation]
+      summary: Reports filed by readers, newest first
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - name: status
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: '#/components/schemas/ReportStatus' } }
+      responses:
+        '200':
+          description: A page of reports.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Report' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /moderation/reports/{reportId}:
+    patch:
+      tags: [Moderation]
+      summary: Resolve, dismiss or reopen a report
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: '#/components/schemas/ReportStatus' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      status: { $ref: '#/components/schemas/ReportStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------- Admin
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Recent users, comments and pending submissions
+      responses:
+        '200':
+          description: Dashboard data.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      autoAccept: { type: boolean }
+                      users: { type: array, items: { $ref: '#/components/schemas/AdminUser' } }
+                      comments: { type: array, items: { type: object } }
+                      comics: { type: array, items: { $ref: '#/components/schemas/StaffComic' } }
+                      chapters: { type: array, items: { $ref: '#/components/schemas/StaffChapter' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/comics:
+    get:
+      tags: [Admin]
+      summary: Every comic, for visibility management
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { $ref: '#/components/parameters/statusFilter' }
+        - { $ref: '#/components/parameters/visibilityFilter' }
+        - { $ref: '#/components/parameters/staffComicSort' }
+      responses:
+        '200': { $ref: '#/components/responses/StaffComicPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/comics/{comicId}:
+    patch:
+      tags: [Admin]
+      summary: Show or hide a comic
+      parameters:
+        - { $ref: '#/components/parameters/comicId' }
+      requestBody: { $ref: '#/components/requestBodies/Visibility' }
+      responses:
+        '200': { $ref: '#/components/responses/VisibilityResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/chapters:
+    get:
+      tags: [Admin]
+      summary: Every chapter, for visibility management
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { $ref: '#/components/parameters/statusFilter' }
+        - { $ref: '#/components/parameters/visibilityFilter' }
+        - { $ref: '#/components/parameters/staffChapterSort' }
+      responses:
+        '200': { $ref: '#/components/responses/StaffChapterPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/chapters/{chapterId}:
+    patch:
+      tags: [Admin]
+      summary: Show or hide a chapter
+      parameters:
+        - { $ref: '#/components/parameters/chapterId' }
+      requestBody: { $ref: '#/components/requestBodies/Visibility' }
+      responses:
+        '200': { $ref: '#/components/responses/VisibilityResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/users/{userId}:
+    patch:
+      tags: [Admin]
+      summary: Change a user's role and/or ban status (not your own)
+      parameters:
+        - { $ref: '#/components/parameters/userId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                role: { $ref: '#/components/schemas/Role' }
+                isBanned: { type: boolean }
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      username: { type: string }
+                      role: { $ref: '#/components/schemas/Role' }
+                      isBanned: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/comments/{commentId}:
+    patch:
+      tags: [Admin]
+      summary: Ban or unban a comment
+      parameters:
+        - { $ref: '#/components/parameters/commentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [isBanned]
+              properties:
+                isBanned: { type: boolean }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      type: { $ref: '#/components/schemas/CommentTargetType' }
+                      isBanned: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: Platform settings
+      responses:
+        '200': { $ref: '#/components/responses/Settings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Admin]
+      summary: Change platform settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                autoAccept: { type: boolean, description: New uploads skip the moderation queue. }
+      responses:
+        '200': { $ref: '#/components/responses/Settings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Session token from `POST /auth/login`.
+
+  headers:
+    Location:
+      description: URL of the created resource, e.g. `/api/v1/comics/{id}`.
+      schema: { type: string }
+
+  parameters:
+    page:
+      name: page
+      in: query
+      description: 1-based page number.
+      schema: { type: integer, minimum: 1, default: 1 }
+    pageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    commentPageSize:
+      name: pageSize
+      in: query
+      description: Number of root comments per page (replies are always included).
+      schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+    commentSort:
+      name: sort
+      in: query
+      description: '`-score` best first (likes - dislikes), `-createdAt` newest first, `createdAt` oldest first.'
+      schema: { type: string, enum: ['-score', '-createdAt', createdAt], default: '-score' }
+    statusFilter:
+      name: status
+      in: query
+      style: form
+      explode: false
+      schema: { type: array, items: { $ref: '#/components/schemas/QueueStatus' } }
+    visibilityFilter:
+      name: visibility
+      in: query
+      style: form
+      explode: false
+      schema: { type: array, items: { $ref: '#/components/schemas/Visibility' } }
+    staffComicSort:
+      name: sort
+      in: query
+      description: 'Fields: `createdAt`, `updatedAt`, `name`. Default `-updatedAt`.'
+      schema: { type: string }
+    staffChapterSort:
+      name: sort
+      in: query
+      description: 'Fields: `createdAt`, `updatedAt`, `chapterNumber`. Default `-updatedAt`.'
+      schema: { type: string }
+    comicId:
+      name: comicId
+      in: path
+      required: true
+      schema: { type: string }
+    comicIdOrSlug:
+      name: comicId
+      in: path
+      required: true
+      description: The comic's id or its url slug.
+      schema: { type: string }
+    chapterId:
+      name: chapterId
+      in: path
+      required: true
+      schema: { type: string }
+    commentId:
+      name: commentId
+      in: path
+      required: true
+      schema: { type: string }
+    userId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string }
+
+  requestBodies:
+    SingleImage:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            description: 'The field name is the last path segment: `avatar` or `background`. JPEG, PNG, WEBP or GIF, max 10 MB.'
+            properties:
+              avatar: { type: string, format: binary }
+              background: { type: string, format: binary }
+    CategoryName:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [category]
+            properties:
+              category: { type: string, minLength: 1 }
+    NewComment:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [content]
+            properties:
+              content: { type: string, minLength: 1 }
+              parentCommentId: { type: string, description: Reply to this comment (same comic/chapter). }
+    ReviewDecision:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status: { type: string, enum: [accept, reject] }
+    Visibility:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [visibility]
+            properties:
+              visibility: { $ref: '#/components/schemas/Visibility' }
+
+  responses:
+    NoContent:
+      description: Done; nothing to return.
+    BadRequest:
+      description: Invalid input (body, path or query string).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example: { type: about:blank, title: Bad Request, status: 400, detail: '"pageSize" must be between 1 and 100', instance: /api/v1/comics?pageSize=500 }
+    Unauthorized:
+      description: Missing, invalid or expired token (or wrong credentials on login).
+      headers:
+        WWW-Authenticate: { schema: { type: string, example: Bearer } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Authenticated, but not allowed to do this.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: The resource does not exist (or is not visible to you).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflicts with existing data (duplicate username, url slug, category name).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PayloadTooLarge:
+      description: An uploaded file or the request body is too large.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnsupportedMediaType:
+      description: The uploaded file is not a JPEG, PNG, WEBP or GIF image.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limit reached (login and register).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UserProfile:
+      description: The user's profile.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: '#/components/schemas/UserProfile' }
+    Follow:
+      description: The follow record.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { $ref: '#/components/schemas/Follow' }
+    CommentPage:
+      description: A page of root comments; `childComment` holds the replies (or null).
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: array
+                items: { $ref: '#/components/schemas/Comment' }
+              meta: { $ref: '#/components/schemas/PageMeta' }
+    CommentCreated:
+      description: Created.
+      headers:
+        Location: { $ref: '#/components/headers/Location' }
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  id: { type: string }
+                  type: { $ref: '#/components/schemas/CommentTargetType' }
+                  content: { type: string }
+                  parentCommentId: { type: [string, 'null'] }
+                  userReaction: { type: string, enum: [none] }
+    ContributionList:
+      description: My submissions.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { type: array, items: { type: object } }
+    ContributorList:
+      description: The target and its contributors.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  contributors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId: { type: string }
+                        role: { type: string }
+                        status: { $ref: '#/components/schemas/QueueStatus' }
+                        user:
+                          type: object
+                          properties:
+                            id: { type: string }
+                            displayName: { type: [string, 'null'] }
+                            avatar: { type: [string, 'null'] }
+    ContributorUpdated:
+      description: Contributor (and target) status updated.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  userId: { type: string }
+                  status: { $ref: '#/components/schemas/ReviewStatus' }
+                  updatedAt: { type: string, format: date-time }
+    ReviewResult:
+      description: Review stored.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { $ref: '#/components/schemas/ReviewStatus' }
+    VisibilityResult:
+      description: Visibility changed.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  id: { type: string }
+                  visibility: { $ref: '#/components/schemas/Visibility' }
+    StaffComicPage:
+      description: A page of comics.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { type: array, items: { $ref: '#/components/schemas/StaffComic' } }
+              meta: { $ref: '#/components/schemas/PageMeta' }
+    StaffChapterPage:
+      description: A page of chapters.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data: { type: array, items: { $ref: '#/components/schemas/StaffChapter' } }
+              meta: { $ref: '#/components/schemas/PageMeta' }
+    Settings:
+      description: Current settings.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                type: object
+                properties:
+                  autoAccept: { type: boolean }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      required: [type, title, status]
+      properties:
+        type: { type: string, example: about:blank }
+        title: { type: string, example: Not Found }
+        status: { type: integer, example: 404 }
+        detail: { type: string, example: Comic not found }
+        instance: { type: string, example: /api/v1/comics/unknown }
+    PageMeta:
+      type: object
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page: { type: integer, example: 1 }
+        pageSize: { type: integer, example: 20 }
+        totalItems: { type: integer, example: 92 }
+        totalPages: { type: integer, example: 5 }
+    Role:
+      type: string
+      enum: [user, contributor, moderator, admin]
+    ContentRating:
+      type: string
+      enum: [safe, suggestive, erotica, pornographic]
+    ReviewStatus:
+      type: string
+      enum: [pending, accept, reject]
+    QueueStatus:
+      type: string
+      enum: [pending, accept, reject]
+    Visibility:
+      type: string
+      enum: [public, hidden]
+    CommentTargetType:
+      type: string
+      enum: [comic, chapter]
+    PublicProfile:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        displayName: { type: [string, 'null'] }
+        avatar: { type: [string, 'null'] }
+        background: { type: [string, 'null'] }
+        bio: { type: [string, 'null'] }
+        socialLinks: { type: [string, 'null'] }
+        role: { $ref: '#/components/schemas/Role' }
+        createdAt: { type: string }
+        stats:
+          type: object
+          properties:
+            following: { type: integer }
+            comments: { type: integer }
+            likes: { type: integer }
+    ReportTargetType:
+      type: string
+      enum: [comic, comment]
+    ReportStatus:
+      type: string
+      enum: [open, resolved, dismissed]
+    Report:
+      type: object
+      properties:
+        id: { type: string }
+        reason: { type: string }
+        details: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/ReportStatus' }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        reporter:
+          type: object
+          properties:
+            username: { type: [string, 'null'] }
+            displayName: { type: [string, 'null'] }
+        target:
+          type: object
+          properties:
+            type: { $ref: '#/components/schemas/ReportTargetType' }
+            id: { type: string }
+            title: { type: [string, 'null'], description: The comic's name (for a comment, the comic it belongs to). }
+            content: { type: [string, 'null'], description: The comment text (comments only). }
+            path: { type: [string, 'null'], description: Frontend path to the reported item. }
+    Preferences:
+      type: object
+      properties:
+        theme: { type: string, enum: [main, dark, light] }
+        filter: { type: integer, minimum: 0, maximum: 3, description: '0 safe, 1 suggestive, 2 erotica, 3 pornographic (the highest rating shown).' }
+        reader: { type: [object, 'null'], description: Reader settings saved by the frontend; null when never saved. }
+    UserProfile:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        displayName: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        avatar: { type: [string, 'null'] }
+        background: { type: [string, 'null'] }
+        bio: { type: [string, 'null'] }
+        socialLinks: { type: [string, 'null'] }
+        role: { $ref: '#/components/schemas/Role' }
+        isBanned: { type: integer, enum: [0, 1] }
+        preference: { $ref: '#/components/schemas/Preferences' }
+        stats:
+          type: object
+          properties:
+            following: { type: integer }
+            collections: { type: integer, description: Following categories the user created. }
+            comments: { type: integer }
+            likes: { type: integer, description: Likes received on the user's comments. }
+    Follow:
+      type: object
+      properties:
+        comicId: { type: string }
+        categoryId: { type: [string, 'null'] }
+        createdAt: { type: string }
+    FollowingCategory:
+      type: object
+      properties:
+        id: { type: string }
+        category: { type: string }
+        userId: { type: [string, 'null'], description: null for shared default categories. }
+    FollowingEntry:
+      type: object
+      properties:
+        userId: { type: string }
+        updatedAt: { type: string }
+        comic: { type: object }
+        category:
+          type: object
+          properties:
+            id: { type: string }
+            category: { type: string }
+        readedChapter: { type: number, description: Number of the most recently read chapter (0 = none). }
+        totalChapters: { type: integer, description: Readable (approved, public) chapters. }
+        unreadChapters: { type: integer, description: Readable chapters numbered after the furthest one read. }
+        latestChapterAt: { type: [string, 'null'] }
+        lastReadAt: { type: [string, 'null'] }
+        followedAt: { type: [string, 'null'] }
+    HistoryEntry:
+      type: object
+      properties:
+        chapterId: { type: string }
+        currentPage: { type: integer }
+        scrollPosition: { type: [integer, 'null'] }
+        readAt: { type: string }
+        comicName: { type: string }
+        comicUrl: { type: string }
+        coverUrl: { type: [string, 'null'] }
+        chapterTitle: { type: string }
+        chapterUrl: { type: string }
+        chapterNumber: { type: number }
+        totalPage: { type: integer }
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        content: { type: string }
+        type: { type: string }
+        redirectPath: { type: [string, 'null'] }
+        isRead: { type: integer, enum: [0, 1] }
+        createdAt: { type: string }
+    UserComment:
+      type: object
+      properties:
+        id: { type: string }
+        content: { type: string }
+        createdAt: { type: string }
+        likes: { type: integer }
+        dislikes: { type: integer }
+        replyCount: { type: integer }
+        type: { $ref: '#/components/schemas/CommentTargetType' }
+        chapterId: { type: [string, 'null'] }
+        targetName: { type: string }
+        targetUrl: { type: string }
+        targetCoverUrl: { type: [string, 'null'] }
+    LatestChapter:
+      type: object
+      properties:
+        id: { type: string }
+        chapterNumber: { type: number }
+        title: { type: string }
+        updatedAt: { type: string }
+    ComicSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        url: { type: string }
+        coverUrl: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        types: { type: string }
+        demographic: { type: string }
+        contentRating: { $ref: '#/components/schemas/ContentRating' }
+        releaseStatus: { type: string }
+        rating: { type: number }
+        view: { type: integer }
+        follow: { type: integer }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        genres: { type: array, items: { type: string } }
+        latestChapters:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/LatestChapter' }
+    ComicDetail:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        url: { type: string }
+        description: { type: [string, 'null'] }
+        coverUrl: { type: [string, 'null'] }
+        source: { type: [string, 'null'] }
+        types: { type: string }
+        contentRating: { $ref: '#/components/schemas/ContentRating' }
+        demographic: { type: string }
+        rating: { type: number }
+        view: { type: integer }
+        follow: { type: integer }
+        releaseStatus: { type: string }
+        status: { $ref: '#/components/schemas/ReviewStatus' }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        releasingYear: { type: [integer, 'null'] }
+        author: { type: [string, 'null'] }
+        artist: { type: [string, 'null'] }
+        genres: { type: array, items: { type: string } }
+        formats: { type: array, items: { type: string } }
+        names:
+          type: array
+          description: Only on the public endpoint.
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              country: { type: string }
+        userRating: { type: integer, description: Only on the public endpoint; 0 when not rated or anonymous. }
+        progress:
+          type: [object, 'null']
+          description: Only on the public endpoint for a logged-in viewer; null when they never opened a chapter.
+          properties:
+            lastChapterId: { type: string }
+            lastPage: { type: integer }
+            readChapterIds: { type: array, items: { type: string } }
+    ComicInput:
+      type: object
+      required: [name, types, demographic, url]
+      properties:
+        name: { type: string }
+        url: { type: string, description: Unique slug. }
+        types: { type: string, enum: [manga, manhwa, manhua, other] }
+        demographic: { type: string, enum: [josei, seinen, shoujo, shounen] }
+        contentRating: { $ref: '#/components/schemas/ContentRating' }
+        releaseStatus: { type: string, enum: [releasing, finished, on hiatus, discontinued] }
+        releasingYear: { type: integer }
+        description: { type: string }
+        source: { type: string }
+        author: { type: string }
+        artist: { type: string }
+        genres: { type: array, items: { type: string } }
+        formats: { type: array, items: { type: string } }
+    ComicWriteResult:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        coverUrl: { type: string }
+        status: { $ref: '#/components/schemas/ReviewStatus' }
+    ChapterSummary:
+      type: object
+      properties:
+        id: { type: string }
+        chapterNumber: { type: number }
+        title: { type: string }
+        url: { type: string }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    ChapterDetail:
+      type: object
+      properties:
+        id: { type: string }
+        chapterNumber: { type: number }
+        title: { type: string }
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              pageNumber: { type: integer }
+              urlPath: { type: string, description: 'Relative to /storage/.' }
+        metadata:
+          type: object
+          properties:
+            currentPage: { type: integer, description: The reader's saved page (logged in only). }
+            totalPages: { type: integer }
+    Comment:
+      type: object
+      properties:
+        id: { type: string }
+        comicId: { type: [string, 'null'] }
+        chapterId: { type: [string, 'null'] }
+        content: { type: string }
+        like: { type: integer }
+        dislike: { type: integer }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+        userReaction: { type: string, enum: [none, like, dislike] }
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            displayName: { type: [string, 'null'] }
+            avatar: { type: [string, 'null'] }
+        childComment:
+          type: [array, 'null']
+          items: { $ref: '#/components/schemas/Comment' }
+    StaffComic:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        url: { type: string }
+        coverUrl: { type: [string, 'null'] }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        status: { $ref: '#/components/schemas/ReviewStatus' }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    StaffChapter:
+      type: object
+      properties:
+        id: { type: string }
+        comicId: { type: string }
+        title: { type: string }
+        chapterNumber: { type: number }
+        url: { type: string }
+        visibility: { $ref: '#/components/schemas/Visibility' }
+        status: { $ref: '#/components/schemas/ReviewStatus' }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    AdminUser:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        displayName: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        role: { $ref: '#/components/schemas/Role' }
+        isBanned: { type: integer, enum: [0, 1] }
+        createdAt: { type: string }

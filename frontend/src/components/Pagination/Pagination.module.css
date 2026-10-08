@@ -1,71 +1,49 @@
-.pagination-container {
-  margin-top: 1.5rem;
-  display: flex;
-  justify-content: center;
-  width: 100%;
-}
-
-.pagination-inner {
+.pagination {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.pagination-btn {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  border: 1px solid var(--surface-3);
-  border-radius: var(--radius);
-  background-color: var(--surface-2);
-  color: var(--text-emphasis);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 6px;
+  margin-top: var(--sp-8);
 }
 
-.pagination-btn:hover:not(:disabled):not(.active) {
-  background-color: var(--surface);
-  border-color: var(--accent);
-  color: var(--accent);
-  transform: translateY(-2px);
+.btn {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--h-md);
+  height: var(--h-md);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
 }
 
-.pagination-btn.active {
-  background-color: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--accent);
-  box-shadow: 0 4px 12px rgba(102, 232, 250, 0.3);
+.btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
-.pagination-btn.disabled,
-.pagination-btn:disabled {
+.btn:disabled {
   opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
 }
 
-.pagination-btn svg {
-  width: 1rem;
-  height: 1rem;
-  stroke-width: 2;
+.active,
+.active:disabled {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
+  opacity: 1;
 }
 
-@media (max-width: 480px) {
-  .pagination-btn {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    font-size: 0.75rem;
-  }
+.active:hover:not(:disabled) {
+  color: var(--on-brand);
+}
 
-  .pagination-btn:hover:not(:disabled):not(.active) {
-    transform: translateY(-1px);
-  }
+.gap {
+  padding: 0 4px;
+  color: var(--fg-faint);
 }

@@ -33,14 +33,10 @@ export const toggleArrayItem = <T,>(arr: T[], item: T): T[] => {
     return arr.includes(item) ? arr.filter((i) => i !== item) : [...arr, item];
 };
 
-export const getDisplayValue = (selected: string[]) => {
-    if (selected.length === 0) return 'Any';
-    if (selected.length <= 2) return selected.join(', ');
-    return `${selected.length} selected`;
-};
+/** Display title for a comic, falling back to its first alternate name. */
+export const getComicTitle = (comic: { name?: string; names?: Array<{ name: string }> }) =>
+    comic.name || comic.names?.[0]?.name || 'Untitled';
 
-export const getGenresDisplayValue = (selectedGenres: string[], selectedFormats: string[]) => {
-    const totalSelected = (selectedGenres?.length || 0) + (selectedFormats?.length || 0);
-    return totalSelected === 0 ? 'Any' : `${totalSelected} selected`;
-};
-   
+/** Compact number: 950 -> "950", 1500 -> "1.5K", 2300000 -> "2.3M" */
+export const formatCount = (value?: number | null) =>
+    new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value ?? 0);

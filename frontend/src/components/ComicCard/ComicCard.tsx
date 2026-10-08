@@ -1,148 +1,87 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Link } from 'react-router-dom';
-import type { Comic, Chapter } from '../../types/types';
+import type { Comic } from '../../types/types';
 import { formatTimeAgo } from '../../helpers/formatDate';
-import { API_UPLOADS } from '../../services/api';
 import { getImage } from '../../helpers/getImage';
+import { getComicTitle } from '../../helpers/utils';
+import Cover from '../Cover/Cover';
 import styles from './ComicCard.module.css';
 
+type ViewMode = 'grid' | 'list';
+
 interface ComicCardProps {
-    onComicSelect?: (comic: Comic) => void;
-    comic: Comic;
-    viewMode: 'grid' | 'list';
+  comic: Comic;
+  viewMode: ViewMode;
 }
 
-interface ComicCardListProps {
-    onComicSelect?: (comic: Comic) => void;
-    comics: Comic[];
-    viewMode: 'grid' | 'list';
-}
+const chapterTime = (ch: { updatedAt?: string | null; createdAt?: string | null }) =>
+  formatTimeAgo(ch.updatedAt || ch.createdAt);
 
-const ComicCard = memo(({ comic, viewMode, onComicSelect }: ComicCardProps) => {
-    const isList = viewMode === 'list';
+const ComicCard = memo(function ComicCard({ comic, viewMode }: ComicCardProps) {
+  const title = getComicTitle(comic);
+  const comicPath = `/comics/${comic.url}`;
+  const chapters = comic.latestChapters ?? [];
 
-    const title = comic.name || comic.names?.[0]?.name || 'Unknown';
-    const image = comic.coverUrl;
-    const url = comic.url;
-    const latestChapters = comic.latestChapters ?? [];
-
-    const handleCardClick = (e: React.MouseEvent) => {
-        if (onComicSelect) {
-            e.preventDefault();
-            onComicSelect(comic);
-        }
-    };
-
-    if (isList) {
-        return (
-            <div className={`${styles['manga-card']} ${styles['list-mode']}`} style={{ position: 'relative' }}>
-                <Link 
-                    to={`/comics/${url}`}
-                    className={styles['card-overlay-link']}
-                    style={{ position: 'absolute', inset: 0, zIndex: 1 }}
-                    aria-label={title}
-                    onClick={handleCardClick}
-                />
-
-                <div className={styles['comic-card-image-wrapper']}>
-                    <img 
-                        sizes="(max-width: 600px) 100px, 280px" 
-                        src={getImage(image)} 
-                        alt={title} 
-                        className={styles['comic-card-img']} 
-                        loading="lazy"
-                    />
-                </div>
-
-                <div className={styles['card-info']} style={{ position: 'relative', zIndex: 2 }}>
-                    <div>
-                        <h3 className={styles['card-title']}>{title}</h3>
-                        <div className={styles['card-latest-chapters']}>
-                            {latestChapters.slice(0, 3).map((item: Chapter) => (
-                                <div key={item.id} className={styles['latest-chapter-line']}>
-                                    <Link 
-                                        className={styles['latest-chapter']} 
-                                        to={`/comics/${url}/${item.id}`}
-                                        style={{ position: 'relative', zIndex: 3 }}
-                                    >
-                                        Chapter {item.chapterNumber}
-                                    </Link>
-                                    <span className={styles['latest-upload']}>
-                                        {formatTimeAgo(item.updatedAt || item.createdAt || '')}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // CHẾ ĐỘ XEM LƯỚI (GRID VIEW)
-    const latestChapter = latestChapters[0];
-    const chapterLabel = latestChapter ? `Ch.${latestChapter.chapterNumber}` : 'Ch.New';
-    const timeLabel = latestChapter 
-        ? formatTimeAgo(latestChapter.updatedAt || latestChapter.createdAt || '') 
-        : 'Recently';
-
+  if (viewMode === 'list') {
     return (
-        <div className={styles['card']} style={{ position: 'relative' }}>
-            <Link 
-                to={`/comics/${url}`} 
-                className={styles['card-overlay-link']}
-                style={{ position: 'absolute', inset: 0, zIndex: 1 }}
-                aria-label={title}
-                onClick={handleCardClick}
-            />
-            
-            <div className={styles['card__poster-wrap']}>
-                <div className={`${styles['poster']} ${styles['poster--md'] || ''}`}>
-                    <img 
-                        sizes="(max-width: 600px) 100px, 280px" 
-                        alt={title} 
-                        loading="lazy" 
-                        src={image ? `${API_UPLOADS}${image}` : '/images/placeholder.png'} 
-                    />
-                </div>
-            </div>
-            
-            <div className={styles['card__body']} style={{ position: 'relative', zIndex: 2 }}>
-                <div className={styles['card__meta']}>
-                    {latestChapter ? (
-                        <Link 
-                            to={`/comics/${url}/chapter/${latestChapter.id}`}
-                            className={styles['card__ch']}
-                            style={{ position: 'relative', zIndex: 3 }}
-                        >
-                            {chapterLabel}
-                        </Link>
-                    ) : (
-                        <span className={styles['card__ch']}>{chapterLabel}</span>
-                    )}
-                    <span className={styles['card__time']}>{timeLabel}</span>
-                </div>
-                <div className={styles['card__title']} title={title}>{title}</div>
-            </div>
+      <article className={styles.row}>
+        <Link to={comicPath} className={styles.stretched} aria-label={title} />
+        <Cover src={getImage(comic.coverUrl)} alt={title} size="md" className={styles.rowCover} />
+        <div className={styles.rowBody}>
+          <h3 className={styles.rowTitle}>{title}</h3>
+          <ul className={styles.chapterList}>
+            {chapters.slice(0, 3).map((ch) => (
+              <li key={ch.id} className={styles.chapterLine}>
+                <Link to={`${comicPath}/${ch.id}`} className={styles.chapterLink}>
+                  Chapter {ch.chapterNumber}
+                </Link>
+                <span className={styles.time}>{chapterTime(ch)}</span>
+              </li>
+            ))}
+          </ul>
         </div>
+      </article>
     );
+  }
+
+  const latest = chapters[0];
+
+  return (
+    <article className={styles.card}>
+      <Link to={comicPath} className={styles.stretched} aria-label={title} />
+      <Cover src={getImage(comic.coverUrl)} alt={title} className={styles.cardCover}>
+        {comic.types ? <span className={styles.badge}>{comic.types}</span> : null}
+      </Cover>
+      <div className={styles.cardBody}>
+        <h3 className={styles.cardTitle} title={title}>
+          {title}
+        </h3>
+        <div className={styles.cardMeta}>
+          {latest ? (
+            <Link to={`${comicPath}/${latest.id}`} className={styles.chapterPill}>
+              Ch. {latest.chapterNumber}
+            </Link>
+          ) : (
+            <span className={styles.chapterPill}>New</span>
+          )}
+          <span className={styles.time}>{latest ? chapterTime(latest) : 'Recently'}</span>
+        </div>
+      </div>
+    </article>
+  );
 });
 
-ComicCard.displayName = 'ComicCard';
+interface ComicCardListProps {
+  comics: Comic[];
+  viewMode: ViewMode;
+}
 
-export default function ComicCardList({ comics, viewMode, onComicSelect }: ComicCardListProps) {
-    const layoutClass = viewMode === 'list' ? styles['comic-list-layout'] : styles['grid-updates'];
-
-    return (
-        <div className={layoutClass}>
-            {comics.map((comic) => (
-                <ComicCard 
-                    key={comic.id} 
-                    comic={comic} 
-                    viewMode={viewMode} 
-                    onComicSelect={onComicSelect} 
-                />
-            ))}
-        </div>
-    );
+export default function ComicCardList({ comics, viewMode }: ComicCardListProps) {
+  return (
+    <div className={viewMode === 'list' ? styles.list : styles.grid}>
+      {comics.map((comic) => (
+        <ComicCard key={comic.id} comic={comic} viewMode={viewMode} />
+      ))}
+    </div>
+  );
 }

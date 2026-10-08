@@ -28,10 +28,44 @@ export interface User {
 }
 
 export interface UserProfile extends User {
-    preference: {
-        theme?: string;
-        filter?: number | null;
-    } | null;
+    preference: Preferences | null;
+}
+
+export interface Preferences {
+    theme?: 'main' | 'dark' | 'light';
+    /** 0 safe, 1 suggestive, 2 erotica, 3 pornographic: the highest rating shown. */
+    filter?: number | null;
+    /** Reader settings as saved by the reader; null = never saved. */
+    reader?: Record<string, unknown> | null;
+}
+
+/** Someone else's profile: no email, no settings. */
+export interface PublicProfile {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatar: string | null;
+    background: string | null;
+    bio: string | null;
+    socialLinks: string | null;
+    role?: UserRole;
+    createdAt?: string;
+    stats: { following: number; comments: number; likes: number };
+}
+
+/** A comment as listed on a profile (with the comic it belongs to). */
+export interface UserComment {
+    id: string;
+    content: string;
+    createdAt: string;
+    likes?: number;
+    dislikes?: number;
+    targetName?: string;
+    targetUrl?: string;
+    targetCoverUrl?: string | null;
+    chapterId?: string | null;
+    type?: 'comic' | 'chapter';
+    replyCount?: number;
 }
 
 // Chapter information interface - used in chapter lists
@@ -91,8 +125,8 @@ export interface ChapterContributor {
     comic: {
         name: string;
         coverUrl: string;
+        url?: string;
     };
-
 }
 
 export interface Notification {
@@ -141,6 +175,7 @@ export interface Comic {
     // Figures
     userRating?: number;
     rating?: number;
+    ratingCount?: number;
     view?: number;
     follow?: number;
 
@@ -153,6 +188,13 @@ export interface Comic {
     visibility?: 'public' | 'hidden';
 
     latestChapters?: Chapter[] | [];
+
+    /** Where the logged-in viewer left off (public detail only); null = never opened. */
+    progress?: {
+        lastChapterId: string;
+        lastPage: number;
+        readChapterIds: string[];
+    } | null;
 }
 
 export interface Comment {
@@ -161,7 +203,7 @@ export interface Comment {
     userId: string;
     content: string;
     chapterId: string | null;
-    childCommment: Comment[] | null;
+    childComment: Comment[] | null;
     like: number;
     dislike: number;
     userReaction?: 'like' | 'dislike' | 'none';
@@ -180,11 +222,13 @@ export interface Comment {
     isBanned?: number;
 }
 
+export type UserRole = 'user' | 'contributor' | 'moderator' | 'admin';
+
 export interface AdminUser {
     id: string;
     username: string;
     displayName?: string;
-    role?: string;
+    role?: UserRole;
     isBanned: number;
     createdAt?: string;
 }
@@ -196,6 +240,11 @@ export interface FollowingComic {
     category: UserFollowingCategory | null;
     readedChapter: number
     totalChapters: number
+    /** Readable chapters after the furthest one read. */
+    unreadChapters: number
+    latestChapterAt: string | null
+    lastReadAt: string | null
+    followedAt: string | null
 }
 
 export interface UserFollowingCategory {
@@ -222,50 +271,26 @@ export interface HistoryItem {
     readAt: string;
 }
 
-// data.ts
-export const PROFILE_TEXTS = {
-    title: "Edit Profile",
-    subtitle: "Update how you appear on the site. Email and password changes require confirmation.",
-    avatar: {
-        label: "Avatar",
-        note: "JPG, PNG or WebP, up to 1 MB."
-    },
-    identity: {
-        label: "Identity",
-        subtext: "Shown on your profile and next to your comments.",
-        displayName: "DISPLAY NAME",
-        username: "USERNAME",
-        usernameHint: "Lowercase letters, numbers, dot, underscore, hyphen."
-    },
-    bio: {
-        label: "Bio",
-        subtext: "A short blurb shown on your public profile.",
-        placeholder: "Tell readers a little about yourself..."
-    },
-    social: {
-        label: "Social links",
-        subtext: "Optional. One link per line — only lines starting with http(s):// are kept, max 5.",
-        placeholder: "https://twitter.com/yourhandle\nhttps://bsky.app/profile/you.bsky.social\nhttps://your-site.com"
-    },
-    email: {
-        label: "Email",
-        subtext: "Used for sign-in and notifications.",
-        placeholder: "your-email@gmail.com"
-    },
-    password: {
-        label: "Password",
-        subtext: "Leave blank to keep your current password. Minimum 6 characters.",
-        newPassword: "NEW PASSWORD",
-        confirmPassword: "CONFIRM NEW PASSWORD"
-    },
-    buttonSave: "Save changes"
-};
 
-export const PROFILE_MESSAGES = {
-    success: "Cập nhật tài khoản thành công!",
-    passwordMismatch: "Mật khẩu xác nhận không trùng khớp.",
-    passwordTooShort: "Mật khẩu phải chứa ít nhất 6 ký tự.",
-    imageSizeError: "Kích thước ảnh vượt quá 1MB. Vui lòng chọn ảnh nhẹ hơn.",
-    fetchError: "Không thể lấy thông tin tài khoản.",
-    updateError: "Cập nhật thất bại. Vui lòng thử lại."
-};
+export type ReportStatus = 'open' | 'resolved' | 'dismissed';
+export type ReportTargetType = 'comic' | 'comment';
+
+export interface Report {
+    id: string;
+    reason: string;
+    details: string | null;
+    status: ReportStatus;
+    createdAt: string;
+    updatedAt: string;
+    reporter?: { username: string | null; displayName: string | null };
+    target?: {
+        type: ReportTargetType;
+        id: string;
+        /** The comic's name (for a comment: the comic it belongs to). */
+        title: string | null;
+        /** The comment text, for comment reports. */
+        content: string | null;
+        /** Frontend path to the reported item. */
+        path: string | null;
+    };
+}

@@ -1,1103 +1,498 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-
-import { comicApi, chapterApi, API_UPLOADS } from '../../services/api';
-
-import CommentsSection from '../../components/CommentsSection/CommentsSection';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Expand,
+  Keyboard,
+  ListOrdered,
+  MessageSquare,
+  Minus,
+  Plus,
+  Settings2,
+} from 'lucide-react';
+import { API_UPLOADS, chapterApi, comicApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import type { Comic, Chapter } from '../../types/types';
+import type { Chapter, ChapterImage, Comic } from '../../types/types';
+import { getComicTitle } from '../../helpers/utils';
+import cx from '../../helpers/cx';
+import Modal from '../../components/Modal/Modal';
+import CommentsSection from '../../components/CommentsSection/CommentsSection';
+import useReaderSettings, { WIDTH_LIMITS } from './useReaderSettings';
+import { ReaderChapterList, ReaderSettingsPanel, ReaderShortcuts } from './ReaderPanels';
 import styles from './MangaReaderLayout.module.css';
+
+type Panel = 'settings' | 'chapters' | 'comments' | 'help' | null;
+
+const HISTORY_DEBOUNCE_MS = 800;
+const HISTORY_HEARTBEAT_MS = 15000;
+const EAGER_PAGES = 3;
+
+const isTyping = () => ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName ?? '');
+
+const toggleFullscreen = () => {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+  else document.documentElement.requestFullscreen().catch(() => undefined);
+};
 
 export default function MangaReaderLayout() {
   const { comicUrl, chapterId } = useParams<{ comicUrl: string; chapterId: string }>();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const cmId = searchParams.get('cm_id') || undefined;
-  const location = useLocation();
+  const commentTargetId = searchParams.get('cm_id') || undefined;
+  const navigate = useNavigate();
   const { isLoggedIn } = useAuth();
+  const { settings, update, reset } = useReaderSettings();
 
   const [comic, setComic] = useState<Comic | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [chapterDetails, setChapterDetails] = useState<any | null>(null);
+  const [chapterNumber, setChapterNumber] = useState<number | null>(null);
   const [images, setImages] = useState<string[]>([]);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [zoomLevel, setZoomLevel] = useState<number>(50); // Mặc định 50%
-  const [readMode, setReadMode] = useState<'scroll' | 'page'>('scroll');
-  const currentPageRef = useRef<number>(1);
-  const saveHistoryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mainRef = useRef<HTMLElement | null>(null);
-  const [showControls, setShowControls] = useState<boolean>(true);
-  const [showHelpKeys, setShowHelpKeys] = useState<boolean>(false);
-
-  // Biến đánh dấu tự động cuộn tới trang đang đọc dở khi vừa load xong
-  const isInitialMountRef = useRef<boolean>(true);
-
-  // Dialog hoạt động: 'settings' | 'chapters' | 'comments' | null
-  const [activeDialog, setActiveDialog] = useState<'settings' | 'chapters' | 'comments' | null>(null);
-
-  // Trạng thái cài đặt
-  const [readingDirection, setReadingDirection] = useState<'ltr' | 'rtl' | 'ttb'>('ttb');
-  const [stripMargin, setStripMargin] = useState<number>(0); 
-  const [scrollMode, setScrollMode] = useState<'fast' | 'smooth'>('fast');
-  const [progressBarPosition, setProgressBarPosition] = useState<'left' | 'top' | 'bottom' | 'right' | 'off'>('left');
-  const [preloadImages, setPreloadImages] = useState<'some' | 'all'>('some');
-  const [greyscale, setGreyscale] = useState<boolean>(false);
-  const [dimAmount, setDimAmount] = useState<number>(0);
-
-  // Trạng thái danh sách chương
-  const [chapterSearchQuery, setChapterSearchQuery] = useState<string>('');
-  const [chapterSort, setChapterSort] = useState<'newest' | 'oldest'>('newest');
-  const [lockGroup, setLockGroup] = useState<boolean>(true);
-  const [chapterPage, setChapterPage] = useState<number>(1);
-
-  const [loading, setLoading] = useState<boolean>(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [showControls, setShowControls] = useState(true);
 
-  // Đồng bộ hướng đọc tự động
-  useEffect(() => {
-    setReadMode(readingDirection === 'ttb' ? 'scroll' : 'page');
-  }, [readingDirection]);
+  const mainRef = useRef<HTMLElement>(null);
+  const currentPageRef = useRef(1);
+  const restorePageRef = useRef<number | null>(null);
 
-  // Đưa currentPage vào Ref để tránh re-render phụ thuộc không cần thiết
-  useEffect(() => {
-    currentPageRef.current = currentPage;
-  }, [currentPage]);
+  const isStrip = settings.direction === 'ttb';
+  const totalPages = images.length;
 
-  // Hàm gọi API lưu lịch sử đọc gốc (truyền 0 làm mặc định cho scrollPosition)
-  const saveReadingProgress = useCallback(async (chapterToSave: string, page: number) => {
-    if (!chapterToSave || !isLoggedIn) return;
-    try {
-      await chapterApi.saveReadingHistory(chapterToSave, page);
-    } catch (err) {
-      console.debug('Unable to save reading history', err);
-    }
-  }, [isLoggedIn]);
+  /* ---------------- Data ---------------- */
 
-  // Hàm debounce lưu lịch sử tập trung
-  const debouncedSaveHistory = useCallback((chapId: string, page: number) => {
-    if (!chapId || !isLoggedIn) return;
-    if (saveHistoryTimeoutRef.current) {
-      clearTimeout(saveHistoryTimeoutRef.current);
-    }
-    saveHistoryTimeoutRef.current = setTimeout(() => {
-      saveReadingProgress(chapId, page);
-    }, 800);
-  }, [isLoggedIn, saveReadingProgress]);
-
-  // Hàm cuộn trang chủ động khi click
-  const scrollToPage = useCallback((pageNum: number, smooth = true) => {
-    setCurrentPage(pageNum);
-    currentPageRef.current = pageNum;
-    const pageElement = document.querySelector<HTMLElement>(`.rpage-page[data-page="${pageNum}"]`);
-    if (pageElement) {
-      pageElement.scrollIntoView({
-        behavior: smooth ? 'smooth' : 'auto',
-        block: 'start'
-      });
-    }
-  }, []);
-
-  // Hàm chuyển chương và cập nhật URL
-  const changeChapter = useCallback((newChapterId: string) => {
-    if (!newChapterId) return;
-    if (chapterId && chapterId !== newChapterId) {
-      saveReadingProgress(chapterId, currentPage);
-    }
-
-    if (chapterId) {
-      const segments = location.pathname.split('/');
-      const index = segments.lastIndexOf(chapterId);
-      if (index !== -1) {
-        segments[index] = newChapterId;
-        navigate(segments.join('/'));
-        return;
-      }
-    }
-    navigate(`${location.pathname}/${newChapterId}`);
-  }, [chapterId, currentPage, location.pathname, navigate, saveReadingProgress]);
-
-  // Tự động lưu lịch sử khi người dùng đổi trang (debounced)
-  useEffect(() => {
-    if (!chapterId || !isLoggedIn || isInitialMountRef.current) return;
-    debouncedSaveHistory(chapterId, currentPage);
-  }, [currentPage, chapterId, isLoggedIn, debouncedSaveHistory]);
-
-  // Lưu lịch sử định kỳ (Heartbeat) mỗi 15 giây
-  useEffect(() => {
-    if (!chapterId || !isLoggedIn) return;
-
-    const intervalId = window.setInterval(() => {
-      saveReadingProgress(chapterId, currentPageRef.current);
-    }, 15000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [chapterId, isLoggedIn, saveReadingProgress]);
-
-  // Dọn dẹp timeout lưu lịch sử khi component unmount
-  useEffect(() => {
-    return () => {
-      if (saveHistoryTimeoutRef.current) {
-        clearTimeout(saveHistoryTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Lấy dữ liệu thông tin truyện và danh sách chương (Có chống rò rỉ bộ nhớ)
   useEffect(() => {
     if (!comicUrl) return;
-    let isMounted = true;
-
-    const fetchComicData = async () => {
-      try {
-        const [comicData, chaptersData] = await Promise.all([
-          comicApi.getByUrl(comicUrl),
-          comicApi.getChaptersByUrl(comicUrl),
-        ]);
-        if (isMounted) {
-          if (comicData) setComic(comicData);
-          if (chaptersData) setChapters(chaptersData);
-        }
-      } catch (err) {
-        if (isMounted) {
-          setComic(null);
-          setChapters([]);
-          console.error("Lỗi khi lấy thông tin truyện hoặc danh sách chương:", err);
-        }
-      }
-    };
-
-    fetchComicData();
+    let cancelled = false;
+    Promise.all([comicApi.getByUrl(comicUrl), comicApi.getChaptersByUrl(comicUrl)])
+      .then(([comicData, chapterData]) => {
+        if (cancelled) return;
+        setComic(comicData ?? null);
+        setChapters([...(chapterData ?? [])].sort((a, b) => a.chapterNumber - b.chapterNumber));
+      })
+      .catch((err) => console.error('Unable to load comic / chapters:', err));
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
   }, [comicUrl]);
 
-  // Lấy chi tiết chương hiện tại (Có chống rò rỉ bộ nhớ)
   useEffect(() => {
     if (!chapterId) return;
-    let isMounted = true;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setImages([]);
 
-    const fetchChapterData = async () => {
-      setLoading(true);
-      setError(null);
-      isInitialMountRef.current = true;
-      try {
-        const data = await chapterApi.getDetails(chapterId);
-        if (!isMounted) return;
+    chapterApi
+      .getDetails(chapterId)
+      .then((data) => {
+        if (cancelled) return;
+        const pages = [...((data.images ?? []) as ChapterImage[])].sort((a, b) => a.pageNumber - b.pageNumber);
+        const start = Math.max(1, Number(data.metadata?.currentPage) || 1);
+        setImages(pages.map((img) => `${API_UPLOADS}${img.urlPath}`));
+        setChapterNumber(data.chapterNumber ?? null);
+        setCurrentPage(start);
+        currentPageRef.current = start;
+        restorePageRef.current = start;
+      })
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : 'Unable to load this chapter.'))
+      .finally(() => !cancelled && setLoading(false));
 
-        setChapterDetails(data);
-
-        if (data.images && Array.isArray(data.images)) {
-          const resolvedUrls = data.images.map((img: any) => `${API_UPLOADS}${img.urlPath}`);
-          setImages(resolvedUrls);
-        } else {
-          setImages([]);
-        }
-
-        const startingPage = data.metadata?.currentPage ? Number(data.metadata.currentPage) : 1;
-        setCurrentPage(startingPage);
-      } catch (err: any) {
-        if (isMounted) {
-          setError(err.message || 'Lỗi tải trang truyện.');
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchChapterData();
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
   }, [chapterId]);
 
-  const comicChapters = chapters;
+  const index = chapters.findIndex((ch) => ch.id === chapterId);
+  const prevChapter = index > 0 ? chapters[index - 1] : null;
+  const nextChapter = index >= 0 && index < chapters.length - 1 ? chapters[index + 1] : null;
+  const displayNumber = chapterNumber ?? chapters[index]?.chapterNumber;
+  const title = comic ? getComicTitle(comic) : '';
 
-  const currentChapterIndex = useMemo(() => {
-    if (!comicChapters || !chapterId) return -1;
-    return comicChapters.findIndex(ch => ch.id === chapterId);
-  }, [comicChapters, chapterId]);
+  /* ---------------- Reading history ---------------- */
 
-  const hasPrevChapter = currentChapterIndex > 0;
-  const hasNextChapter = comicChapters ? (currentChapterIndex !== -1 && currentChapterIndex < comicChapters.length - 1) : false;
-
-  const prevChapterId = hasPrevChapter && comicChapters ? comicChapters[currentChapterIndex - 1].id : null;
-  const nextChapterId = hasNextChapter && comicChapters ? comicChapters[currentChapterIndex + 1].id : null;
-
-  const chapterNo = chapterDetails?.chapterNumber ?? (currentChapterIndex !== -1 && comicChapters ? comicChapters[currentChapterIndex].chapterNumber : 1);
-
-  const totalPages = images.length || 1;
-  const currentImage = images[currentPage - 1] || '';
-
-  const handlePrevPage = useCallback(() => {
-    if (currentPage > 1) {
-      if (readMode === 'page') {
-        window.scrollTo(0, 0);
-        setCurrentPage(prev => prev - 1);
-      } else {
-        scrollToPage(currentPage - 1);
-      }
-    } else if (hasPrevChapter && prevChapterId) {
-      window.scrollTo(0, 0);
-      changeChapter(prevChapterId);
-    }
-  }, [currentPage, readMode, scrollToPage, hasPrevChapter, prevChapterId, changeChapter]);
-
-  const handleNextPage = useCallback(() => {
-    if (currentPage < totalPages) {
-      if (readMode === 'page') {
-        window.scrollTo(0, 0);
-        setCurrentPage(prev => prev + 1);
-      } else {
-        scrollToPage(currentPage + 1);
-      }
-    } else if (hasNextChapter && nextChapterId) {
-      window.scrollTo(0, 0);
-      changeChapter(nextChapterId);
-    }
-  }, [currentPage, totalPages, readMode, scrollToPage, hasNextChapter, nextChapterId, changeChapter]);
-
-  // Tạo refs lưu giữ state và actions mới nhất nhằm tối ưu keydown event listener
-  const stateRef = useRef({
-    readingDirection,
-    hasPrevChapter,
-    hasNextChapter,
-    prevChapterId,
-    nextChapterId,
-  });
+  const saveProgress = useCallback(
+    (id: string | undefined, page: number) => {
+      if (!id || !isLoggedIn) return;
+      chapterApi.saveReadingHistory(id, page).catch((err) => console.debug('Unable to save reading history', err));
+    },
+    [isLoggedIn],
+  );
 
   useEffect(() => {
-    stateRef.current = {
-      readingDirection,
-      hasPrevChapter,
-      hasNextChapter,
-      prevChapterId,
-      nextChapterId,
+    currentPageRef.current = currentPage;
+    if (restorePageRef.current !== null) return; // don't overwrite history before the saved page is restored
+    const timer = window.setTimeout(() => saveProgress(chapterId, currentPage), HISTORY_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [currentPage, chapterId, saveProgress]);
+
+  // Heartbeat + final save when leaving the chapter.
+  useEffect(() => {
+    const interval = window.setInterval(() => saveProgress(chapterId, currentPageRef.current), HISTORY_HEARTBEAT_MS);
+    return () => {
+      window.clearInterval(interval);
+      saveProgress(chapterId, currentPageRef.current);
     };
-  }, [readingDirection, hasPrevChapter, hasNextChapter, prevChapterId, nextChapterId]);
+  }, [chapterId, saveProgress]);
 
-  const actionsRef = useRef({ handlePrevPage, handleNextPage, changeChapter });
+  /* ---------------- Navigation ---------------- */
+
+  const pageElement = (page: number) => mainRef.current?.querySelector<HTMLElement>(`[data-page="${page}"]`);
+
+  const goToPage = useCallback(
+    (page: number, smooth = settings.smoothScroll) => {
+      const target = Math.min(Math.max(page, 1), Math.max(totalPages, 1));
+      setCurrentPage(target);
+      if (isStrip) {
+        mainRef.current
+          ?.querySelector<HTMLElement>(`[data-page="${target}"]`)
+          ?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0 });
+      }
+    },
+    [isStrip, settings.smoothScroll, totalPages],
+  );
+
+  const openChapter = useCallback(
+    (id: string | undefined) => {
+      if (!id || id === chapterId) return;
+      saveProgress(chapterId, currentPageRef.current);
+      setPanel((p) => (p === 'chapters' ? null : p));
+      window.scrollTo({ top: 0 });
+      navigate(`/comics/${comicUrl}/${id}`);
+    },
+    [chapterId, comicUrl, navigate, saveProgress],
+  );
+
+  const prevPage = useCallback(() => {
+    if (currentPageRef.current > 1) goToPage(currentPageRef.current - 1);
+    else openChapter(prevChapter?.id);
+  }, [goToPage, openChapter, prevChapter]);
+
+  const nextPage = useCallback(() => {
+    if (currentPageRef.current < totalPages) goToPage(currentPageRef.current + 1);
+    else openChapter(nextChapter?.id);
+  }, [goToPage, openChapter, nextChapter, totalPages]);
+
+  // Restore the saved page once the strip has rendered.
   useEffect(() => {
-    actionsRef.current = { handlePrevPage, handleNextPage, changeChapter };
+    const page = restorePageRef.current;
+    if (loading || page === null || totalPages === 0) return;
+    if (isStrip && page > 1) pageElement(page)?.scrollIntoView({ block: 'start' });
+    restorePageRef.current = null;
+  }, [loading, totalPages, isStrip]);
+
+  // Track which page is in view while scrolling the strip.
+  useEffect(() => {
+    if (!isStrip || loading || totalPages === 0 || !mainRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length === 0) return;
+        const closest = visible.reduce((a, b) =>
+          Math.abs(a.boundingClientRect.top) < Math.abs(b.boundingClientRect.top) ? a : b,
+        );
+        const page = Number((closest.target as HTMLElement).dataset.page);
+        if (page && page !== currentPageRef.current) setCurrentPage(page);
+      },
+      { rootMargin: '-25% 0px -40% 0px', threshold: 0 },
+    );
+
+    mainRef.current.querySelectorAll('[data-page]').forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [isStrip, loading, totalPages]);
+
+  // Smooth keyboard/anchor scrolling preference.
+  useEffect(() => {
+    const root = document.documentElement;
+    const previous = root.style.scrollBehavior;
+    root.style.scrollBehavior = settings.smoothScroll ? 'smooth' : 'auto';
+    return () => {
+      root.style.scrollBehavior = previous;
+    };
+  }, [settings.smoothScroll]);
+
+  /* ---------------- Keyboard ---------------- */
+
+  // Latest handlers for the single, mount-time keydown listener.
+  const keyActions = useRef({ prevPage, nextPage, openChapter, prevChapter, nextChapter, rtl: false });
+  useEffect(() => {
+    keyActions.current = { prevPage, nextPage, openChapter, prevChapter, nextChapter, rtl: settings.direction === 'rtl' };
   });
 
-  // Lắng nghe sự kiện bàn phím (Được tối ưu hóa hoàn toàn, chỉ đăng ký 1 lần duy nhất)
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
-      ) {
-        return;
-      }
-
-      const {
-        readingDirection: currentDir,
-        hasPrevChapter: hasPrev,
-        hasNextChapter: hasNext,
-        prevChapterId: prevId,
-        nextChapterId: nextId,
-      } = stateRef.current;
+    const onKey = (e: KeyboardEvent) => {
+      if (isTyping() || e.ctrlKey || e.metaKey || e.altKey) return;
+      const a = keyActions.current;
+      const back = a.rtl ? a.nextPage : a.prevPage;
+      const forward = a.rtl ? a.prevPage : a.nextPage;
 
       switch (e.key.toLowerCase()) {
         case 'arrowleft':
         case 'a':
-          if (currentDir === 'rtl') {
-            actionsRef.current.handleNextPage();
-          } else {
-            actionsRef.current.handlePrevPage();
-          }
+          back();
           break;
         case 'arrowright':
         case 'd':
-          if (currentDir === 'rtl') {
-            actionsRef.current.handlePrevPage();
-          } else {
-            actionsRef.current.handleNextPage();
-          }
+          forward();
           break;
         case 'b':
         case '[':
-          if (hasPrev && prevId) {
-            actionsRef.current.changeChapter(prevId);
-          }
+          a.openChapter(a.prevChapter?.id);
           break;
         case 'n':
         case ']':
-          if (hasNext && nextId) {
-            actionsRef.current.changeChapter(nextId);
-          }
-          break;
-        case 'h':
-        case '?':
-          setShowHelpKeys(prev => !prev);
-          break;
-        case 'x':
-          setShowControls(prev => !prev);
+          a.openChapter(a.nextChapter?.id);
           break;
         case 'm':
         case 'c':
-          setActiveDialog(prev => prev === 'comments' ? null : 'comments');
+          setPanel((p) => (p === 'comments' ? null : 'comments'));
+          break;
+        case 'h':
+        case '?':
+          setPanel((p) => (p === 'help' ? null : 'help'));
+          break;
+        case 'x':
+          setShowControls((v) => !v);
           break;
         case 'f':
-          if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(() => {});
-          } else {
-            document.exitFullscreen().catch(() => {});
-          }
-          break;
-        case 'escape':
-          setShowHelpKeys(false);
-          setActiveDialog(null);
+          toggleFullscreen();
           break;
         default:
-          break;
+          return;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Cuộn tới vị trí trang dở dang ở lần tải đầu tiên
-  useEffect(() => {
-    if (loading || error || images.length === 0 || !isInitialMountRef.current) {
+  /* ---------------- Render ---------------- */
+
+  const pageStyle = useMemo(
+    () =>
+      ({
+        '--page-width': `${settings.width}%`,
+        '--page-gap': `${settings.gap}rem`,
+        '--page-dim': `${1 - settings.dim / 100}`,
+      }) as React.CSSProperties,
+    [settings.width, settings.gap, settings.dim],
+  );
+
+  const onPageClick = (e: React.MouseEvent<HTMLElement>) => {
+    if (isStrip) {
+      setShowControls((v) => !v);
       return;
     }
+    const { left, width } = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - left) / width;
+    if (ratio > 0.35 && ratio < 0.65) setShowControls((v) => !v);
+    else if (ratio <= 0.35 === (settings.direction !== 'rtl')) prevPage();
+    else nextPage();
+  };
 
-    const pageElement = document.querySelector<HTMLElement>(`.rpage-page[data-page="${currentPage}"]`);
-    if (pageElement) {
-      pageElement.scrollIntoView({ behavior: 'auto', block: 'start' });
-      isInitialMountRef.current = false;
-    }
-  }, [currentPage, loading, error, images.length]);
-
-  // Sử dụng Intersection Observer để phát hiện trang đang xem (Tập trung ở giữa màn hình)
-  useEffect(() => {
-    if (loading || error || images.length === 0 || readMode !== 'scroll') {
-      return;
-    }
-
-    const observerOptions = {
-      root: null,
-      rootMargin: '-25% 0px -40% 0px',
-      threshold: 0.1,
-    };
-
-    const observerCallback = (entries: IntersectionObserverEntry[]) => {
-      const visibleEntries = entries.filter(entry => entry.isIntersecting);
-      if (visibleEntries.length === 0) return;
-
-      let bestEntry = visibleEntries[0];
-      let minTop = Math.abs(bestEntry.boundingClientRect.top);
-
-      for (let i = 1; i < visibleEntries.length; i++) {
-        const entry = visibleEntries[i];
-        const topDist = Math.abs(entry.boundingClientRect.top);
-        if (topDist < minTop) {
-          minTop = topDist;
-          bestEntry = entry;
-        }
-      }
-
-      const pageNumAttr = bestEntry.target.getAttribute('data-page');
-      if (pageNumAttr) {
-        const detectedPage = parseInt(pageNumAttr, 10);
-        if (detectedPage !== currentPageRef.current) {
-          currentPageRef.current = detectedPage;
-          setCurrentPage(detectedPage);
-        }
-      }
-    };
-
-    const observer = new IntersectionObserver(observerCallback, observerOptions);
-    const pageElements = document.querySelectorAll('.rpage-page');
-    pageElements.forEach((el) => observer.observe(el));
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [images, loading, error, readMode]);
-
-  // Bộ lọc và phân trang danh sách chương
-  const CHAPTERS_PER_PAGE = 10;
-  const filteredChapters = useMemo(() => {
-    let list = comicChapters ? [...comicChapters] : [];
-    if (chapterSearchQuery.trim()) {
-      list = list.filter(ch =>
-        ch.chapterNumber.toString().includes(chapterSearchQuery) ||
-        ch.title?.toLowerCase().includes(chapterSearchQuery.toLowerCase())
-      );
-    }
-    if (chapterSort === 'oldest') {
-      list.reverse();
-    }
-    return list;
-  }, [comicChapters, chapterSearchQuery, chapterSort]);
-
-  const totalChapterPages = Math.ceil(filteredChapters.length / CHAPTERS_PER_PAGE) || 1;
-  const paginatedChapters = useMemo(() => {
-    const start = (chapterPage - 1) * CHAPTERS_PER_PAGE;
-    return filteredChapters.slice(start, start + CHAPTERS_PER_PAGE);
-  }, [filteredChapters, chapterPage]);
+  const togglePanel = (next: Exclude<Panel, null>) => setPanel((p) => (p === next ? null : next));
+  const progress = totalPages ? (currentPage / totalPages) * 100 : 0;
 
   return (
     <div
-      className={`${styles['rpage']} ${readMode === 'scroll' ? `${styles['rpage--long-strip']} ${styles['rpage--ttb']}` : styles['rpage--single-page']} ${styles[`rpage--pb-${progressBarPosition}`] || ''}`}
-      style={{
-        '--rpage-dim': (100 - dimAmount) / 100,
-        '--rpage-strip-gap': `${stripMargin}rem`,
-        filter: greyscale ? 'grayscale(100%)' : 'none',
-        scrollBehavior: scrollMode === 'smooth' ? 'smooth' : 'auto'
-      } as React.CSSProperties}
+      className={cx(
+        styles.reader,
+        !showControls && styles.controlsHidden,
+        settings.greyscale && styles.greyscale,
+        settings.progress !== 'off' && styles[`progress-${settings.progress}`],
+      )}
+      style={pageStyle}
     >
-      {/* 1. Progress Bar */}
-      {progressBarPosition !== 'off' && (
-        <div className={`${styles['rpage-progress']} ${styles[`rpage-progress--${progressBarPosition}`] || ''}`} aria-label="Page progress">
-          {images.map((_, index) => {
-            const pageNum = index + 1;
-            const isVisited = pageNum <= currentPage;
-            const isActive = pageNum === currentPage;
-            return (
-              <button
-                key={index}
-                type="button"
-                className={`${styles['rpage-progress__seg']} ${isVisited ? styles['is-visited'] : ''} ${isActive ? styles['is-active'] : ''}`}
-                title={`Page ${pageNum}`}
-                aria-label={`Go to page ${pageNum}`}
-                onClick={() => scrollToPage(pageNum)}
-              />
-            );
-          })}
+      {/* Top bar */}
+      <header className={styles.topbar}>
+        <Link to={`/comics/${comicUrl}`} className={styles.back} title="Back to comic">
+          <ArrowLeft size={18} />
+          <span className={styles.backText}>
+            <span className={styles.backTitle}>{title || 'Back'}</span>
+            {displayNumber !== undefined ? <span className={styles.backSub}>Chapter {displayNumber}</span> : null}
+          </span>
+        </Link>
+
+        <div className={styles.chapterNav}>
+          <button
+            type="button"
+            className={styles.barBtn}
+            disabled={!prevChapter}
+            onClick={() => openChapter(prevChapter?.id)}
+            aria-label="Previous chapter"
+            title="Previous chapter (B)"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button type="button" className={styles.chapterPick} onClick={() => togglePanel('chapters')}>
+            <ListOrdered size={15} />
+            <span>Ch. {displayNumber ?? '–'}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.barBtn}
+            disabled={!nextChapter}
+            onClick={() => openChapter(nextChapter?.id)}
+            aria-label="Next chapter"
+            title="Next chapter (N)"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
-      )}
 
-      <div className={`${styles['rpage-hoverzone']} ${styles['rpage-hoverzone--top']}`} aria-hidden="true" onClick={handlePrevPage}></div>
-      <div className={`${styles['rpage-hoverzone']} ${styles['rpage-hoverzone--bottom']}`} aria-hidden="true" onClick={handleNextPage}></div>
-      <div className={`${styles['rpage-hoverzone']} ${styles['rpage-hoverzone--right']}`} aria-hidden="true" onClick={() => setShowControls(!showControls)}></div>
+        <div className={styles.barActions}>
+          <button
+            type="button"
+            className={cx(styles.barBtn, panel === 'comments' && styles.barBtnOn)}
+            onClick={() => togglePanel('comments')}
+            aria-label="Comments"
+            title="Comments (M)"
+          >
+            <MessageSquare size={18} />
+          </button>
+          <button
+            type="button"
+            className={cx(styles.barBtn, panel === 'settings' && styles.barBtnOn)}
+            onClick={() => togglePanel('settings')}
+            aria-label="Reader settings"
+            title="Settings"
+          >
+            <Settings2 size={18} />
+          </button>
+          <button type="button" className={cx(styles.barBtn, styles.hideMobile)} onClick={toggleFullscreen} aria-label="Fullscreen" title="Fullscreen (F)">
+            <Expand size={18} />
+          </button>
+          <button type="button" className={cx(styles.barBtn, styles.hideMobile)} onClick={() => togglePanel('help')} aria-label="Keyboard shortcuts" title="Shortcuts (?)">
+            <Keyboard size={18} />
+          </button>
+        </div>
+      </header>
 
-      {/* 2. Controls */}
-      {showControls && (
-        <div className={styles['rpage-floatctl']} role="toolbar" aria-label="Reader controls">
-          <div className={styles['rpage-floatctl__col']}>
-            <a href="/" className={styles['rpage-floatctl__btn']} aria-label="Home" title="Home">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 11l9-8 9 8"></path>
-                <path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"></path>
-              </svg>
-            </a>
-            <a href={`/comics/${comicUrl}`} className={styles['rpage-floatctl__btn']} aria-label="Manga page" title="Manga page">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 5a1 1 0 0 1 1-1h6a3 3 0 0 1 3 3v14a3 3 0 0 0-3-3H3a1 1 0 0 1-1-1V5z"></path>
-                <path d="M22 5a1 1 0 0 0-1-1h-6a3 3 0 0 0-3 3v14a3 3 0 0 1 3-3h6a1 1 0 0 0 1-1V5z"></path>
-              </svg>
-            </a>
+      {/* Page progress */}
+      {settings.progress !== 'off' && totalPages > 0 ? (
+        <div className={styles.progress} aria-label={`Page ${currentPage} of ${totalPages}`}>
+          {images.map((_, i) => (
             <button
+              key={i}
               type="button"
-              className={`${styles['rpage-floatctl__btn']} ${activeDialog === 'comments' ? styles['is-active'] : ''}`}
-              aria-label="Toggle comments"
-              title="Comments (M)"
-              onClick={() => setActiveDialog(activeDialog === 'comments' ? null : 'comments')}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v9z"></path>
-              </svg>
-            </button>
-            <button
-              type="button"
-              className={styles['rpage-floatctl__btn']}
-              aria-label="Chapter list"
-              title="Chapter list"
-              onClick={() => setActiveDialog(activeDialog === 'chapters' ? null : 'chapters')}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6"></line>
-                <line x1="8" y1="12" x2="21" y2="12"></line>
-                <line x1="8" y1="18" x2="21" y2="18"></line>
-                <circle cx="4" cy="6" r="1"></circle>
-                <circle cx="4" cy="12" r="1"></circle>
-                <circle cx="4" cy="18" r="1"></circle>
-              </svg>
-            </button>
-            <button
-              type="button"
-              className={styles['rpage-floatctl__btn']}
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => setActiveDialog(activeDialog === 'settings' ? null : 'settings')}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path>
-              </svg>
-            </button>
-            <button
-              type="button"
-              className={styles['rpage-floatctl__btn']}
-              aria-label="Help"
-              title="Help (?)"
-              onClick={() => setShowHelpKeys(!showHelpKeys)}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="9"></circle>
-                <path d="M9.5 9a2.5 2.5 0 1 1 4.3 1.7c-.8.8-1.8 1.3-1.8 2.3"></path>
-                <circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"></circle>
-              </svg>
-            </button>
+              className={cx(styles.progressSeg, i + 1 <= currentPage && styles.progressSegDone)}
+              title={`Page ${i + 1}`}
+              aria-label={`Go to page ${i + 1}`}
+              onClick={() => goToPage(i + 1)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {/* Pages */}
+      <main ref={mainRef} className={cx(styles.stage, isStrip ? styles.strip : styles.single)}>
+        {loading ? (
+          <div className={styles.loader}>
+            <span className={styles.spinner} />
+            Loading chapter…
           </div>
-        </div>
-      )}
+        ) : error ? (
+          <div className={styles.loader}>{error}</div>
+        ) : isStrip ? (
+          images.map((src, i) => (
+            <figure key={src} className={styles.page} data-page={i + 1} onClick={onPageClick}>
+              <img
+                src={src}
+                alt={`Page ${i + 1}`}
+                loading={settings.preloadAll || i < EAGER_PAGES ? 'eager' : 'lazy'}
+                decoding="async"
+                referrerPolicy="no-referrer"
+              />
+            </figure>
+          ))
+        ) : images[currentPage - 1] ? (
+          <figure className={styles.page} data-page={currentPage} onClick={onPageClick}>
+            <img src={images[currentPage - 1]} alt={`Page ${currentPage}`} decoding="async" referrerPolicy="no-referrer" />
+            {/* Preload neighbours for instant page turns */}
+            {[currentPage, currentPage - 2].map((i) =>
+              images[i] ? <link key={i} rel="preload" as="image" href={images[i]} /> : null,
+            )}
+          </figure>
+        ) : null}
 
-      {/* 3. Main Viewer */}
-      <main ref={mainRef} className={`${styles['rpage-main']} ${readMode === 'scroll' ? styles['rpage-main--long-strip'] : styles['rpage-main--page']}`}>
-        <div className={styles['rpage-main__inner']}>
-          {loading && (
-            <div className={`${styles['rpage-page']} ${styles['is-loading']}`} style={{ aspectRatio: "900 / 1673", width: '100%' }}>
-              <div className={styles['rpage-page__loader']} aria-hidden="true">
-                <div className={styles['rpage-page__loader-inner']}>
-                  <span className={styles['rpage-page__spinner']}></span>
-                  <span className={`${styles['rpage-page__counter']} ${styles['mono'] || 'mono'}`}>Loading...</span>
-                </div>
-              </div>
+        {!loading && !error ? (
+          <section className={styles.ending}>
+            <p className={styles.endingKicker}>End of chapter {displayNumber}</p>
+            <Link to={`/comics/${comicUrl}`} className={styles.endingTitle}>
+              {title}
+            </Link>
+            <div className={styles.endingNav}>
+              <button type="button" className="btn btn--ghost" disabled={!prevChapter} onClick={() => openChapter(prevChapter?.id)}>
+                <ChevronLeft size={16} />
+                {prevChapter ? `Chapter ${prevChapter.chapterNumber}` : 'No previous'}
+              </button>
+              <button type="button" className="btn btn--primary" disabled={!nextChapter} onClick={() => openChapter(nextChapter?.id)}>
+                {nextChapter ? `Chapter ${nextChapter.chapterNumber}` : 'Latest chapter'}
+                <ChevronRight size={16} />
+              </button>
             </div>
-          )}
-          {error && <div className={styles['error-msg'] || 'error-msg'}>{error}</div>}
 
-          {!loading && !error && (
-            <>
-              {readMode === 'page' ? (
-                <div className={styles['rpage-page']} data-page={currentPage} style={{ width: `${zoomLevel}%`, margin: '0 auto' }}>
-                  {currentImage && (
-                    <img
-                      className={styles['rpage-page__img']}
-                      src={currentImage}
-                      alt={`Page ${currentPage}`}
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                    />
-                  )}
-                </div>
-              ) : (
-                images.map((img, idx) => (
-                  <div key={idx} className={styles['rpage-page']} data-page={idx + 1} style={{ width: `${zoomLevel}%`, margin: '0 auto' }}>
-                    <img
-                      className={styles['rpage-page__img']}
-                      src={img}
-                      alt={`Page ${idx + 1}`}
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                ))
-              )}
-            </>
-          )}
-
-          {/* Khối kết thúc chương */}
-          {!loading && !error && (
-            <div className={styles['rpage-chap-ending']}>
-              <div className={styles['rpage-chap-ending__head']}>
-                <button type="button" className={styles['rpage-chap-ending__like']} aria-pressed="false" title="Like">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M7 21V11"></path>
-                    <path d="M7 11l4-7a2 2 0 0 1 4 1l-1 5h5a2 2 0 0 1 2 2.4l-1.5 7A2 2 0 0 1 17.5 21H7z"></path>
-                  </svg>
-                  <span className={`${styles['rpage-chap-ending__like-count']} ${styles['mono'] || 'mono'}`}>11</span>
-                </button>
-                <div className={styles['rpage-chap-ending__info']}>
-                  <a className={styles['rpage-chap-ending__title']} href={`/title/${comicUrl}`}>{comic?.name || 'Untitled'}</a>
-                  <div className={`${styles['rpage-chap-ending__meta']} ${styles['mono'] || 'mono'}`}>
-                    <span>Ch. {chapterNo}</span>
-                    <span className={styles['rpage-chap-ending__sep']} aria-hidden="true">·</span>
-                    <span>Translated by <strong>Drake Scans</strong></span>
-                  </div>
-                </div>
+            {chapterId && panel !== 'comments' ? (
+              <div className={styles.endingComments}>
+                <CommentsSection id={chapterId} targetId={commentTargetId} type="chapter" />
               </div>
-
-              <div className={styles['rpage-chap-ending__nav']}>
-                <button
-                  type="button"
-                  className={styles['rpage-chap-ending__nav-btn']}
-                  disabled={!hasPrevChapter}
-                  onClick={() => hasPrevChapter && prevChapterId && changeChapter(prevChapterId)}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="15 18 9 12 15 6"></polyline>
-                  </svg>
-                  <span>Prev · Ch. <span className={styles['mono'] || 'mono'}>{hasPrevChapter && comicChapters ? comicChapters[currentChapterIndex - 1].chapterNumber : ''}</span></span>
-                </button>
-                <button
-                  type="button"
-                  className={styles['rpage-chap-ending__nav-btn']}
-                  disabled={!hasNextChapter}
-                  onClick={() => hasNextChapter && nextChapterId && changeChapter(nextChapterId)}
-                >
-                  <span>Next · Ch. <span className={styles['mono'] || 'mono'}>{hasNextChapter && comicChapters ? comicChapters[currentChapterIndex + 1].chapterNumber : ''}</span></span>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </button>
-              </div>
-
-              {/* Ngắt CommentsSection dưới chân trang nếu đang bật sidebar bình luận (Tránh double load) */}
-              {chapterDetails?.id && activeDialog !== 'comments' && (
-                <CommentsSection id={chapterId} targetId={cmId} type="chapter" />
-              )}
-            </div>
-          )}
-        </div>
+            ) : null}
+          </section>
+        ) : null}
       </main>
 
-      {/* 4. Zoom Slider */}
-      {showControls && (
-        <footer className={styles['rpage-bottombar']}>
-          <div className={styles['rpage-bottombar__controls']}>
-            <div className={`${styles['rpage-zoom']} ${styles['rpage-bottombar__hide-mobile']}`} role="group" aria-label="Image width">
-              <button
-                type="button"
-                className={styles['rpage-zoom__btn']}
-                aria-label="Shrink image"
-                title="Shrink image"
-                onClick={() => setZoomLevel(z => Math.max(z - 10, 30))}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14"></path>
-                </svg>
-              </button>
-              <span className={`${styles['rpage-zoom__value']} ${styles['mono'] || 'mono'}`} aria-live="polite">{zoomLevel}%</span>
-              <button
-                type="button"
-                className={styles['rpage-zoom__btn']}
-                aria-label="Enlarge image"
-                title="Enlarge image"
-                onClick={() => setZoomLevel(z => Math.min(z + 10, 100))}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 5v14M5 12h14"></path>
-                </svg>
-              </button>
-            </div>
-          </div>
-        </footer>
-      )}
-
-      {/* 5. Dialog Settings */}
-      {activeDialog === 'settings' && (
-        <div className={`${styles['minidlg']} ${styles['rpage-modal']} ${styles['rpage-modal--settings']}`} role="dialog" aria-label="Reader settings">
-          <div className={`${styles['minidlg__panel']} ${styles['rpage-modal__panel']} ${styles['rpage-modal__panel--settings']}`}>
-            <div className={`${styles['rpage-settings']} ${styles['is-open']}`} aria-hidden="false">
-              <div className={styles['rpage-settings__panel']} role="dialog" aria-label="Reader settings">
-                <header className={styles['rpage-modal__head']}>
-                  <h3 className={styles['rpage-modal__title']}>Settings</h3>
-                  <button type="button" className={styles['rpage-modal__close']} aria-label="Close settings" onClick={() => setActiveDialog(null)}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M6 6l12 12M18 6l-12 12"></path>
-                    </svg>
-                  </button>
-                </header>
-                <div className={styles['rpage-settings__body']}>
-
-                  {/* Hướng đọc */}
-                  <section className={styles['rpage-settings__group']}>
-                    <h3 className={`${styles['rpage-settings__title']} ${styles['mono'] || 'mono'}`}>Reading direction</h3>
-                    <div className={styles['rpage-dir2']} role="radiogroup" aria-label="Reading direction">
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={readingDirection === 'ltr'}
-                        className={`${styles['rpage-dir2__btn']} ${readingDirection === 'ltr' ? styles['is-on'] : ''}`}
-                        onClick={() => setReadingDirection('ltr')}
-                      >
-                        <span className={styles['rpage-dir2__arrow']} aria-hidden="true">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M5 12h12"></path><path d="M13 7l5 5-5 5"></path><path d="M21 5v14"></path>
-                          </svg>
-                        </span>
-                        <span>Left to right</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={readingDirection === 'rtl'}
-                        className={`${styles['rpage-dir2__btn']} ${readingDirection === 'rtl' ? styles['is-on'] : ''}`}
-                        onClick={() => setReadingDirection('rtl')}
-                      >
-                        <span className={styles['rpage-dir2__arrow']} aria-hidden="true">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 5v14"></path><path d="M19 12H7"></path><path d="M11 7l-5 5 5 5"></path>
-                          </svg>
-                        </span>
-                        <span>Right to left</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={readingDirection === 'ttb'}
-                        className={`${styles['rpage-dir2__btn']} ${readingDirection === 'ttb' ? styles['is-on'] : ''}`}
-                        onClick={() => setReadingDirection('ttb')}
-                      >
-                        <span className={styles['rpage-dir2__arrow']} aria-hidden="true">
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M5 21h14"></path><path d="M12 17V5"></path><path d="M7 13l5 5 5-5"></path>
-                          </svg>
-                        </span>
-                        <span>Top to bottom</span>
-                      </button>
-                    </div>
-                  </section>
-
-                  {/* Khoảng cách viền */}
-                  <section className={styles['rpage-settings__group']}>
-                    <h3 className={`${styles['rpage-settings__title']} ${styles['mono'] || 'mono'}`}>Strip margin</h3>
-                    <div className={styles['rpage-numinput']}>
-                      <div className={styles['rpage-numinput__group']}>
-                        <button
-                          type="button"
-                          className={styles['rpage-numinput__btn']}
-                          disabled={stripMargin <= 0}
-                          onClick={() => setStripMargin(m => Math.max(0, m - 1))}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M5 12h14"></path>
-                          </svg>
-                        </button>
-                        <input className={styles['rpage-numinput__field']} min="0" max="8" step="1" aria-label="Strip margin" type="number" value={stripMargin} readOnly />
-                        <button
-                          type="button"
-                          className={styles['rpage-numinput__btn']}
-                          disabled={stripMargin >= 8}
-                          onClick={() => setStripMargin(m => Math.min(8, m + 1))}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 5v14M5 12h14"></path>
-                          </svg>
-                        </button>
-                      </div>
-                      <button type="button" className={styles['rpage-numinput__reset']} disabled={stripMargin === 0} onClick={() => setStripMargin(0)}>Reset</button>
-                    </div>
-                  </section>
-
-                  {/* Trượt bàn phím */}
-                  <section className={`${styles['rpage-settings__group']} ${styles['rpage-settings__group--desktop-only']}`}>
-                    <h3 className={`${styles['rpage-settings__title']} ${styles['mono'] || 'mono'}`}>Keyboard scrolling</h3>
-                    <div className={styles['rpage-settings__opts']}>
-                      <label className={`${styles['rpage-opt']} ${scrollMode === 'fast' ? styles['is-on'] : ''}`}>
-                        <input type="radio" value="fast" checked={scrollMode === 'fast'} onChange={() => setScrollMode('fast')} name="scrollMode" />
-                        <span className={styles['rpage-opt__dot']} aria-hidden="true"></span>
-                        <span>Scroll fast</span>
-                      </label>
-                      <label className={`${styles['rpage-opt']} ${scrollMode === 'smooth' ? styles['is-on'] : ''}`}>
-                        <input type="radio" value="smooth" checked={scrollMode === 'smooth'} onChange={() => setScrollMode('smooth')} name="scrollMode" />
-                        <span className={styles['rpage-opt__dot']} aria-hidden="true"></span>
-                        <span>Scroll smooth</span>
-                      </label>
-                    </div>
-                  </section>
-
-                  {/* Vị trí thanh tiến trình */}
-                  <section className={styles['rpage-settings__group']}>
-                    <h3 className={`${styles['rpage-settings__title']} ${styles['mono'] || 'mono'}`}>Progress bar</h3>
-                    <div className={styles['rpage-pb']} role="radiogroup" aria-label="Progress bar position">
-                      {(['left', 'top', 'bottom', 'right', 'off'] as const).map((pos) => {
-                        const isActive = progressBarPosition === pos;
-                        return (
-                          <button
-                            key={pos}
-                            type="button"
-                            role="radio"
-                            aria-checked={isActive}
-                            title={`Progress bar ${pos}`}
-                            aria-label={`Progress bar ${pos}`}
-                            className={`${styles['rpage-pb__btn']} ${isActive ? styles['is-on'] : ''}`}
-                            onClick={() => setProgressBarPosition(pos)}
-                          >
-                            {pos === 'left' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5v14"></path><path d="M19 12H7"></path><path d="M11 7l-5 5 5 5"></path></svg>}
-                            {pos === 'top' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14"></path><path d="M12 7v12"></path><path d="M7 11l5-5 5 5"></path></svg>}
-                            {pos === 'bottom' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 21h14"></path><path d="M12 17V5"></path><path d="M7 13l5 5 5-5"></path></svg>}
-                            {pos === 'right' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h12"></path><path d="M13 7l5 5-5 5"></path><path d="M21 5v14"></path></svg>}
-                            {pos === 'off' && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5"></circle><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"></line></svg>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-
-                  {/* Tải trước ảnh */}
-                  <section className={styles['rpage-settings__group']}>
-                    <h3 className={`${styles['rpage-settings__title']} ${styles['mono'] || 'mono'}`}>Preload images</h3>
-                    <div className={styles['rpage-settings__opts']}>
-                      <label className={`${styles['rpage-opt']} ${preloadImages === 'some' ? styles['is-on'] : ''}`}>
-                        <input type="radio" value="some" checked={preloadImages === 'some'} onChange={() => setPreloadImages('some')} name="preload" />
-                        <span className={styles['rpage-opt__dot']} aria-hidden="true"></span>
-                        <span>Preload some</span>
-                      </label>
-                      <label className={`${styles['rpage-opt']} ${preloadImages === 'all' ? styles['is-on'] : ''}`}>
-                        <input type="radio" value="all" checked={preloadImages === 'all'} onChange={() => setPreloadImages('all')} name="preload" />
-                        <span className={styles['rpage-opt__dot']} aria-hidden="true"></span>
-                        <span>Preload all</span>
-                      </label>
-                    </div>
-                  </section>
-
-                  {/* Đen trắng */}
-                  <section className={styles['rpage-settings__group']}>
-                    <div className={styles['rpage-settings__opts']}>
-                      <label className={`${styles['rpage-opt']} ${styles['rpage-opt--toggle']} ${greyscale ? styles['is-on'] : ''}`}>
-                        <input type="checkbox" checked={greyscale} onChange={(e) => setGreyscale(e.target.checked)} />
-                        <span className={styles['rpage-opt__check']} aria-hidden="true"></span>
-                        <span>Greyscale pages</span>
-                      </label>
-                    </div>
-                  </section>
-
-                  {/* Giảm độ sáng trang */}
-                  <section className={styles['rpage-settings__group']}>
-                    <h3 className={`${styles['rpage-settings__title']} ${styles['mono'] || 'mono'}`}>Dim pages</h3>
-                    <div className={styles['rpage-slider']}>
-                      <div className={styles['rpage-slider__row']}>
-                        <input min="0" max="100" step="1" aria-label="Dim amount" type="range" value={dimAmount} onChange={(e) => setDimAmount(parseInt(e.target.value) || 0)} />
-                        <span className={`${styles['rpage-slider__val']} ${styles['mono'] || 'mono'}`}>{dimAmount}%</span>
-                      </div>
-                    </div>
-                  </section>
-
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Floating page / zoom pill */}
+      {totalPages > 0 ? (
+        <div className={styles.pill}>
+          <span className={cx(styles.pillPages, 'mono')}>
+            {currentPage} / {totalPages}
+          </span>
+          <span className={styles.pillTrack} aria-hidden="true">
+            <span style={{ width: `${progress}%` }} />
+          </span>
+          <span className={cx(styles.pillZoom, styles.hideMobile)}>
+            <button
+              type="button"
+              aria-label="Narrower pages"
+              disabled={settings.width <= WIDTH_LIMITS.min}
+              onClick={() => update('width', settings.width - WIDTH_LIMITS.step)}
+            >
+              <Minus size={14} />
+            </button>
+            <span className="mono">{settings.width}%</span>
+            <button
+              type="button"
+              aria-label="Wider pages"
+              disabled={settings.width >= WIDTH_LIMITS.max}
+              onClick={() => update('width', settings.width + WIDTH_LIMITS.step)}
+            >
+              <Plus size={14} />
+            </button>
+          </span>
         </div>
-      )}
+      ) : null}
 
-      {/* 6. Dialog Danh Sách Chương */}
-      {activeDialog === 'chapters' && (
-        <div className={`${styles['minidlg']} ${styles['rpage-modal']} ${styles['rpage-modal--chaplist']}`} role="dialog" aria-label="Chapter list">
-          <div className={`${styles['minidlg__panel']} ${styles['rpage-modal__panel']} ${styles['rpage-modal__panel--chaplist']}`}>
-            <header className={styles['rpage-modal__head']}>
-              <h3 className={styles['rpage-modal__title']}>Chapters</h3>
-              <button type="button" className={styles['rpage-modal__close']} aria-label="Close" onClick={() => setActiveDialog(null)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 6l12 12M18 6l-12 12"></path>
-                </svg>
-              </button>
-            </header>
-            <div className={styles['rpage-chaplist__toolbar']}>
-              <div className={styles['rpage-chaplist__search']}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="7"></circle>
-                  <line x1="21" y1="21" x2="16.5" y2="16.5"></line>
-                </svg>
-                <input
-                  inputMode="numeric"
-                  aria-label="Search chapter"
-                  type="text"
-                  value={chapterSearchQuery}
-                  onChange={(e) => {
-                    setChapterSearchQuery(e.target.value);
-                    setChapterPage(1);
-                  }}
-                />
-              </div>
-              <button
-                type="button"
-                className={styles['rpage-chaplist__sort']}
-                aria-label="Sort descending"
-                title={chapterSort === 'newest' ? "Sort: Newest first" : "Sort: Oldest first"}
-                onClick={() => setChapterSort(s => s === 'newest' ? 'oldest' : 'newest')}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 5h4"></path><path d="M11 9h7"></path><path d="M11 13h10"></path>
-                  <path d="M3 7l3-3 3 3"></path><path d="M6 20V4"></path>
-                </svg>
-              </button>
-            </div>
+      {/* Panels */}
+      <Modal isOpen={panel === 'settings'} onClose={() => setPanel(null)} variant="side" title="Reader settings">
+        <ReaderSettingsPanel settings={settings} update={update} reset={reset} />
+      </Modal>
 
-            <label className={`${styles['rpage-chaplist__lock']} ${lockGroup ? styles['is-on'] : ''}`}>
-              <input type="checkbox" checked={lockGroup} onChange={(e) => setLockGroup(e.target.checked)} />
-              <span className={styles['rpage-chaplist__lock-box']} aria-hidden="true">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 12l5 5L20 6"></path>
-                </svg>
-              </span>
-              <span>Lock to this group when prev, next chap</span>
-            </label>
+      <Modal isOpen={panel === 'chapters'} onClose={() => setPanel(null)} variant="side" title="Chapters" subtitle={title}>
+        <ReaderChapterList chapters={chapters} currentId={chapterId} onSelect={openChapter} />
+      </Modal>
 
-            <div className={styles['rpage-chaplist__body']}>
-              <ul className={styles['rpage-chaplist__list']}>
-                {paginatedChapters.map((ch) => {
-                  const isActive = ch.id === chapterId;
-                  return (
-                    <li key={ch.id}>
-                      <button
-                        type="button"
-                        className={`${styles['rpage-chaplist__item']} ${isActive ? styles['is-active'] : ''}`}
-                        onClick={() => {
-                          changeChapter(ch.id);
-                          setActiveDialog(null);
-                        }}
-                      >
-                        <div className={styles['rpage-chaplist__line1']}>
-                          <span className={styles['rpage-chaplist__num']}>Ch.{ch.chapterNumber}</span>
-                        </div>
-                        <div className={styles['rpage-chaplist__line2']}>
-                          <span className={styles['rpage-chaplist__group']}>{ch.title || 'Drake Scans'}</span>
-                          <span className={styles['rpage-chaplist__sep']}>·</span>
-                          <span className={styles['rpage-chaplist__time']}>2w ago</span>
-                        </div>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+      <Modal isOpen={panel === 'comments'} onClose={() => setPanel(null)} variant="side" title={`Chapter ${displayNumber ?? ''} comments`} bodyClassName={styles.commentsBody}>
+        {chapterId ? <CommentsSection id={chapterId} targetId={commentTargetId} type="chapter" /> : null}
+      </Modal>
 
-            <footer className={styles['rpage-chaplist__foot']}>
-              <nav className={styles['npager']} aria-label="Pagination">
-                {Array.from({ length: totalChapterPages }, (_, i) => i + 1).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`${styles['npager__num']} ${chapterPage === p ? styles['is-active'] : ''}`}
-                    aria-current={chapterPage === p ? 'page' : undefined}
-                    onClick={() => setChapterPage(p)}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </nav>
-            </footer>
-          </div>
-        </div>
-      )}
-
-      {/* 7. Dialog Keyboard Help */}
-      {showHelpKeys && (
-        <div className={`${styles['minidlg']} ${styles['rpage-modal']} ${styles['rpage-modal--help']}`} role="dialog" aria-label="Keyboard shortcuts">
-          <div className={`${styles['minidlg__panel']} ${styles['rpage-modal__panel']} ${styles['rpage-modal__panel--help']}`}>
-            <header className={styles['rpage-modal__head']}>
-              <h3 className={styles['rpage-modal__title']}>Keyboard shortcuts</h3>
-              <button type="button" className={styles['rpage-modal__close']} aria-label="Close" onClick={() => setShowHelpKeys(false)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 6l12 12M18 6l-12 12"></path>
-                </svg>
-              </button>
-            </header>
-            <div className={styles['rpage-help__body']}>
-              <ul className={styles['rpage-keys']}>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Scroll page (vertical)</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>↑</kbd>
-                    <kbd className={styles['rpage-keys__key']}>↓</kbd>
-                    <kbd className={styles['rpage-keys__key']}>W</kbd>
-                    <kbd className={styles['rpage-keys__key']}>S</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Change page (horizontal)</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>←</kbd>
-                    <kbd className={styles['rpage-keys__key']}>→</kbd>
-                    <kbd className={styles['rpage-keys__key']}>A</kbd>
-                    <kbd className={styles['rpage-keys__key']}>D</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Previous chapter</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>B</kbd>
-                    <kbd className={styles['rpage-keys__key']}>[</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Next chapter</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>N</kbd>
-                    <kbd className={styles['rpage-keys__key']}>]</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Comments panel</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>M</kbd>
-                    <kbd className={styles['rpage-keys__key']}>C</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Fullscreen</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>F</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Show / hide controls</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>double tap</kbd>
-                    <kbd className={styles['rpage-keys__key']}>X</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>This help</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>H</kbd>
-                    <kbd className={styles['rpage-keys__key']}>?</kbd>
-                  </span>
-                </li>
-                <li className={styles['rpage-keys__row']}>
-                  <span className={styles['rpage-keys__desc']}>Close dialog</span>
-                  <span className={styles['rpage-keys__chips']}>
-                    <kbd className={styles['rpage-keys__key']}>Esc</kbd>
-                  </span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 8. Comments Sidebar Panel */}
-      <aside className={`${styles['rpage-cmpanel']} ${activeDialog === 'comments' ? styles['is-open'] : ''}`} aria-hidden={activeDialog !== 'comments'}>
-        <div className={styles['rpage-cmpanel__chapnav']}>
-          <button type="button" className={styles['rpage-cmpanel__like']} title="Like chapter">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 21V11"></path>
-              <path d="M7 11l4-7a2 2 0 0 1 4 1l-1 5h5a2 2 0 0 1 2 2.4l-1.5 7A2 2 0 0 1 17.5 21H7z"></path>
-            </svg>
-            <span className={styles['mono'] || 'mono'}>11</span>
-          </button>
-          <span className={styles['rpage-cmpanel__like-attribution']}>Translated by <strong>Drake Scans</strong></span>
-
-          <div className={styles['rpage-cmpanel__follow']}>
-            <div className={`${styles['fdrop']} ${styles['mpage__follow']}`}>
-              <button type="button" className={`${styles['btn']} ${styles['btn--soft']} ${styles['mpage__follow-btn']}`} aria-haspopup="menu" aria-expanded="false" aria-pressed="false">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z"></path>
-                </svg>
-                <span>Follow</span>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M9 6l6 6-6 6"></path>
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <button type="button" className={styles['rpage-cmpanel__close']} aria-label="Close comments" title="Close" onClick={() => setActiveDialog(null)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 6l12 12M18 6l-12 12"></path>
-            </svg>
-          </button>
-        </div>
-
-        <div className={styles['rpage-cmpanel__body']} style={{ overflowY: 'auto', height: 'calc(100% - 60px)' }}>
-          {/* Chỉ render bình luận bên trong sidebar khi sidebar được mở */}
-          {chapterDetails?.id && activeDialog === 'comments' && (
-            <CommentsSection id={chapterId} targetId={cmId} type="chapter" />
-          )}
-        </div>
-      </aside>
+      <Modal isOpen={panel === 'help'} onClose={() => setPanel(null)} size="sm" title="Keyboard shortcuts">
+        <ReaderShortcuts />
+      </Modal>
     </div>
   );
 }

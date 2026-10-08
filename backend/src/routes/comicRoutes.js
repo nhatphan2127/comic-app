@@ -1,47 +1,37 @@
 import express from 'express';
 import { authenticateTokenOptional, authenticateToken, requireRole } from '../middlewares/authMiddleware.js';
-import { 
-  listComics, 
-  popularComics,
-  searchComics,
-  getComicDetail,
-  getComicChapters,
-  getChapterDetail, 
-  createComic,
-  updateComic,
-  createChapter,
-  getMyComicContributions,
-  getMyChapterContributions,
-  updateComicContributorStatus,
-  markComicContributorRead,
-  updateChapterContributorStatus,
-  markChapterContributorRead,
-  getContributorsByComic
-} from '../controllers/comicController.js';
 import upload from '../middlewares/uploadMiddleware.js';
+import * as comics from '../controllers/comicController.js';
+import * as comments from '../controllers/commentController.js';
 
-const router = express.Router();
-router.get('/', listComics);
-router.get('/popular', popularComics);
-router.get('/search', searchComics);
-router.get('/:comicUrl/chapters', authenticateTokenOptional, getComicChapters);
-router.get('/:comicUrl', authenticateTokenOptional, getComicDetail);
-router.get('/chapters/:chapterId', authenticateTokenOptional, getChapterDetail);
+const uploaders = requireRole('contributor', 'moderator', 'admin');
+const staff = requireRole('admin', 'moderator');
 
-router.post('/', authenticateToken, requireRole('contributor', 'moderator', 'admin'), upload.single('coverImage'), createComic);
-router.patch('/:comicId', authenticateToken, requireRole('contributor', 'moderator', 'admin'), upload.single('coverImage'), updateComic);
-router.post('/:comicId/chapters', authenticateToken, requireRole('contributor', 'moderator', 'admin'), upload.array('images', 50), createChapter);
+// ---------- /comics ----------
+export const comicRouter = express.Router();
 
-// Contributor routes
-router.get('/:comicId/contributors', authenticateToken, getContributorsByComic);
-router.put('/:comicId/contributors/:userId', authenticateToken, updateComicContributorStatus);
-router.patch('/:comicId/contributors/:userId/read', authenticateToken, markComicContributorRead);
+comicRouter.get('/', comics.listComics);
+comicRouter.post('/', authenticateToken, uploaders, upload.single('coverImage'), comics.createComic);
+// Reading routes accept the comic's id or its url slug in :comicId; writing routes need the id.
+comicRouter.get('/:comicId', authenticateTokenOptional, comics.getComic);
+comicRouter.patch('/:comicId', authenticateToken, uploaders, upload.single('coverImage'), comics.updateComic);
 
-router.get('/:chapterId/contributors', authenticateToken, (req, res, next) => {
-  // This would be for admins to view contributors - TODO
-  res.status(501).json({ status: 'fail', message: 'Not implemented' });
-});
-router.put('/:chapterId/contributors/:userId', authenticateToken, updateChapterContributorStatus);
-router.patch('/:chapterId/contributors/:userId/read', authenticateToken, markChapterContributorRead);
+comicRouter.get('/:comicId/chapters', comics.listComicChapters);
+comicRouter.post('/:comicId/chapters', authenticateToken, uploaders, upload.array('images', 50), comics.createChapter);
 
-export default router;
+comicRouter.get('/:comicId/comments', authenticateTokenOptional, comments.listComments('comic'));
+comicRouter.post('/:comicId/comments', authenticateToken, comments.postComment('comic'));
+
+comicRouter.get('/:comicId/contributors', authenticateToken, staff, comics.listContributors('comic'));
+comicRouter.patch('/:comicId/contributors/:userId', authenticateToken, staff, comics.updateContributor('comic'));
+
+// ---------- /chapters ----------
+export const chapterRouter = express.Router();
+
+chapterRouter.get('/:chapterId', authenticateTokenOptional, comics.getChapter);
+
+chapterRouter.get('/:chapterId/comments', authenticateTokenOptional, comments.listComments('chapter'));
+chapterRouter.post('/:chapterId/comments', authenticateToken, comments.postComment('chapter'));
+
+chapterRouter.get('/:chapterId/contributors', authenticateToken, staff, comics.listContributors('chapter'));
+chapterRouter.patch('/:chapterId/contributors/:userId', authenticateToken, staff, comics.updateContributor('chapter'));

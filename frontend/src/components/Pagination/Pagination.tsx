@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import cx from '../../helpers/cx';
 import styles from './Pagination.module.css';
 
 interface PaginationProps {
@@ -7,118 +10,77 @@ interface PaginationProps {
   isLoading?: boolean;
 }
 
+const visibleCountFor = (width: number) => (width < 480 ? 3 : width < 768 ? 5 : 7);
+
+/** Window of page numbers centred on the current page, clamped to [1, total]. */
+function getPageWindow(current: number, total: number, size: number): number[] {
+  const half = Math.floor(size / 2);
+  let start = Math.max(1, current - half);
+  const end = Math.min(total, start + size - 1);
+  start = Math.max(1, end - size + 1);
+  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+}
+
 export default function Pagination({ currentPage, totalPages, onPageChange, isLoading = false }: PaginationProps) {
-  const getPageNumbers = () => {
-    const maxVisible = window.innerWidth < 480 ? 3 : window.innerWidth < 768 ? 5 : 7;
-    const halfVisible = Math.floor(maxVisible / 2);
-    
-    let start = Math.max(1, currentPage - halfVisible);
-    let end = Math.min(totalPages, currentPage + halfVisible);
-    
-    if (start === 1) {
-      end = Math.min(totalPages, end + (maxVisible - (end - start + 1)));
-    }
-    if (end === totalPages) {
-      start = Math.max(1, start - (maxVisible - (end - start + 1)));
-    }
-    
-    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  const [visibleCount, setVisibleCount] = useState(() => visibleCountFor(window.innerWidth));
+
+  useEffect(() => {
+    const onResize = () => setVisibleCount(visibleCountFor(window.innerWidth));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  if (totalPages <= 1) return null;
+
+  const pages = getPageWindow(currentPage, totalPages, visibleCount);
+  const first = pages[0];
+  const last = pages[pages.length - 1];
+
+  const go = (page: number) => {
+    if (!isLoading && page !== currentPage && page >= 1 && page <= totalPages) onPageChange(page);
   };
 
-  const pageNumbers = getPageNumbers();
-
-  const handlePageChange = (pageNumber: number) => {
-    if (isLoading || pageNumber === currentPage) {
-      return;
-    }
-
-    onPageChange(pageNumber);
-  };
+  const pageButton = (page: number) => (
+    <button
+      key={page}
+      type="button"
+      className={cx(styles.btn, page === currentPage && styles.active, 'mono')}
+      onClick={() => go(page)}
+      disabled={isLoading}
+      aria-label={`Page ${page}`}
+      aria-current={page === currentPage ? 'page' : undefined}
+    >
+      {page}
+    </button>
+  );
 
   return (
-    <div className={styles['pagination-container']}>
-      <div className={styles['pagination-inner']}>
-        <button
-          className={`${styles['pagination-btn']} ${styles['pagination-prev']} ${currentPage === 1 || isLoading ? styles['disabled'] : ''}`}
-          onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1 || isLoading}
-          aria-label="Previous page"
-          title="Go to previous page"
-        >
-          <svg 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
-          >
-            <path d="m15 18-6-6 6-6" />
-          </svg>
-        </button>
+    <nav className={styles.pagination} aria-label="Pagination">
+      <button
+        type="button"
+        className={styles.btn}
+        onClick={() => go(currentPage - 1)}
+        disabled={currentPage === 1 || isLoading}
+        aria-label="Previous page"
+      >
+        <ChevronLeft size={16} />
+      </button>
 
-        {pageNumbers[0] > 1 && (
-          <>
-            <button
-              className={styles['pagination-btn']}
-              onClick={() => handlePageChange(1)}
-              aria-label="Go to page 1"
-            >
-              1
-            </button>
-            {pageNumbers[0] > 2 && (
-              <span style={{ padding: '0 0.25rem', color: 'var(--text-3)' }}>...</span>
-            )}
-          </>
-        )}
+      {first > 1 ? pageButton(1) : null}
+      {first > 2 ? <span className={styles.gap}>…</span> : null}
+      {pages.map(pageButton)}
+      {last < totalPages - 1 ? <span className={styles.gap}>…</span> : null}
+      {last < totalPages ? pageButton(totalPages) : null}
 
-        {pageNumbers.map((pageNumber) => (
-          <button
-            key={pageNumber}
-            className={`${styles['pagination-btn']} ${styles['page-number']} ${currentPage === pageNumber ? styles['active'] : ''}`}
-            onClick={() => handlePageChange(pageNumber)}
-            aria-label={`Page ${pageNumber}`}
-            aria-current={currentPage === pageNumber ? 'page' : undefined}
-            disabled={isLoading}
-          >
-            {pageNumber}
-          </button>
-        ))}
-
-        {pageNumbers[pageNumbers.length - 1] < totalPages && (
-          <>
-            {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
-              <span style={{ padding: '0 0.25rem', color: 'var(--text-3)' }}>...</span>
-            )}
-            <button
-              className={styles['pagination-btn']}
-              onClick={() => handlePageChange(totalPages)}
-              aria-label={`Go to page ${totalPages}`}
-            >
-              {totalPages}
-            </button>
-          </>
-        )}
-
-        <button
-          className={`${styles['pagination-btn']} ${styles['pagination-next']} ${currentPage === totalPages || isLoading ? styles['disabled'] : ''}`}
-          onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages || isLoading}
-          aria-label="Next page"
-          title="Go to next page"
-        >
-          <svg 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
-          >
-            <path d="m9 18 6-6-6-6" />
-          </svg>
-        </button>
-      </div>
-    </div>
+      <button
+        type="button"
+        className={styles.btn}
+        onClick={() => go(currentPage + 1)}
+        disabled={currentPage === totalPages || isLoading}
+        aria-label="Next page"
+      >
+        <ChevronRight size={16} />
+      </button>
+    </nav>
   );
 }

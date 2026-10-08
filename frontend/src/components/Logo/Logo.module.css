@@ -1,0 +1,46 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  color: var(--fg-strong);
+}
+
+.mark {
+  width: 30px;
+  height: 30px;
+  transition: transform var(--t-med);
+}
+
+.logo:hover .mark {
+  transform: rotate(-8deg) scale(1.05);
+}
+
+.markBg {
+  fill: var(--brand);
+}
+
+.markInk {
+  fill: var(--on-brand);
+}
+
+.word {
+  font-size: var(--fs-xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.sm .mark {
+  width: 24px;
+  height: 24px;
+}
+
+.sm .word {
+  font-size: var(--fs-lg);
+}
+
+@media (max-width: 520px) {
+  .md .word {
+    display: none;
+  }
+}

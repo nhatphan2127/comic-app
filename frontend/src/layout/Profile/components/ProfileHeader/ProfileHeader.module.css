@@ -1,293 +1,180 @@
-/* ==========================================
-   PROFILE HEADER COMPONENT STYLES
-   ========================================== */
-
-/* Khung chứa chính của Profile Header */
-.uprofile {
-  position: relative;
-  border-radius: var(--radius-lg);
-  background: var(--surface);
+.profile {
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: var(--surface);
 }
 
-/* --- BANNER / COVER IMAGE --- */
-.uprofile__banner {
+/* ---------- Cover ---------- */
+.banner {
   position: relative;
   display: block;
-  width: 100%;
-  height: 180px;
-  background-color: var(--surface-2);
-  background-image: linear-gradient(135deg, var(--surface-2) 0%, var(--surface-3) 100%);
-  cursor: pointer;
+  height: 200px;
   overflow: hidden;
+  cursor: pointer;
+  background:
+    radial-gradient(circle at 15% 20%, color-mix(in oklab, var(--brand) 55%, transparent), transparent 55%),
+    radial-gradient(circle at 85% 80%, color-mix(in oklab, var(--warn) 35%, transparent), transparent 50%),
+    var(--surface-2);
 }
 
-.uprofile__banner-image {
+.bannerImage {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-size: cover;
+  inset: 0;
   background-position: center;
-  transition: transform 0.3s ease;
+  background-size: cover;
+  transition: transform 0.5s var(--ease);
 }
 
-.uprofile__banner:hover .uprofile__banner-image {
-  transform: scale(1.02);
+.banner:hover .bannerImage {
+  transform: scale(1.03);
 }
 
-.uprofile__banner-overlay {
+.bannerEdit {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
-  display: flex;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
+  padding: 6px var(--sp-3);
+  border-radius: var(--r-pill);
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--t-fast);
 }
 
-.uprofile__banner:hover .uprofile__banner-overlay {
+.banner:hover .bannerEdit,
+.banner:focus-within .bannerEdit {
   opacity: 1;
 }
 
-.uprofile__banner-edit-text {
-  color: #ffffff;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  background: rgba(0, 0, 0, 0.6);
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.02em;
-}
-
-/* Input file ẩn */
-.uprofile__hidden-input {
-  display: none !important;
-}
-
-/* --- PROFILE ROW (AVATAR & INFO) --- */
-.uprofile__profile-row {
+/* ---------- Identity row ---------- */
+.row {
   display: flex;
   align-items: flex-end;
-  gap: 20px;
-  padding: 0 24px 20px;
-  margin-top: -42px; /* Đẩy Avatar đè lên Banner */
-  position: relative;
-  z-index: 2;
+  gap: var(--sp-5);
+  padding: 0 var(--sp-6) var(--sp-5);
 }
 
-/* --- AVATAR WRAPPER & HOVER --- */
-.uprofile__avatar-wrap {
+.avatarWrap {
   position: relative;
-  display: inline-block;
   flex-shrink: 0;
+  margin-top: -56px;
+  border-radius: 50%;
   cursor: pointer;
-  border-radius: 50%;
-  border: 4px solid var(--surface);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
 }
 
-.uavatar {
-  color: #ffffffeb;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  vertical-align: middle;
-  border-radius: 50%;
-  flex-shrink: 0;
-  justify-content: center;
-  align-items: center;
-  font-weight: 600;
-  line-height: 1;
-  display: inline-flex;
-  overflow: hidden;
+.avatar {
+  font-size: 40px !important;
+  box-shadow: 0 0 0 5px var(--surface);
 }
 
-.uavatar > img {
-  object-fit: cover;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.uprofile__avatar {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
+.avatarEdit {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
-  position: relative;
-  overflow: hidden;
-}
-
-.uprofile__avatar-hover-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-size: 1.25rem;
+  background: rgb(0 0 0 / 0.5);
+  color: #fff;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--t-fast);
 }
 
-.uprofile__avatar-wrap:hover .uprofile__avatar-hover-overlay {
+.avatarWrap:hover .avatarEdit,
+.avatarWrap:focus-within .avatarEdit,
+.avatarEditBusy {
   opacity: 1;
 }
 
-/* --- INFO & STATS ACTIONS --- */
-.uprofile__info-actions {
+.identity {
   flex: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: 16px;
   min-width: 0;
-  padding-bottom: 2px;
+  padding-top: var(--sp-3);
 }
 
-.uprofile__identity {
-  min-width: 0;
+.name {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--fs-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.uprofile__name {
-  letter-spacing: -0.01em;
-  color: var(--text-emphasis);
-  margin: 0 0 2px;
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.2;
-  word-break: break-word;
+.handle {
+  margin: 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
 }
 
-.uprofile__username {
-  font-size: var(--text-md);
-  color: var(--text-3);
-  letter-spacing: 0.02em;
-}
-
-/* --- STATS / ACTIONS BUTTONS --- */
-.uprofile__actions {
+.stats {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
 }
 
-.uprofile__action-card {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 8px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-width: 80px;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+.stat {
+  min-width: 82px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--bg-alt);
+  text-align: center;
 }
 
-.uprofile__action-card:hover {
-  background: var(--surface-3);
-  border-color: rgb(var(--text-rgb) / 0.12);
-  transform: translateY(-1px);
+.stat dd {
+  margin: 0;
+  color: var(--fg-strong);
+  font-size: var(--fs-lg);
+  font-weight: 800;
 }
 
-.uprofile__action-card:active {
-  transform: translateY(0);
-}
-
-.uprofile__action-value {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  color: var(--text-emphasis);
-  line-height: 1.2;
-}
-
-.uprofile__action-label {
-  font-size: var(--text-2xs);
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.stat dt {
+  color: var(--fg-mute);
+  font-size: var(--fs-2xs);
   font-weight: 600;
-  margin-top: 2px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
-/* ==========================================
-   RESPONSIVE DESIGN (MOBILE & TABLET)
-   ========================================== */
-
-@media (max-width: 768px) {
-  .uprofile__banner {
-    height: 130px;
+@media (max-width: 860px) {
+  .row {
+    flex-wrap: wrap;
   }
 
-  .uprofile__profile-row {
+  .stats {
+    width: 100%;
+  }
+
+  .stat {
+    flex: 1;
+  }
+}
+
+@media (max-width: 520px) {
+  .banner {
+    height: 140px;
+  }
+
+  .row {
     flex-direction: column;
     align-items: center;
+    padding: 0 var(--sp-4) var(--sp-4);
     text-align: center;
-    margin-top: -44px;
-    padding: 0 16px 16px;
-    gap: 12px;
   }
 
-  .uprofile__info-actions {
-    flex-direction: column;
-    align-items: center;
-    width: 100%;
-    gap: 14px;
+  .identity {
+    padding-top: 0;
   }
 
-  .uprofile__identity {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .uprofile__name {
-    font-size: 1.35rem;
-  }
-
-  .uprofile__actions {
-    width: 100%;
-    justify-content: center;
+  .stats {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-  }
-
-  .uprofile__action-card {
-    min-width: 0;
-    padding: 8px 6px;
-  }
-
-  .uprofile__action-value {
-    font-size: var(--text-lg);
-  }
-
-  .uprofile__action-label {
-    font-size: 0.6rem;
-    letter-spacing: 0.04em;
-  }
-}
-
-@media (max-width: 480px) {
-  .uprofile__actions {
     grid-template-columns: repeat(2, 1fr);
   }
 }

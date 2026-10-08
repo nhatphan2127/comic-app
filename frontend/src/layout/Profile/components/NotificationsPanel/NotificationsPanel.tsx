@@ -1,269 +1,125 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Bell, CheckCheck, Megaphone } from 'lucide-react';
 import type { Notification } from '../../../../types/types';
-import { notificationApi, API_UPLOADS } from '../../../../services/api';
+import { notificationApi } from '../../../../services/api';
 import { formatTimeAgo } from '../../../../helpers/formatDate';
+import { getNotificationTab, isUnread, unreadByTab, type NotificationTab } from '../../../../helpers/notifications';
+import Segmented from '../../../../components/Segmented/Segmented';
+import PanelShell, { PanelState } from '../PanelShell/PanelShell';
+import cx from '../../../../helpers/cx';
 import style from './NotificationsPanel.module.css';
 
-const getNotificationType = (type: string): 'comic' | 'system' => {
-  const t = (type || '').toString().toLowerCase();
-  if (t.includes('system')) return 'system';
-  return 'comic';
-};
-
-const isUnread = (noti: Notification): boolean => noti.isRead === 0;
+type Filter = 'all' | 'unread';
 
 export default function NotificationsPanel() {
-  // Bộ lọc Tab (Comic / system) và Filter (All / Unread)
-  const [activeTab, setActiveTab] = useState<'comic' | 'system'>('comic');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'unread'>('all');
-
-  // Danh sách dữ liệu thông báo trực tiếp dùng type Notification
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<NotificationTab>('comic');
+  const navigate = useNavigate();
+  const [filter, setFilter] = useState<Filter>('all');
+  const [items, setItems] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Hàm tải danh sách thông báo từ server
-  const loadNotifications = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async () => {
     setError(null);
     try {
-      const items = await notificationApi.list();
-      setNotifications(items);
-    } catch (err: unknown) {
+      setItems(await notificationApi.list());
+    } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Tính toán số lượng chưa đọc riêng biệt
-  const comicUnreadCount = notifications.filter(
-    n => isUnread(n) && getNotificationType(n.type) === 'comic'
-  ).length;
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const systemUnreadCount = notifications.filter(
-    n => isUnread(n) && getNotificationType(n.type) === 'system'
-  ).length;
+  const unread = unreadByTab(items);
+  const visible = items.filter(
+    (n) => getNotificationTab(n.type) === tab && (filter === 'all' || isUnread(n)),
+  );
 
-  const totalUnreadCount = comicUnreadCount + systemUnreadCount;
-  const currentTabUnreadCount = activeTab === 'comic' ? comicUnreadCount : systemUnreadCount;
-
-  // Lọc danh sách hiển thị theo Tab và Filter được chọn
-  const filteredNotifications = notifications.filter(noti => {
-    const matchesTab = getNotificationType(noti.type) === activeTab;
-    const matchesFilter = activeFilter === 'all' || (activeFilter === 'unread' && isUnread(noti));
-    return matchesTab && matchesFilter;
-  });
-
-  // Xử lý đánh dấu đã đọc tất cả thuộc tab hiện tại
-  const handleMarkAllRead = async () => {
-    const unreadInCurrentTab = notifications.filter(
-      n => isUnread(n) && getNotificationType(n.type) === activeTab
-    );
-    if (unreadInCurrentTab.length === 0) return;
-
-    // 1. Cập nhật giao diện cục bộ ngay lập tức (Optimistic UI)
-    setNotifications(prev => 
-      prev.map(n => getNotificationType(n.type) === activeTab ? { ...n, isRead: 1 } : n)
-    );
-
+  const markAllRead = async () => {
+    const targets = unread[tab];
+    if (targets.length === 0) return;
+    setItems((prev) => prev.map((n) => (getNotificationTab(n.type) === tab ? { ...n, isRead: 1 } : n)));
     try {
-      // 2. Gửi request đồng loạt lên server để cập nhật trạng thái
-      await Promise.all(unreadInCurrentTab.map(n => notificationApi.markRead(n.id)));
+      await Promise.all(targets.map((n) => notificationApi.markRead(n.id)));
     } catch (err) {
-      console.error('Lỗi khi đánh dấu đã đọc:', err);
-    } finally {
-      // 3. Tải lại dữ liệu mới nhất từ server để đồng bộ và render lại chính xác
-      await loadNotifications();
+      console.error('Unable to mark notifications as read:', err);
+      load();
     }
   };
 
-  useEffect(() => {
-    loadNotifications();
-  }, [loadNotifications]);
+  const open = async (noti: Notification) => {
+    setItems((prev) => prev.map((n) => (n.id === noti.id ? { ...n, isRead: 1 } : n)));
+    notificationApi.markRead(noti.id).catch(() => undefined);
+    // In-app paths open without reloading the page.
+    if (noti.redirectPath?.startsWith('/')) navigate(noti.redirectPath);
+  };
 
   return (
-    <div className={style['user-content']}>
-      <div className={style['uview']}>
-        {/* Phần đầu Tiêu đề & Công cụ */}
-        <div className={`${style['uview__head']} ${style['uview__head--row']}`}>
-          <div>
-            <h2 className={style['uview__title']}>Notifications</h2>
-            <p className={style['uview__sub']}>{totalUnreadCount} unread total.</p>
-          </div>
-          <div className={style['uview__head-tools']}>
-            <button 
-              type="button" 
-              className={`${style['ubtn']} ${style['ubtn--ghost']} ${style['ubtn--sm']}`}
-              disabled={currentTabUnreadCount === 0} // Vô hiệu hóa nút khi tab hiện tại không có thông báo chưa đọc
-              onClick={handleMarkAllRead}
-            >
-              <svg 
-                width="12" 
-                height="12" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="1.8" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                aria-hidden="true"
-              >
-                <path d="M4 12l5 5L20 6"></path>
-              </svg> 
-              Mark all read
-            </button>
-          </div>
-        </div>
-
-        {/* Thanh Bộ lọc (Filters) */}
-        <div className={style['nfilters']}>
-          <div className={style['useg']}>
-            <button 
-              type="button"
-              className={`${style['useg__btn']} ${activeTab === 'comic' ? style['is-on'] || 'is-on' : ''}`}
-              onClick={() => setActiveTab('comic')}
-            >
-              <span>Comic</span>
-              {comicUnreadCount > 0 && (
-                <span className={`${style['useg__count']} ${style['mono'] || 'mono'}`}>{comicUnreadCount}</span>
-              )}
-            </button>
-            <button 
-              type="button"
-              className={`${style['useg__btn']} ${activeTab === 'system' ? style['is-on'] || 'is-on' : ''}`}
-              onClick={() => setActiveTab('system')}
-            >
-              <span>System</span>
-              {systemUnreadCount > 0 && (
-                <span className={`${style['useg__count']} ${style['mono'] || 'mono'}`}>{systemUnreadCount}</span>
-              )}
-            </button>
-          </div>
-          <div className={style['useg']}>
-            <button 
-              type="button"
-              className={`${style['useg__btn']} ${activeFilter === 'all' ? style['is-on'] || 'is-on' : ''}`}
-              onClick={() => setActiveFilter('all')}
-            >
-              All
-            </button>
-            <button 
-              type="button"
-              className={`${style['useg__btn']} ${activeFilter === 'unread' ? style['is-on'] || 'is-on' : ''}`}
-              onClick={() => setActiveFilter('unread')}
-            >
-              Unread
-            </button>
-          </div>
-        </div>
-
-        {/* Kiểm tra điều kiện hiển thị danh sách hoặc trạng thái trống */}
-        {loading ? (
-          <div className={style['uempty']}>Loading...</div>
-        ) : error ? (
-          <div className={style['uempty']}>{error}</div>
-        ) : filteredNotifications.length > 0 ? (
-          <ul className={style['nlist']}>
-            {filteredNotifications.map((noti) => {
-              const notificationUnread = isUnread(noti);
-              const notificationType = getNotificationType(noti.type);
-              const redirectHref = noti.redirectPath || '#';
-
-              return (
-                <li
-                  key={noti.id}
-                  className={`${style['nrow']} ${notificationUnread ? style['is-unread'] || 'is-unread' : ''} ${style['is-clickable'] || 'is-clickable'}`}
-                  onClick={async () => {
-                    try {
-                      // Đánh dấu đã đọc cục bộ (Optimistic UI) bằng cách gán isRead = 1
-                      setNotifications(prev =>
-                        prev.map(n => n.id === noti.id ? { ...n, isRead: 1 } : n)
-                      );
-                      await notificationApi.markRead(noti.id);
-                    } catch (_) {
-                      // Bỏ qua lỗi nếu có để không gián đoạn trải nghiệm người dùng
-                    }
-                    
-                    // Chuyển tab theo loại thông báo và chuyển hướng
-                    setActiveTab(notificationType);
-                    if (redirectHref && redirectHref !== '#') {
-                      window.location.assign(redirectHref);
-                    }
-                  }}
-                >
-                  {/* Icon Chuông báo */}
-                  <div className={`${style['nrow__icon']} ${style['nrow__icon--reply']}`}>
-                    <svg 
-                      width="14" 
-                      height="14" 
-                      viewBox="0 0 24 24" 
-                      fill="none" 
-                      stroke="currentColor" 
-                      strokeWidth="1.8" 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      aria-hidden="true"
-                    >
-                      <path d="M6 16V10a6 6 0 0 1 12 0v6l2 3H4l2-3z"></path>
-                      <path d="M10 20a2 2 0 0 0 4 0"></path>
-                    </svg>
-                  </div>
-
-                  {/* Nội dung thông báo */}
-                  <div className={style['nrow__body']}>
-                    <div className={style['nrow__text']}>
-                      <b>{noti.title}</b>
-                    </div>
-                    <div className={style['nrow__meta']}>
-                      <span>{formatTimeAgo(noti.createdAt)}</span>
-                    </div>
-                  </div>
-
-                  {/* Poster ảnh thu nhỏ */}
-                  <a 
-                    className={style['nrow__poster']} 
-                    href={redirectHref} 
-                    aria-hidden="true" 
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    <div className={`${style['poster']} ${style['poster--xs']}`}>
-                      <img alt="" loading="lazy" src={API_UPLOADS + 'comic/default-cover.jpg'} />
-                    </div>
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          /* Giao diện trạng thái trống (Empty State) */
-          <div className={style['uempty']}>
-            <div className={style['uempty__icon']}>
-              <svg 
-                width="24" 
-                height="24" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="1.8" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                aria-hidden="true"
-              >
-                <path d="M6 16V10a6 6 0 0 1 12 0v6l2 3H4l2-3z"></path>
-                <path d="M10 20a2 2 0 0 0 4 0"></path>
-              </svg>
-            </div>
-            <div className={style['uempty__title']}>Nothing here.</div>
-            <div className={style['uempty__sub']}>
-              {activeTab === 'comic' 
-                ? 'No comic notifications yet.' 
-                : 'No system notifications yet.'
-              }
-            </div>
-          </div>
-        )}
+    <PanelShell
+      title="Notifications"
+      subtitle={`${unread.comic.length + unread.system.length} unread`}
+      actions={
+        <button type="button" className="btn btn--ghost btn--sm" disabled={unread[tab].length === 0} onClick={markAllRead}>
+          <CheckCheck size={14} />
+          Mark all read
+        </button>
+      }
+    >
+      <div className={style.filters}>
+        <Segmented
+          ariaLabel="Notification type"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'comic', label: 'Comics', count: unread.comic.length },
+            { value: 'system', label: 'System', count: unread.system.length },
+          ]}
+        />
+        <Segmented
+          ariaLabel="Filter"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'unread', label: 'Unread' },
+          ]}
+        />
       </div>
-    </div>
+
+      <PanelState
+        loading={loading}
+        error={error}
+        empty={visible.length === 0}
+        emptyTitle="You're all caught up"
+        emptyText={`No ${filter === 'unread' ? 'unread ' : ''}${tab} notifications.`}
+      >
+        <ul className={style.list}>
+          {visible.map((noti) => {
+            const unreadItem = isUnread(noti);
+            const system = getNotificationTab(noti.type) === 'system';
+            return (
+              <li key={noti.id}>
+                <button type="button" className={cx(style.row, unreadItem && style.unread)} onClick={() => open(noti)}>
+                  <span className={cx(style.icon, system && style.iconSystem)}>
+                    {system ? <Megaphone size={16} /> : <Bell size={16} />}
+                  </span>
+                  <span className={style.body}>
+                    <span className={style.title}>{noti.title}</span>
+                    {noti.content ? <span className={style.content}>{noti.content}</span> : null}
+                    <span className={style.time}>{formatTimeAgo(noti.createdAt)}</span>
+                  </span>
+                  {unreadItem ? <span className={style.dot} aria-label="Unread" /> : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </PanelState>
+    </PanelShell>
   );
 }

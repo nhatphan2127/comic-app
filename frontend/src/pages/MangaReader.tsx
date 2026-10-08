@@ -1,8 +1,5 @@
-import MangaReaderLayout from "../layout/MangaReaderLayout/MangaReaderLayout.tsx"
+import MangaReaderLayout from '../layout/MangaReaderLayout/MangaReaderLayout';
 
-
-export default function Home() {
-    return (
-        <MangaReaderLayout />
-    )
+export default function MangaReader() {
+  return <MangaReaderLayout />;
 }

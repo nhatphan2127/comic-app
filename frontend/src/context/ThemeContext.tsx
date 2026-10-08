@@ -29,12 +29,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('app-theme', theme);
   }, [theme]);
 
-  const handleSetTheme = (newTheme: Theme) => {
-    setTheme(newTheme);
-  };
-
+  // `setTheme` from useState is stable, so effects can depend on it.
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: handleSetTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );

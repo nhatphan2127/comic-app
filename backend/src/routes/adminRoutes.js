@@ -1,27 +1,32 @@
 import express from 'express';
 import { authenticateToken, requireRole } from '../middlewares/authMiddleware.js';
-import {
-  assignUserRole,
-  getAdminDashboard,
-  setAutoAccept,
-  toggleUserBan,
-  toggleCommentBan,
-  updateComicVisibility,
-  updateChapterVisibility,
-  getAdminComicsForDashboard,
-  getAdminChaptersForDashboard,
-} from '../controllers/adminController.js';
+import * as admin from '../controllers/adminController.js';
+import * as reports from '../controllers/reportController.js';
 
-const router = express.Router();
+// ---------- /admin (admins only) ----------
+export const adminRouter = express.Router();
+adminRouter.use(authenticateToken, requireRole('admin'));
 
-router.get('/dashboard', authenticateToken, requireRole('admin'), getAdminDashboard);
-router.get('/comics-dashboard', authenticateToken, requireRole('admin'), getAdminComicsForDashboard);
-router.get('/chapters-dashboard', authenticateToken, requireRole('admin'), getAdminChaptersForDashboard);
-router.patch('/comics/:comicId/visibility', authenticateToken, requireRole('admin'), updateComicVisibility);
-router.patch('/chapters/:chapterId/visibility', authenticateToken, requireRole('admin'), updateChapterVisibility);
-router.patch('/settings/auto-accept', authenticateToken, requireRole('admin'), setAutoAccept);
-router.patch('/users/:userId/ban', authenticateToken, requireRole('admin'), toggleUserBan);
-router.patch('/comments/:targetType/:commentId/ban', authenticateToken, requireRole('admin'), toggleCommentBan);
-router.patch('/users/:userId/role', authenticateToken, requireRole('admin'), assignUserRole);
+adminRouter.get('/dashboard', admin.getDashboard);
+adminRouter.get('/comics', admin.listContent('comic'));
+adminRouter.patch('/comics/:comicId', admin.updateVisibility('comic'));
+adminRouter.get('/chapters', admin.listContent('chapter'));
+adminRouter.patch('/chapters/:chapterId', admin.updateVisibility('chapter'));
+adminRouter.patch('/users/:userId', admin.updateUser);
+adminRouter.patch('/comments/:commentId', admin.updateComment);
+adminRouter.get('/settings', admin.getSettings);
+adminRouter.patch('/settings', admin.updateSettings);
 
-export default router;
+// ---------- /moderation (admins and moderators) ----------
+export const moderationRouter = express.Router();
+moderationRouter.use(authenticateToken, requireRole('admin', 'moderator'));
+
+moderationRouter.get('/queue', admin.getQueue);
+moderationRouter.get('/comics', admin.listContent('comic'));
+moderationRouter.get('/comics/:comicId', admin.getComicForReview);
+moderationRouter.patch('/comics/:comicId', admin.review('comic'));
+moderationRouter.get('/chapters', admin.listContent('chapter'));
+moderationRouter.patch('/chapters/:chapterId', admin.review('chapter'));
+moderationRouter.delete('/comments/:commentId', admin.forceDeleteComment);
+moderationRouter.get('/reports', reports.listReports);
+moderationRouter.patch('/reports/:reportId', reports.updateReport);
