@@ -25,7 +25,7 @@ export default function LoginForm({ onSwitch, onForgot, onSuccess }: Props) {
 
     try {
       const session = await authApi.login(userName, password);
-      login(session.token, session.user);
+      login(session.user);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Có lỗi xảy ra trong quá trình đăng nhập');

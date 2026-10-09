@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { api, models, createUser, createComic, createChapter, auth } from './helpers.js';
+import { api, models, createUser, createComic, createChapter, approve, auth } from './helpers.js';
 
 describe('admin & moderation', () => {
   it('admin routes reject non-admins', async () => {
@@ -13,8 +13,12 @@ describe('admin & moderation', () => {
     const owner = await createUser('contributor');
     const comic = await createComic(owner);
     const chapter = await createChapter(owner, comic.id);
-    await api().post(`/comics/${comic.id}/comments`).set(auth(owner)).send({ content: 'a' });
-    await api().post(`/chapters/${chapter.id}/comments`).set(auth(owner)).send({ content: 'b' });
+    // Comments only go on approved content, so they live on another comic.
+    const live = await createComic(owner);
+    const liveChapter = await createChapter(owner, live.id);
+    await approve({ comicId: live.id, chapterIds: [liveChapter.id] });
+    await api().post(`/comics/${live.id}/comments`).set(auth(owner)).send({ content: 'a' });
+    await api().post(`/chapters/${liveChapter.id}/comments`).set(auth(owner)).send({ content: 'b' });
 
     const res = await api().get('/admin/dashboard').set(auth(admin));
     expect(res.status).toBe(200);
@@ -82,6 +86,7 @@ describe('admin & moderation', () => {
     const admin = await createUser('admin');
     const owner = await createUser('contributor');
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const c = await api().post(`/comics/${comic.id}/comments`).set(auth(owner)).send({ content: 'x' });
 
     const res = await api().patch(`/admin/comments/${c.body.data.id}`).set(auth(admin)).send({ isBanned: true });

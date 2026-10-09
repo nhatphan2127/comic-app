@@ -1,5 +1,5 @@
 // comic_contributors and chapter_contributors have the same shape; `type` picks the model.
-import { col } from 'sequelize';
+import { col, literal } from 'sequelize';
 import { now } from '../config/database.js';
 import { Chapter, ChapterContributor, Comic, ComicContributor, User } from '../models/index.js';
 import { BadRequestError } from '../errors.js';
@@ -58,6 +58,7 @@ export const listComicContributionsOfUser = (userId) =>
       'comicId', ...CONTRIBUTION_COLUMNS,
       [col('comic.id'), 'id'], [col('comic.name'), 'name'], [col('comic.coverUrl'), 'coverUrl'],
       [col('comic.url'), 'url'], [col('comic.types'), 'types'], [col('comic.demographic'), 'demographic'],
+      [literal('comic.pendingChanges IS NOT NULL'), 'pendingEdit'],
     ],
     include: [{ model: Comic, as: 'comic', attributes: [], required: true }],
     where: { userId },

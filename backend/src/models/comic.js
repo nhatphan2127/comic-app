@@ -18,6 +18,8 @@ export const Comic = sequelize.define('Comic', {
   source: TEXT,
   types: required(TEXT), // manga, manhwa, manhua, other
   status: withDefault(TEXT, 'pending'), // pending, accept, reject (moderation)
+  // An edit of an approved comic waiting for review (JSON); readers keep seeing the approved version.
+  pendingChanges: TEXT,
   contentRating: required(TEXT), // safe, suggestive, erotica, pornographic
   demographic: required(TEXT), // josei, seinen, shoujo, shounen
   description: TEXT,

@@ -8,6 +8,7 @@ import * as lookupRepo from '../repositories/lookupRepository.js';
 import * as contributorRepo from '../repositories/contributorRepository.js';
 import { canManageComic } from './permissions.js';
 import { initialReviewStatus } from './settingsService.js';
+import { removeStoredFiles } from '../utils/storedFiles.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors.js';
 
 const LATEST_CHAPTERS_PER_COMIC = 3;
@@ -99,10 +100,41 @@ export async function getPublicDetail(key, viewerId = null) {
   };
 }
 
+// A comic as it will look once its parked edit (if any) is accepted: what moderators review and what the
+// studio editor starts from. `pendingEdit` tells whether readers currently see an older, approved version.
+async function toLatestDetail(comic) {
+  const detail = await toDetail(comic);
+  if (!comic.pendingChanges) return { ...detail, pendingEdit: false };
+  const { columns, author, artist, genres, formats } = JSON.parse(comic.pendingChanges);
+  const { authorId, artistId, ...fields } = columns;
+  const names = (values) => (Array.isArray(values) ? values : values ? [values] : []);
+  return {
+    ...detail,
+    ...fields,
+    author: author || null,
+    artist: artist || null,
+    genres: names(genres),
+    formats: names(formats),
+    status: 'pending',
+    pendingEdit: true,
+  };
+}
+
 export async function getDetailForModeration(comicId) {
   const comic = await comicRepo.findDetailById(comicId);
   if (!comic) throw new NotFoundError('Comic not found');
-  return toDetail(comic);
+  return toLatestDetail(comic);
+}
+
+// The studio editor: `key` is the id or url slug of a comic the user may manage, in any review state.
+export async function getForEditing(user, key) {
+  const comic = await comicRepo.findDetailForEditing(key);
+  if (!comic || !(await canManageComic(user, comic.id))) throw new NotFoundError('Comic not found');
+  const [detail, otherNames] = await Promise.all([toLatestDetail(comic), comicRepo.listOtherNames(comic.id)]);
+  return {
+    ...detail,
+    names: [{ name: detail.name, country: 'global' }, ...otherNames.map(({ name, country }) => ({ name, country }))],
+  };
 }
 
 // ---------- Writing ----------
@@ -156,23 +188,70 @@ export async function create(user, input, coverFilename) {
   return { id, name: input.name, coverUrl, status };
 }
 
-// Editing sends the comic back to moderation.
+// Every edit goes through moderation. A comic that is not live yet is edited in place and goes back to
+// "pending". A live (approved) comic must stay readable meanwhile, so the edit is parked in
+// `pendingChanges` and only applied when a moderator accepts it; rejecting it keeps the approved version.
+// Cover files nothing points to any more are deleted once the change has committed; a new upload is
+// deleted when the edit fails.
 export async function update(user, comicId, input, coverFilename) {
-  const existing = await comicRepo.findById(comicId);
-  if (!existing) throw new NotFoundError('Comic not found');
-  if (!(await canManageComic(user, comicId))) throw new ForbiddenError('You can only edit comics you contribute to');
-  requireComicFields(input);
+  const newCover = coverFilename ? `comics/${coverFilename}` : null;
+  try {
+    const existing = await comicRepo.findById(comicId);
+    if (!existing) throw new NotFoundError('Comic not found');
+    if (!(await canManageComic(user, comicId))) throw new ForbiddenError('You can only edit comics you contribute to');
+    requireComicFields(input);
 
-  const coverUrl = coverFilename ? `comics/${coverFilename}` : existing.coverUrl;
+    const live = existing.status === 'accept';
+    const parked = existing.pendingChanges ? JSON.parse(existing.pendingChanges) : null;
+    // A new edit of a live comic starts from the cover of the edit it replaces, if any.
+    const coverUrl = newCover ?? (live && parked ? parked.columns.coverUrl : existing.coverUrl);
 
-  await withTransaction(async () => {
-    if (await comicRepo.findOtherWithUrl(input.url, comicId)) throw new ConflictError('Comic URL already exists');
+    await withTransaction(async () => {
+      if (await comicRepo.findOtherWithUrl(input.url, comicId)) throw new ConflictError('Comic URL already exists');
 
-    const columns = await resolveComicColumns(input);
-    await comicRepo.updateAndResubmit(comicId, { ...columns, coverUrl });
-    await saveLinks(comicId, input);
-    await contributorRepo.setStatusForUser('comic', comicId, user.id, 'pending');
-  });
+      const columns = await resolveComicColumns(input);
+      if (live) {
+        await comicRepo.setPendingChanges(comicId, {
+          columns: { ...columns, coverUrl },
+          author: input.author || null,
+          artist: input.artist || null,
+          genres: input.genres ?? [],
+          formats: input.formats ?? [],
+        });
+      } else {
+        await comicRepo.updateAndResubmit(comicId, { ...columns, coverUrl });
+        await saveLinks(comicId, input);
+      }
+      await contributorRepo.setStatusForUser('comic', comicId, user.id, 'pending');
+    });
 
-  return { id: comicId, name: input.name, coverUrl, status: 'pending' };
+    // Live: the replaced edit's own cover. Not live: the old cover, replaced in place.
+    const unused = live ? parked?.columns.coverUrl : existing.coverUrl;
+    if (unused && unused !== coverUrl && unused !== existing.coverUrl) await removeStoredFiles([unused]);
+    if (!live && existing.coverUrl !== coverUrl) await removeStoredFiles([existing.coverUrl]);
+
+    return { id: comicId, name: input.name, coverUrl, status: 'pending' };
+  } catch (err) {
+    if (newCover) await removeStoredFiles([newCover]);
+    throw err;
+  }
+}
+
+// Moderation decided on a parked edit (call inside the review transaction). Accepting makes it the live
+// version; rejecting drops it. Either way the comic itself stays approved and readable.
+// Returns the cover files no longer used, for the caller to delete once the transaction has committed.
+export async function settlePendingEdit(comicId, accept) {
+  const comic = await comicRepo.findById(comicId);
+  if (!comic?.pendingChanges) return [];
+  const { columns, genres, formats } = JSON.parse(comic.pendingChanges);
+  const changedCover = columns.coverUrl !== comic.coverUrl;
+  if (!accept) {
+    await comicRepo.setPendingChanges(comicId, null);
+    return changedCover ? [columns.coverUrl] : [];
+  }
+  // The url was free when the edit was made, but another comic may have taken it since.
+  if (await comicRepo.findOtherWithUrl(columns.url, comicId)) throw new ConflictError('Comic URL already exists');
+  await comicRepo.applyPendingChanges(comicId, columns);
+  await saveLinks(comicId, { genres, formats });
+  return changedCover ? [comic.coverUrl] : [];
 }

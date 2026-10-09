@@ -1,5 +1,5 @@
 // src/services/api.ts
-import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, UserComment } from '../types/types';
+import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, ApiKey, ApiKeyScope, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, UserComment } from '../types/types';
 
 export const API_ORIGIN = 'http://localhost:5000';
 // Versioned REST API (see backend/docs/api-conventions.md). Interactive docs: http://localhost:5000/api/docs
@@ -17,6 +17,19 @@ export interface ComicSearchResult {
   types?: string;
   rating?: number;
   latestChapter?: number | null;
+}
+
+export interface UploadableComic {
+  id: string;
+  name: string;
+  url: string;
+  coverUrl: string | null;
+  types: string;
+  status: 'pending' | 'accept' | 'reject';
+  visibility: 'public' | 'hidden';
+  /** Highest chapter number already taken, pending chapters included. */
+  latestChapter: number | null;
+  mine: boolean;
 }
 
 export interface BrowseFilters {
@@ -89,14 +102,17 @@ export class ApiError extends Error {
   }
 }
 
+// The auth middleware's 401 messages. Other 401s (a wrong current password) keep the session.
+const SESSION_ENDED = ['Invalid or expired session token', 'Authentication required'];
+
 async function send<T>(path: string, init?: RequestInit): Promise<{ data: T; meta?: PageMeta }> {
-  const response = await fetch(`${API_BASE_URL}${path}`, init);
+  // The session lives in an HttpOnly cookie for the API origin; 'include' sends it cross-origin.
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, credentials: 'include' });
 
   if (!response.ok) {
     const problem = await response.json().catch(() => null);
-    // Our token was rejected (expired, logged out elsewhere, password reset): drop the local session.
-    // Matched on the auth middleware's message, since other 401s (a wrong current password) keep the session.
-    if (response.status === 401 && problem?.detail === 'Invalid or expired session token') {
+    // The session is gone (expired, logged out elsewhere, password reset, cookie missing): drop the local copy.
+    if (response.status === 401 && SESSION_ENDED.includes(problem?.detail)) {
       window.dispatchEvent(new Event('auth-expired'));
     }
     throw new ApiError(response.status, problem?.detail || problem?.title || `Request failed (${response.status})`);
@@ -140,12 +156,6 @@ const query = (params: Record<string, string | number | undefined | null>) => {
 const contentRatingParam = (contentFilter?: ContentFilter | string) =>
   getContentRatingValues(contentFilter ?? getStoredContentFilter()).join(',');
 
-// Get authorization header with the session token from localStorage
-const getAuthHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
-};
-
 // The UI loads comments with limit/offset ("load more"); the API pages with page/pageSize.
 const COMMENT_SORT = { best: '-score', newest: '-createdAt', oldest: 'createdAt' } as const;
 type CommentSort = keyof typeof COMMENT_SORT;
@@ -154,7 +164,6 @@ async function listComments(kind: 'comics' | 'chapters', targetId: string, limit
   const page = Math.floor(offset / limit) + 1;
   const { data, meta } = await requestPage<Comment>(
     `/${kind}/${targetId}/comments${query({ page, pageSize: limit, sort: COMMENT_SORT[sortBy] })}`,
-    { headers: getAuthHeaders() },
   );
   return { comments: data, total: meta.totalItems, sortBy };
 }
@@ -163,17 +172,15 @@ async function listComments(kind: 'comics' | 'chapters', targetId: string, limit
 const commentById = {
   react: (commentId: string, reactionType: 'like' | 'dislike' | 'none') =>
     reactionType === 'none'
-      ? request<void>(`/comments/${commentId}/reaction`, { method: 'DELETE', headers: getAuthHeaders() })
+      ? request<void>(`/comments/${commentId}/reaction`, { method: 'DELETE' })
       : request<{ likes: number; dislikes: number; userReaction: string }>(`/comments/${commentId}/reaction`, {
         method: 'PUT',
-        headers: getAuthHeaders(),
         body: JSON.stringify({ type: reactionType }),
       }),
-  remove: (commentId: string) => request<void>(`/comments/${commentId}`, { method: 'DELETE', headers: getAuthHeaders() }),
+  remove: (commentId: string) => request<void>(`/comments/${commentId}`, { method: 'DELETE' }),
   edit: (commentId: string, content: string) =>
     request<{ id: string; content: string }>(`/comments/${commentId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ content }),
     }),
 };
@@ -181,7 +188,6 @@ const commentById = {
 const postComment = (kind: 'comics' | 'chapters', targetId: string, content: string, parentCommentId?: string) =>
   request<Comment>(`/${kind}/${targetId}/comments`, {
     method: 'POST',
-    headers: getAuthHeaders(),
     body: JSON.stringify({ content, parentCommentId }),
   });
 
@@ -233,8 +239,11 @@ export const comicApi = {
     }));
   },
 
-  // use MangaDetailLayout.tsx (accepts the url slug or the id)
-  getByUrl: (url: string) => request<Comic>(`/comics/${url}`, { headers: getAuthHeaders() }),
+  // use MangaDetailLayout.tsx (accepts the url slug or the id). Approved, public comics only.
+  getByUrl: (url: string) => request<Comic>(`/comics/${url}`),
+
+  // use the studio editor: a comic I may edit, in any review state, with its edit awaiting review if any
+  getForEditing: (urlOrId: string) => request<Comic>(`/me/editable-comics/${urlOrId}`),
 
   // use MangaDetailLayout.tsx: every chapter, paginated on the client
   getChaptersByUrl: async (url: string) => (await requestPage<Chapter>(`/comics/${url}/chapters?pageSize=1000`)).data,
@@ -249,13 +258,13 @@ export const comicApi = {
 
   getUserComments: async (sortBy: 'recent' | 'most-liked' | 'most-replies' = 'recent') => {
     const sort = { recent: '-createdAt', 'most-liked': '-likes', 'most-replies': '-replyCount' }[sortBy];
-    return (await requestPage<UserComment>(`/me/comments${query({ sort, pageSize: 100 })}`, { headers: getAuthHeaders() })).data;
+    return (await requestPage<UserComment>(`/me/comments${query({ sort, pageSize: 100 })}`)).data;
   },
 
   // use MangaDetailLayout.tsx: 404 means "not following"
   getFollowStatus: async (comicId: string) => {
     try {
-      await request(`/me/following/${comicId}`, { headers: getAuthHeaders() });
+      await request(`/me/following/${comicId}`);
       return { isFollowing: true };
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) return { isFollowing: false };
@@ -266,7 +275,6 @@ export const comicApi = {
   rate: async (comicId: string, rating: number) => {
     const data = await request<{ comicId: string; averageRating: number; userRating: number }>(`/me/ratings/${comicId}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ rating }),
     });
     return { comicId: data.comicId, newAverageRating: data.averageRating, userRating: data.userRating };
@@ -276,45 +284,43 @@ export const comicApi = {
   unrate: async (comicId: string) => {
     const data = await request<{ comicId: string; averageRating: number; userRating: number }>(`/me/ratings/${comicId}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(),
     });
     return { comicId: data.comicId, newAverageRating: data.averageRating, userRating: 0 };
   },
 
   // use MangaDetailLayout.tsx
   follow: async (comicId: string) => {
-    await request(`/me/following/${comicId}`, { method: 'PUT', headers: getAuthHeaders() });
+    await request(`/me/following/${comicId}`, { method: 'PUT' });
     return { isFollowing: true };
   },
 
   // use MangaDetailLayout.tsx
   unfollow: async (comicId: string) => {
-    await request(`/me/following/${comicId}`, { method: 'DELETE', headers: getAuthHeaders() });
+    await request(`/me/following/${comicId}`, { method: 'DELETE' });
     return { isFollowing: false };
   },
 
   // Create a new comic (multipart form - requires FormData)
   create: (formData: FormData) =>
-    multipartRequest<Comic>(`/comics`, formData, { method: 'POST', headers: getAuthHeaders() }),
+    multipartRequest<Comic>(`/comics`, formData, { method: 'POST' }),
 
   // Update an existing comic and reset it back to pending review
   update: (comicId: string, formData: FormData) =>
-    multipartRequest<Comic>(`/comics/${comicId}`, formData, { method: 'PATCH', headers: getAuthHeaders() }),
+    multipartRequest<Comic>(`/comics/${comicId}`, formData, { method: 'PATCH' }),
 
   // Create a new chapter for a comic (multipart form - requires FormData)
   createChapter: (comicId: string, formData: FormData) =>
-    multipartRequest<Chapter>(`/comics/${comicId}/chapters`, formData, { method: 'POST', headers: getAuthHeaders() }),
+    multipartRequest<Chapter>(`/comics/${comicId}/chapters`, formData, { method: 'POST' }),
 };
 
 // Chapter-related API endpoints
 export const chapterApi = {
   // Chapter pages (plus the reader's saved progress when logged in)
-  getDetails: (chapterId: string) => request<Chapter>(`/chapters/${chapterId}`, { headers: getAuthHeaders() }),
+  getDetails: (chapterId: string) => request<Chapter>(`/chapters/${chapterId}`),
 
   saveReadingHistory: (chapterId: string, currentPage: number) =>
     request<{ chapterId: string; currentPage: number }>(`/me/history/${chapterId}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ currentPage }),
     }),
 
@@ -330,74 +336,70 @@ export const chapterApi = {
 // Current user's profile and settings (/me)
 export const userApi = {
   // EditProfilePanel.tsx
-  getProfile: () => request<UserProfile>('/me', { headers: getAuthHeaders() }),
+  getProfile: () => request<UserProfile>('/me'),
 
   // EditProfilePanel.tsx: only the fields sent change
   updateProfile: (profileData: Partial<UserProfile>) =>
-    request<UserProfile>('/me', { method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify(profileData) }),
+    request<UserProfile>('/me', { method: 'PATCH', body: JSON.stringify(profileData) }),
 
   // EditProfilePanel.tsx (204: other sessions are logged out)
   updatePassword: (currentPassword: string, newPassword: string, confirmPassword: string) =>
     request<void>('/me/password', {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
     }),
 
   uploadAvatar: (avatarFile: File) => {
     const formData = new FormData();
     formData.append('avatar', avatarFile);
-    return multipartRequest<UserProfile>('/me/avatar', formData, { method: 'PUT', headers: getAuthHeaders() });
+    return multipartRequest<UserProfile>('/me/avatar', formData, { method: 'PUT' });
   },
 
   uploadBackground: (backgroundFile: File) => {
     const formData = new FormData();
     formData.append('background', backgroundFile);
-    return multipartRequest<UserProfile>('/me/background', formData, { method: 'PUT', headers: getAuthHeaders() });
+    return multipartRequest<UserProfile>('/me/background', formData, { method: 'PUT' });
   },
 
   // Only the fields sent change (see PreferenceSync).
   updatePreferences: (preferences: Preferences) =>
-    request<Preferences>('/me/preferences', { method: 'PATCH', headers: getAuthHeaders(), body: JSON.stringify(preferences) }),
+    request<Preferences>('/me/preferences', { method: 'PATCH', body: JSON.stringify(preferences) }),
 
   // FollowingTitlesPanel.tsx
-  getFollowingList: () => request<FollowingComic[]>('/me/following', { headers: getAuthHeaders() }),
+  getFollowingList: () => request<FollowingComic[]>('/me/following'),
 
-  getFollowingCategories: () => request<UserFollowingCategory[]>('/me/following-categories', { headers: getAuthHeaders() }),
+  getFollowingCategories: () => request<UserFollowingCategory[]>('/me/following-categories'),
 
   createFollowingCategory: (category: string) =>
     request<UserFollowingCategory>('/me/following-categories', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ category }),
     }),
 
   updateFollowingCategory: (categoryId: string, category: string) =>
     request<UserFollowingCategory>(`/me/following-categories/${categoryId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ category }),
     }),
 
   deleteFollowingCategory: (categoryId: string) =>
-    request<void>(`/me/following-categories/${categoryId}`, { method: 'DELETE', headers: getAuthHeaders() }),
+    request<void>(`/me/following-categories/${categoryId}`, { method: 'DELETE' }),
 
   // Moving a followed comic = PUT the follow again with the new category.
   updateFollowingComicCategory: async (comicId: string, categoryId: string | null) => {
     const data = await request<{ comicId: string; categoryId: string | null }>(`/me/following/${comicId}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ categoryId }),
     });
     return { comicId: data.comicId, followingCategoryId: data.categoryId };
   },
 
   // The 100 most recent entries
-  getReadingHistory: async () => (await requestPage<HistoryItem>('/me/history?pageSize=100', { headers: getAuthHeaders() })).data,
+  getReadingHistory: async () => (await requestPage<HistoryItem>('/me/history?pageSize=100')).data,
 
-  deleteHistoryItem: (chapterId: string) => request<void>(`/me/history/${chapterId}`, { method: 'DELETE', headers: getAuthHeaders() }),
+  deleteHistoryItem: (chapterId: string) => request<void>(`/me/history/${chapterId}`, { method: 'DELETE' }),
 
-  clearReadingHistory: () => request<void>('/me/history', { method: 'DELETE', headers: getAuthHeaders() }),
+  clearReadingHistory: () => request<void>('/me/history', { method: 'DELETE' }),
 };
 
 // Public profiles (no login needed)
@@ -412,11 +414,15 @@ export const publicUserApi = {
 
 // Login, registration and password reset (no token needed)
 export const authApi = {
+  // The session token comes back only as an HttpOnly cookie, never in the body.
   login: (userName: string, password: string) =>
-    request<{ token: string; expiresAt: string; user: { id: string; userName: string; role?: string } }>('/auth/login', {
+    request<{ expiresAt: string; user: { id: string; userName: string; role?: string } }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ userName, password }),
     }),
+
+  // Ends the session on the server and clears the cookie (scripts cannot clear an HttpOnly cookie).
+  logout: () => request<void>('/auth/logout', { method: 'POST' }),
 
   register: (userName: string, email: string, password: string, displayName: string) =>
     request<{ id: string }>('/auth/register', { method: 'POST', body: JSON.stringify({ userName, email, password, displayName }) }),
@@ -432,26 +438,24 @@ export const authApi = {
 // Notifications API
 export const notificationApi = {
   // The 100 most recent notifications
-  list: async () => (await requestPage<Notification>('/me/notifications?pageSize=100', { headers: getAuthHeaders() })).data,
+  list: async () => (await requestPage<Notification>('/me/notifications?pageSize=100')).data,
 
   markRead: (id: string) =>
     request<Notification>(`/me/notifications/${id}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ isRead: true }),
     }),
 };
 
 // Comic Contributors API
 export const comicContributorApi = {
-  listMyContributions: () => request<ComicContributor[]>('/me/contributions/comics', { headers: getAuthHeaders() }),
+  listMyContributions: () => request<ComicContributor[]>('/me/contributions/comics'),
 
-  getByComic: (comicId: string) => request<ChapterContributor[]>(`/comics/${comicId}/contributors`, { headers: getAuthHeaders() }),
+  getByComic: (comicId: string) => request<ChapterContributor[]>(`/comics/${comicId}/contributors`),
 
   updateStatus: (comicId: string, userId: string, status: 'accept' | 'reject') =>
     request<{ status: string }>(`/comics/${comicId}/contributors/${userId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     }),
 };
@@ -459,15 +463,14 @@ export const comicContributorApi = {
 // Chapter Contributors API
 export const chapterContributorApi = {
   // Chapters I've contributed to, with their status
-  listMyContributions: () => request<ChapterContributor[]>('/me/contributions/chapters', { headers: getAuthHeaders() }),
+  listMyContributions: () => request<ChapterContributor[]>('/me/contributions/chapters'),
 
-  getByChapter: (chapterId: string) => request<ChapterContributor[]>(`/chapters/${chapterId}/contributors`, { headers: getAuthHeaders() }),
+  getByChapter: (chapterId: string) => request<ChapterContributor[]>(`/chapters/${chapterId}/contributors`),
 
   // Update contributor status (for moderators/admins)
   updateStatus: (chapterId: string, userId: string, status: 'accept' | 'reject') =>
     request<{ status: string }>(`/chapters/${chapterId}/contributors/${userId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     }),
 };
@@ -475,31 +478,42 @@ export const chapterContributorApi = {
 export const moderationApi = {
   getQueue: (comicStatus?: 'pending' | 'accept' | 'reject', chapterStatus?: 'pending' | 'accept' | 'reject') =>
     request<{ comics: Comic[]; chapters: Chapter[] }>(`/moderation/queue${query({ comicStatus, chapterStatus })}`, {
-      headers: getAuthHeaders(),
     }),
 
   review: (targetType: 'comic' | 'chapter', targetId: string, status: 'accept' | 'reject') =>
     request<{ id: string; status: string }>(`/moderation/${targetType === 'comic' ? 'comics' : 'chapters'}/${targetId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     }),
 
-  getComicDetail: (comicId: string) => request<Comic>(`/moderation/comics/${comicId}`, { headers: getAuthHeaders() }),
+  getComicDetail: (comicId: string) => request<Comic>(`/moderation/comics/${comicId}`),
 
-  getReports: async (status?: ReportStatus) =>
-    (await requestPage<Report>(`/moderation/reports${query({ status, pageSize: 100 })}`, { headers: getAuthHeaders() })).data,
+  // Any chapter with its pages (pending or hidden too); unlike /chapters/:id it is not recorded as reading.
+  getChapterDetail: (chapterId: string) => request<Chapter>(`/moderation/chapters/${chapterId}`),
+
+  listReports: (params: { status?: ReportStatus; page?: number; pageSize?: number }) =>
+    requestPage<Report>(`/moderation/reports${query({ ...params })}`),
+
+  /** Number of reports in a state (one tiny page, read from `meta`). */
+  countReports: async (status: ReportStatus) =>
+    (await requestPage<Report>(`/moderation/reports${query({ status, pageSize: 1 })}`)).meta.totalItems,
+
+  /** Comics + chapters waiting for review. */
+  countPending: async () => {
+    const queue = await request<{ comics: Comic[]; chapters: Chapter[] }>('/moderation/queue?comicStatus=pending&chapterStatus=pending', {
+    });
+    return (queue.comics?.length ?? 0) + (queue.chapters?.length ?? 0);
+  },
 
   updateReport: (reportId: string, status: ReportStatus) =>
     request<{ id: string; status: ReportStatus }>(`/moderation/reports/${reportId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ status }),
     }),
 
   // Soft-deletes anyone's comment (it shows as "deleted" in the thread).
   deleteComment: (commentId: string) =>
-    request<void>(`/moderation/comments/${commentId}`, { method: 'DELETE', headers: getAuthHeaders() }),
+    request<void>(`/moderation/comments/${commentId}`, { method: 'DELETE' }),
 };
 
 // Any logged-in reader can flag a comic or a comment for the moderators.
@@ -507,18 +521,69 @@ export const reportApi = {
   create: (targetType: ReportTargetType, targetId: string, reason: string, details?: string) =>
     request<Report>('/reports', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ targetType, targetId, reason, details }),
     }),
 };
 
+// A reader asking to become a contributor (profile → "Become a contributor").
+export const roleRequestApi = {
+  get: () => request<RoleRequestState>('/me/role-request'),
+
+  create: (reason: string, portfolio?: string) =>
+    request<RoleRequest>('/me/role-request', {
+      method: 'POST',
+      body: JSON.stringify({ reason, portfolio }),
+    }),
+
+  cancel: () => request<void>('/me/role-request', { method: 'DELETE' }),
+};
+
+// Keys for the publishing API (Studio → API keys).
+export const apiKeyApi = {
+  list: () => request<ApiKey[]>('/me/api-keys'),
+
+  /** The response's `token` is the full key; the server never shows it again. */
+  create: (body: { name: string; password: string; scopes: ApiKeyScope[]; expiresInDays: number }) =>
+    request<ApiKey>('/me/api-keys', { method: 'POST', body: JSON.stringify(body) }),
+
+  revoke: (keyId: string) => request<void>(`/me/api-keys/${keyId}`, { method: 'DELETE' }),
+
+  /** Comics the user's keys can add chapters to: approved ones plus the unreviewed ones they contribute to. */
+  listUploadableComics: (params: { q?: string; page?: number; pageSize?: number }) =>
+    requestPage<UploadableComic>(`/me/uploadable-comics${query(params)}`),
+};
+
+export interface PageParams {
+  page?: number;
+  pageSize?: number;
+}
+
 export const adminApi = {
-  getDashboard: () => request<DashboardResponse>('/admin/dashboard', { headers: getAuthHeaders() }),
+  getDashboard: () => request<DashboardResponse>('/admin/dashboard'),
+
+  getSettings: () => request<{ autoAccept: boolean }>('/admin/settings'),
+
+  listUsers: (params: PageParams & { q?: string; role?: UserRole | ''; isBanned?: boolean }) =>
+    requestPage<AdminUser>(`/admin/users${query({ ...params, isBanned: params.isBanned === undefined ? undefined : String(params.isBanned) })}`, {
+    }),
+
+  listContent: <T extends Comic | Chapter>(
+    kind: 'comic' | 'chapter',
+    params: PageParams & { q?: string; visibility?: 'public' | 'hidden' | ''; status?: string },
+  ) => requestPage<T>(`/admin/${kind === 'comic' ? 'comics' : 'chapters'}${query({ ...params })}`),
+
+  listRoleRequests: (params: PageParams & { status?: RoleRequestStatus }) =>
+    requestPage<RoleRequestListItem>(`/admin/role-requests${query({ ...params })}`),
+
+  decideRoleRequest: (requestId: string, status: 'approved' | 'rejected', note?: string) =>
+    request<RoleRequest>(`/admin/role-requests/${requestId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, note }),
+    }),
 
   setAutoAccept: async (enabled: boolean) => {
     const data = await request<{ autoAccept: boolean }>('/admin/settings', {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ autoAccept: enabled }),
     });
     return { enabled: data.autoAccept };
@@ -527,14 +592,12 @@ export const adminApi = {
   setUserRole: (userId: string, role: UserRole) =>
     request<{ id: string; role: UserRole }>(`/admin/users/${userId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ role }),
     }),
 
   toggleUserBan: (userId: string, isBanned: boolean) =>
     request<{ id: string; isBanned: boolean }>(`/admin/users/${userId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ isBanned }),
     }),
 
@@ -542,27 +605,24 @@ export const adminApi = {
   toggleCommentBan: (_targetType: 'comic' | 'chapter', commentId: string, isBanned: boolean) =>
     request<{ id: string; isBanned: boolean }>(`/admin/comments/${commentId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ isBanned }),
     }),
 
   getComics: async (visibility?: string) =>
-    (await requestPage<Comic>(`/admin/comics${query({ visibility, pageSize: 100 })}`, { headers: getAuthHeaders() })).data,
+    (await requestPage<Comic>(`/admin/comics${query({ visibility, pageSize: 100 })}`)).data,
 
   getChapters: async (visibility?: string) =>
-    (await requestPage<Chapter>(`/admin/chapters${query({ visibility, pageSize: 100 })}`, { headers: getAuthHeaders() })).data,
+    (await requestPage<Chapter>(`/admin/chapters${query({ visibility, pageSize: 100 })}`)).data,
 
   updateComicVisibility: (comicId: string, visibility: 'public' | 'hidden') =>
     request<{ id: string; visibility: string }>(`/admin/comics/${comicId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ visibility }),
     }),
 
   updateChapterVisibility: (chapterId: string, visibility: 'public' | 'hidden') =>
     request<{ id: string; visibility: string }>(`/admin/chapters/${chapterId}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify({ visibility }),
     }),
 };
@@ -571,7 +631,6 @@ export const commentApi = {
   // A comment with its replies; `type` says whether it belongs to a comic or a chapter.
   getDetail: async (commentId: string) => {
     const { type, ...comment } = await request<Comment & { type: 'comic' | 'chapter' }>(`/comments/${commentId}`, {
-      headers: getAuthHeaders(),
     });
     return { comment: comment as Comment, type };
   },

@@ -6,6 +6,7 @@ import * as userRepo from '../repositories/userRepository.js';
 import * as sessionRepo from '../repositories/sessionRepository.js';
 import * as preferenceRepo from '../repositories/preferenceRepository.js';
 import * as resetRepo from '../repositories/passwordResetRepository.js';
+import * as apiKeyRepo from '../repositories/apiKeyRepository.js';
 import { sendMail } from '../utils/mailer.js';
 import { BadRequestError, ConflictError, ForbiddenError, UnauthorizedError } from '../errors.js';
 
@@ -137,5 +138,7 @@ export async function resetPassword({ token, newPassword, confirmPassword }) {
     await userRepo.updatePassword(reset.userId, passwordHash);
     await resetRepo.invalidateForUser(reset.userId);
     await sessionRepo.removeAllForUser(reset.userId);
+    // Recovering an account means it may have been taken over: keys made meanwhile stop working too.
+    await apiKeyRepo.revokeAllForUser(reset.userId);
   });
 }

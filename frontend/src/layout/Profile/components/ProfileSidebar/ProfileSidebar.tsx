@@ -1,21 +1,21 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Bell,
-  BookUp,
   Bookmark,
   ChevronDown,
   Clock3,
-  Flag,
+  ExternalLink,
   LayoutDashboard,
   MessageSquare,
-  ShieldCheck,
-  Upload,
+  Shield,
+  Sparkles,
   User,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../../../../context/AuthContext';
 import cx from '../../../../helpers/cx';
-import { canContribute, canModerate, isAdmin as isAdminRole } from '../../../../helpers/roles';
+import { canContribute, isAdmin as isAdminRole } from '../../../../helpers/roles';
 import style from './ProfileSidebar.module.css';
 
 interface Props {
@@ -27,14 +27,15 @@ interface SidebarItem {
   id: string;
   label: string;
   icon: LucideIcon;
-  group: 'Account' | 'Library' | 'Contribute' | 'Staff';
+  group: 'Account' | 'Library' | 'Workspace';
+  /** Links out of the profile (to /studio, /admin) instead of switching tab. */
+  href?: string;
 }
 
 export default function ProfileSidebar({ activeTab, setActiveTab }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
   const isContributor = canContribute(user?.role);
-  const isModerator = canModerate(user?.role);
   const isAdmin = isAdminRole(user?.role);
 
   const items = useMemo<SidebarItem[]>(
@@ -44,22 +45,13 @@ export default function ProfileSidebar({ activeTab, setActiveTab }: Props) {
       { id: 'comments', label: 'Comments', icon: MessageSquare, group: 'Account' },
       { id: 'following-titles', label: 'Following', icon: Bookmark, group: 'Library' },
       { id: 'read-history', label: 'Reading history', icon: Clock3, group: 'Library' },
-      // Uploading needs the contributor role (the API answers 403 otherwise).
-      ...(isContributor
-        ? [
-            { id: 'chapter-uploads', label: 'Chapter uploads', icon: Upload, group: 'Contribute' as const },
-            { id: 'comic-suggestions', label: 'Suggest a comic', icon: BookUp, group: 'Contribute' as const },
-          ]
-        : []),
-      ...(isModerator
-        ? [
-            { id: 'moderation-queue', label: 'Moderation queue', icon: ShieldCheck, group: 'Staff' as const },
-            { id: 'reports', label: 'Reports', icon: Flag, group: 'Staff' as const },
-          ]
-        : []),
-      ...(isAdmin ? [{ id: 'admin-dashboard', label: 'Admin dashboard', icon: LayoutDashboard, group: 'Staff' as const }] : []),
+      // Readers can ask for contributor access; everyone above that gets shortcuts to their workspaces.
+      isContributor
+        ? { id: 'studio', label: 'Studio', icon: LayoutDashboard, group: 'Workspace' as const, href: '/studio' }
+        : { id: 'become-contributor', label: 'Become a contributor', icon: Sparkles, group: 'Workspace' as const },
+      ...(isAdmin ? [{ id: 'admin', label: 'Admin console', icon: Shield, group: 'Workspace' as const, href: '/admin' }] : []),
     ],
-    [isAdmin, isModerator, isContributor],
+    [isAdmin, isContributor],
   );
 
   const groups = useMemo(() => {
@@ -83,21 +75,29 @@ export default function ProfileSidebar({ activeTab, setActiveTab }: Props) {
         {groups.map(([group, groupItems]) => (
           <div key={group} className={style.group}>
             <span className={style.groupLabel}>{group}</span>
-            {groupItems.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                className={cx(style.item, activeTab === id && style.itemOn)}
-                aria-current={activeTab === id ? 'page' : undefined}
-                onClick={() => {
-                  setActiveTab(id);
-                  setIsOpen(false);
-                }}
-              >
-                <Icon size={16} />
-                {label}
-              </button>
-            ))}
+            {groupItems.map(({ id, label, icon: Icon, href }) =>
+              href ? (
+                <Link key={id} to={href} className={style.item}>
+                  <Icon size={16} />
+                  {label}
+                  <ExternalLink size={13} className={style.out} />
+                </Link>
+              ) : (
+                <button
+                  key={id}
+                  type="button"
+                  className={cx(style.item, activeTab === id && style.itemOn)}
+                  aria-current={activeTab === id ? 'page' : undefined}
+                  onClick={() => {
+                    setActiveTab(id);
+                    setIsOpen(false);
+                  }}
+                >
+                  <Icon size={16} />
+                  {label}
+                </button>
+              ),
+            )}
           </div>
         ))}
       </nav>

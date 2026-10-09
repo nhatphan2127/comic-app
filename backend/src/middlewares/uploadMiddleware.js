@@ -29,7 +29,8 @@ const userBackgroundsFolder = path.join(storageRoot, 'backgrounds');
 const storage = multer.diskStorage({
   destination(req, file, cb) {
     let folder;
-    if (file.fieldname === 'coverImage') {
+    // 'coverImage' from the Studio form, 'cover' from the publishing API.
+    if (file.fieldname === 'coverImage' || file.fieldname === 'cover') {
       folder = comicsFolder;
     } else if (file.fieldname === 'avatar') {
       folder = userAvatarsFolder;

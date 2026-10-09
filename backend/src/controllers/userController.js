@@ -15,6 +15,6 @@ export const listUserComments = asyncHandler(async (req, res) => {
   await userService.getPublicProfile(req.params.userId); // 404 for unknown or banned users
   const page = parsePagination(req.query);
   const sort = parseSort(req.query.sort, USER_SORTABLE_FIELDS, [['createdAt', 'DESC']]);
-  const { items, totalItems } = await commentService.listByUser(req.params.userId, { sort, page, publicOnly: true });
+  const { items, totalItems } = await commentService.listByUser(req.params.userId, { sort, page });
   ok(res, items, pageMeta(page, totalItems));
 });

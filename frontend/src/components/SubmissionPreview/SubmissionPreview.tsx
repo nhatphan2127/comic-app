@@ -5,6 +5,7 @@ import { resolveUploadUrl } from '../../helpers/getImage';
 import Modal from '../Modal/Modal';
 import ComicForm from '../ComicForm/ComicForm';
 import { comicToForm } from '../ComicForm/comicFormValues';
+import { Notice } from '../../console/ui/Page';
 import styles from './SubmissionPreview.module.css';
 
 interface PreviewProps<T> {
@@ -18,7 +19,19 @@ interface PreviewProps<T> {
 export function ComicPreviewModal({ isOpen, loading, data, onClose }: PreviewProps<ComicDetail>) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" title={data?.name || 'Comic preview'}>
-      {loading || !data ? <div className="empty-state">Loading…</div> : <ComicForm values={comicToForm(data)} readOnly />}
+      {loading || !data ? (
+        <div className="empty-state">Loading…</div>
+      ) : (
+        <>
+          {data.pendingEdit ? (
+            <Notice tone="info">
+              This is an edit of a live comic. Approving it replaces the published version; rejecting it keeps the published
+              version as it is.
+            </Notice>
+          ) : null}
+          <ComicForm values={comicToForm(data)} readOnly />
+        </>
+      )}
     </Modal>
   );
 }

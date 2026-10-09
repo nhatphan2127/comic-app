@@ -7,6 +7,7 @@ import * as comicRepo from '../repositories/comicRepository.js';
 import * as followRepo from '../repositories/followRepository.js';
 import * as historyRepo from '../repositories/historyRepository.js';
 import * as categoryRepo from '../repositories/categoryRepository.js';
+import { assertChapterReadable } from './interactionService.js';
 import { assertValidPassword, hashPassword, verifyPassword } from './authService.js';
 import { BadRequestError, ConflictError, NotFoundError, UnauthorizedError } from '../errors.js';
 
@@ -200,6 +201,10 @@ export async function getReadingHistory(userId, { page }) {
   return { items, totalItems };
 }
 
-export const removeHistoryChapter = (userId, chapterId) => historyRepo.remove(userId, chapterId);
+// Entries of hidden or unapproved chapters are out of reach: not listed, not removable.
+export async function removeHistoryChapter(userId, chapterId) {
+  await assertChapterReadable(chapterId);
+  await historyRepo.remove(userId, chapterId);
+}
 
 export const clearReadingHistory = (userId) => historyRepo.clear(userId);

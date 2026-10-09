@@ -1,0 +1,181 @@
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.step strong {
+  color: var(--fg-strong);
+}
+
+.step a,
+.note a,
+.safety a {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.stepIcon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: var(--sp-1);
+  border-radius: var(--r-md);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.tree {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+
+/* The full script is long: scroll inside the block instead of the page. */
+.script pre {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.note {
+  margin: 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.note code,
+.table code {
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+}
+
+.endpoint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin-top: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.endpoint code {
+  color: var(--fg-strong);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.method {
+  padding: 2px 8px;
+  border-radius: var(--r-xs);
+  background: var(--accent-tint);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  width: 1%;
+  color: var(--fg-strong);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table td {
+  color: var(--fg-soft);
+}
+
+.table td:has(> .required),
+.table td:has(> .optional) {
+  width: 1%;
+}
+
+.required,
+.optional {
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.required {
+  color: var(--warn);
+}
+
+.optional {
+  color: var(--fg-faint);
+}
+
+.safety {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+}
+
+.safety li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.safety svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--ok);
+}
+
+@media (max-width: 860px) {
+  .steps {
+    grid-template-columns: 1fr;
+  }
+
+  .table th {
+    white-space: normal;
+  }
+}

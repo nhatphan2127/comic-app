@@ -1,10 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Bookmark, History, LogOut, MessageSquare, User, type LucideIcon } from 'lucide-react';
+import { Bell, Bookmark, History, LayoutDashboard, LogOut, MessageSquare, Shield, Sparkles, User, type LucideIcon } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import useClickOutside from '../../hooks/useClickOutside';
 import Avatar from '../../components/Avatar/Avatar';
 import cx from '../../helpers/cx';
+import { canContribute, isAdmin } from '../../helpers/roles';
 import styles from './HeaderLayout.module.css';
 
 const MENU_ITEMS: { tab: string; label: string; icon: LucideIcon }[] = [
@@ -30,6 +31,14 @@ export default function UserMenu() {
     setIsOpen(false);
     navigate(`/profile?tab=${tab}`);
   };
+
+  // Workspaces by role: readers get the way in, everyone else gets their consoles.
+  const workspaces: { to: string; label: string; icon: LucideIcon }[] = canContribute(user?.role)
+    ? [
+        { to: '/studio', label: 'Studio', icon: LayoutDashboard },
+        ...(isAdmin(user?.role) ? [{ to: '/admin', label: 'Admin console', icon: Shield }] : []),
+      ]
+    : [{ to: '/profile?tab=become-contributor', label: 'Become a contributor', icon: Sparkles }];
 
   return (
     <div className={styles.menuRoot} ref={rootRef}>
@@ -58,6 +67,25 @@ export default function UserMenu() {
             {MENU_ITEMS.map(({ tab, label, icon: Icon }) => (
               <li key={tab}>
                 <button type="button" role="menuitem" className={styles.menuItem} onClick={() => goTo(tab)}>
+                  <Icon size={16} />
+                  {label}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <ul className={styles.menuList}>
+            {workspaces.map(({ to, label, icon: Icon }) => (
+              <li key={to}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={styles.menuItem}
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate(to);
+                  }}
+                >
                   <Icon size={16} />
                   {label}
                 </button>

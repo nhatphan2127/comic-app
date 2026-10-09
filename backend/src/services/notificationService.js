@@ -29,6 +29,9 @@ async function send(rows) {
   }
 }
 
+// A single notification for one user, e.g. the answer to their contributor request.
+export const sendTo = (userId, { type, title, content, redirectPath = null }) => send([{ userId, type, title, content, redirectPath }]);
+
 const isLive = (ctx) =>
   ctx.status === 'accept' && ctx.visibility === 'public' && ctx.comicStatus === 'accept' && ctx.comicVisibility === 'public';
 
@@ -51,7 +54,8 @@ export async function notifyNewChapter(chapterId, uploaderId = null) {
 }
 
 // A moderator accepted or rejected a submission: tell its contributors.
-export async function notifyReviewDecision(type, targetId, status) {
+// `edit`: the decision was about changes to a comic that is already live (and stays live either way).
+export async function notifyReviewDecision(type, targetId, status, { edit = false } = {}) {
   const contributors = await contributorRepo.listForTarget(type, targetId);
   if (!contributors.length) return;
 
@@ -60,23 +64,26 @@ export async function notifyReviewDecision(type, targetId, status) {
   if (type === 'comic') {
     const comic = await comicRepo.findById(targetId);
     name = (await comicRepo.findSummaryById(targetId))?.name || 'Your comic';
-    redirectPath = status === 'accept' && comic ? `/comics/${comic.url}` : '/profile?tab=comic-suggestions';
+    redirectPath = (status === 'accept' || edit) && comic ? `/comics/${comic.url}` : '/studio/suggestions';
   } else {
     const ctx = await notificationRepo.findChapterContext(targetId);
     name = ctx ? `${ctx.comicName} · ${chapterLabel(ctx)}` : 'Your chapter';
-    redirectPath = status === 'accept' && ctx && isLive(ctx) ? `/comics/${ctx.comicUrl}/${ctx.id}` : '/profile?tab=chapter-uploads';
+    redirectPath = status === 'accept' && ctx && isLive(ctx) ? `/comics/${ctx.comicUrl}/${ctx.id}` : '/studio/uploads';
   }
 
   const accepted = status === 'accept';
-  await send(
-    contributors.map(({ userId }) => ({
-      userId,
-      type: 'system_review',
-      title: accepted ? 'Your submission was approved' : 'Your submission was rejected',
-      content: accepted ? `${name} is now live.` : `${name} was not accepted. You can edit it and submit again.`,
-      redirectPath,
-    })),
-  );
+  const message = edit
+    ? {
+        title: accepted ? 'Your edit was approved' : 'Your edit was rejected',
+        content: accepted
+          ? `Your changes to ${name} are now live.`
+          : `Your changes to ${name} were not accepted. The approved version is still live; you can edit it and submit again.`,
+      }
+    : {
+        title: accepted ? 'Your submission was approved' : 'Your submission was rejected',
+        content: accepted ? `${name} is now live.` : `${name} was not accepted. You can edit it and submit again.`,
+      };
+  await send(contributors.map(({ userId }) => ({ userId, type: 'system_review', ...message, redirectPath })));
 }
 
 // Someone replied to a comment: tell its author (unless they replied to themselves).

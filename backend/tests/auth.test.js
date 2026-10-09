@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { api, models, createUser, auth, PREFIX } from './helpers.js';
+import { api, models, createUser, auth, sessionCookie, ORIGIN, PREFIX } from './helpers.js';
 
 describe('auth', () => {
   it('rejects invalid register input with 400', async () => {
@@ -50,11 +50,44 @@ describe('auth', () => {
     expect((await api().get('/me').set(auth(user))).status).toBe(401);
   });
 
-  it('logout answers 204 and invalidates the token', async () => {
+  it('logout answers 204, clears the cookie and invalidates the session', async () => {
     const user = await createUser();
     const res = await api().post('/auth/logout').set(auth(user));
     expect(res.status).toBe(204);
     expect(res.text).toBe('');
+    expect(res.headers['set-cookie'][0]).toMatch(/^sid=;.*Expires=Thu, 01 Jan 1970/);
     expect((await api().get('/me').set(auth(user))).status).toBe(401);
+  });
+
+  it('login sets an HttpOnly session cookie and keeps the token out of the body', async () => {
+    const user = await createUser();
+    const res = await api().post('/auth/login').send({ userName: user.userName, password: user.password });
+    expect(res.status).toBe(200);
+    expect(res.body.data.token).toBeUndefined();
+    expect(res.body.data.user.userName).toBe(user.userName);
+
+    const cookie = res.headers['set-cookie'].find((c) => c.startsWith('sid='));
+    expect(cookie).toMatch(/HttpOnly/);
+    expect(cookie).toMatch(/SameSite=Lax/);
+    expect(cookie).toMatch(/Path=\/api/);
+    expect((await api().get('/me').set('Cookie', sessionCookie(res))).status).toBe(200);
+  });
+
+  it('no longer accepts the session token as a Bearer header', async () => {
+    const user = await createUser();
+    const token = user.cookie.slice('sid='.length);
+    expect((await api().get('/me').set('Authorization', `Bearer ${token}`)).status).toBe(401);
+  });
+
+  it('blocks cookie-authenticated writes from an untrusted or missing origin (CSRF)', async () => {
+    const user = await createUser();
+    const patch = () => api().patch('/me').set('Cookie', user.cookie).send({ displayName: 'csrf' });
+
+    expect((await patch().set('Origin', 'https://evil.example')).status).toBe(403);
+    expect((await patch()).status).toBe(403);
+    expect((await patch().set('Referer', 'https://evil.example/page')).status).toBe(403);
+    expect((await patch().set('Origin', ORIGIN)).status).toBe(200);
+    // Reads are not state-changing and stay allowed from anywhere (CORS still hides the response).
+    expect((await api().get('/me').set('Cookie', user.cookie)).status).toBe(200);
   });
 });

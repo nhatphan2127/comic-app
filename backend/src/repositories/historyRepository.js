@@ -1,5 +1,9 @@
-import { now, select } from '../config/database.js';
+import { now, select, sequelize } from '../config/database.js';
 import { ReadHistory } from '../models/index.js';
+import { readableSql } from './visibility.js';
+
+// Entries readers can see: the chapter and its comic are both readable.
+const READABLE_ENTRY = `${readableSql('ch')} AND ${readableSql('c')}`;
 
 // upsert = INSERT, or UPDATE the given fields when (userId, chapterId) already exists.
 export const savePage = (userId, chapterId, currentPage) =>
@@ -11,7 +15,7 @@ export const touch = (userId, chapterId) => ReadHistory.upsert({ userId, chapter
 export const findCurrentPage = (userId, chapterId) =>
   ReadHistory.findOne({ attributes: ['currentPage'], where: { userId, chapterId }, raw: true });
 
-// Most recently read first.
+// Most recently read first. Entries of hidden or unapproved chapters are kept but not shown.
 export const listForUser = (userId, { limit, offset }) =>
   select(
     `SELECT rh.chapterId,
@@ -28,7 +32,7 @@ export const listForUser = (userId, { limit, offset }) =>
      FROM read_history rh
      JOIN chapters ch ON rh.chapterId = ch.id
      JOIN comics c ON ch.comicId = c.id
-     WHERE rh.userId = ?
+     WHERE rh.userId = ? AND ${READABLE_ENTRY}
      ORDER BY rh.readAt DESC, rh.chapterId
      LIMIT ? OFFSET ?`,
     [userId, limit, offset]
@@ -40,7 +44,7 @@ export const countForUser = async (userId) =>
     `SELECT COUNT(*) AS total FROM read_history rh
      JOIN chapters ch ON rh.chapterId = ch.id
      JOIN comics c ON ch.comicId = c.id
-     WHERE rh.userId = ?`,
+     WHERE rh.userId = ? AND ${READABLE_ENTRY}`,
     [userId]
   ))[0].total;
 
@@ -50,11 +54,17 @@ export const listForComic = (userId, comicId) =>
     `SELECT rh.chapterId, rh.currentPage, rh.readAt
      FROM read_history rh
      JOIN chapters ch ON rh.chapterId = ch.id
-     WHERE rh.userId = ? AND ch.comicId = ? AND ch.deletedAt IS NULL
+     WHERE rh.userId = ? AND ch.comicId = ? AND ${readableSql('ch')}
      ORDER BY rh.readAt DESC, rh.chapterId`,
     [userId, comicId]
   );
 
 export const remove = (userId, chapterId) => ReadHistory.destroy({ where: { userId, chapterId } });
 
-export const clear = (userId) => ReadHistory.destroy({ where: { userId } });
+// "Clear history" only clears what the user can see.
+export const clear = (userId) =>
+  sequelize.query(
+    `DELETE FROM read_history WHERE userId = ? AND chapterId IN (
+       SELECT ch.id FROM chapters ch JOIN comics c ON ch.comicId = c.id WHERE ${READABLE_ENTRY})`,
+    { replacements: [userId] }
+  );

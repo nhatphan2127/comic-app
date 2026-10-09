@@ -9,12 +9,20 @@ import * as historyRepo from '../repositories/historyRepository.js';
 import * as categoryRepo from '../repositories/categoryRepository.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
 
-async function assertComicExists(comicId) {
-  if (!(await comicRepo.findById(comicId))) throw new NotFoundError('Comic not found');
+// Following, rating and reading history are reader actions: they only work on comics and chapters readers
+// can see (approved, public, not deleted), whatever the user's role. Once something is hidden it is out of
+// reach entirely, so it cannot be unfollowed, unrated or removed from history either.
+async function assertComicReadable(comicId) {
+  if (!(await comicRepo.findReadable(comicId))) throw new NotFoundError('Comic not found');
+}
+
+export async function assertChapterReadable(chapterId) {
+  if (!(await chapterRepo.findReadable(chapterId))) throw new NotFoundError('Chapter not found');
 }
 
 // GET /me/following/:comicId: the follow record, or 404 when the user does not follow the comic.
 export async function getFollow(userId, comicId) {
+  await assertComicReadable(comicId);
   const follow = await followRepo.find(userId, comicId);
   if (!follow) throw new NotFoundError('You are not following this comic');
   return { comicId: follow.comicId, categoryId: follow.categoryId, createdAt: follow.createdAt };
@@ -25,7 +33,7 @@ export async function getFollow(userId, comicId) {
 // Inserting the follow row and bumping comics.follow must succeed or fail together.
 export async function followComic(userId, comicId, categoryId = null) {
   const created = await withTransaction(async () => {
-    await assertComicExists(comicId);
+    await assertComicReadable(comicId);
 
     if (categoryId && !(await categoryRepo.findOwnedOrDefault(categoryId, userId))) {
       throw new NotFoundError('Following category not found');
@@ -42,9 +50,10 @@ export async function followComic(userId, comicId, categoryId = null) {
   return { created, follow: await getFollow(userId, comicId) };
 }
 
-// Idempotent: unfollowing a comic you don't follow is not an error.
+// Idempotent: unfollowing a comic you don't follow is not an error (a comic readers can't see is a 404).
 export async function unfollowComic(userId, comicId) {
   await withTransaction(async () => {
+    await assertComicReadable(comicId);
     if (await followRepo.find(userId, comicId)) {
       await followRepo.remove(userId, comicId);
       await comicRepo.decrementFollowCount(comicId);
@@ -58,7 +67,7 @@ export async function rateComic(userId, comicId, rating) {
   }
 
   return withTransaction(async () => {
-    await assertComicExists(comicId);
+    await assertComicReadable(comicId);
     await ratingRepo.upsert(userId, comicId, rating);
     const average = await ratingRepo.averageForComic(comicId);
     await comicRepo.setRating(comicId, average);
@@ -69,7 +78,7 @@ export async function rateComic(userId, comicId, rating) {
 // Taking a rating back is idempotent; the comic's average is recomputed without it.
 export async function unrateComic(userId, comicId) {
   return withTransaction(async () => {
-    await assertComicExists(comicId);
+    await assertComicReadable(comicId);
     await ratingRepo.remove(userId, comicId);
     const average = Number(await ratingRepo.averageForComic(comicId));
     await comicRepo.setRating(comicId, average);
@@ -81,7 +90,7 @@ export async function saveReadingHistory(userId, chapterId, currentPage) {
   if (!Number.isInteger(currentPage) || currentPage < 1) {
     throw new BadRequestError('"currentPage" must be a positive integer');
   }
-  if (!(await chapterRepo.findById(chapterId))) throw new NotFoundError('Chapter not found');
+  await assertChapterReadable(chapterId);
   await historyRepo.savePage(userId, chapterId, currentPage);
   return { chapterId, currentPage };
 }

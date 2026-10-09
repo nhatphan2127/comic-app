@@ -1,10 +1,6 @@
 import { resolveSession } from '../services/authService.js';
 import { ForbiddenError, UnauthorizedError } from '../errors.js';
-
-function readBearerToken(req) {
-  const header = req.headers.authorization;
-  return header?.startsWith('Bearer ') ? header.split(' ')[1] : null;
-}
+import { readSessionCookie } from '../utils/sessionCookie.js';
 
 function attachUser(req, session) {
   req.user = {
@@ -19,12 +15,12 @@ function attachUser(req, session) {
 }
 
 /**
- * Middleware: token required (authentication).
+ * Middleware: session cookie required (authentication).
  */
 export async function authenticateToken(req, res, next) {
   try {
-    const token = readBearerToken(req);
-    if (!token) throw new UnauthorizedError('Missing Authorization header');
+    const token = readSessionCookie(req);
+    if (!token) throw new UnauthorizedError('Authentication required');
 
     const session = await resolveSession(token);
     if (!session) throw new UnauthorizedError('Invalid or expired session token');
@@ -37,11 +33,11 @@ export async function authenticateToken(req, res, next) {
 }
 
 /**
- * Middleware: token optional. A missing or invalid token continues as a guest.
+ * Middleware: session cookie optional. A missing or invalid session continues as a guest.
  */
 export async function authenticateTokenOptional(req, res, next) {
   try {
-    const token = readBearerToken(req);
+    const token = readSessionCookie(req);
     const session = token ? await resolveSession(token) : null;
     if (session) attachUser(req, session);
     next();

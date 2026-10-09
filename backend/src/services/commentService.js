@@ -1,6 +1,8 @@
 // Comment logic shared by comic and chapter comments. `type` is 'comic' or 'chapter'.
 // Routes address a single comment only by its id (/comments/:commentId), so findComment()
-// looks it up in both tables.
+// looks it up in both tables. Readers (whatever their role) only reach comments they can see; hidden ones
+// (banned, or on hidden / unapproved comics and chapters) are 404 even to their author. The moderation
+// console works on every comment.
 import { v4 as uuidv4 } from 'uuid';
 import { withTransaction } from '../config/database.js';
 import * as commentRepo from '../repositories/commentRepository.js';
@@ -15,19 +17,20 @@ const TREE_SORT = { '-score': 'best', '-createdAt': 'newest', createdAt: 'oldest
 const REACTIONS = ['like', 'dislike'];
 
 const TARGET_LOOKUP = {
-  comic: { find: comicRepo.findById, notFound: 'Comic not found' },
-  chapter: { find: chapterRepo.findById, notFound: 'Chapter not found' },
+  comic: { find: comicRepo.findReadable, notFound: 'Comic not found' },
+  chapter: { find: chapterRepo.findReadable, notFound: 'Chapter not found' },
 };
 
-async function assertTargetExists(type, targetId) {
+async function assertTargetReadable(type, targetId) {
   const lookup = TARGET_LOOKUP[type];
   if (!(await lookup.find(targetId))) throw new NotFoundError(lookup.notFound);
 }
 
 // Finds a comment in whichever table holds it: { type, comment } or a 404.
-async function findComment(commentId) {
+// `readableOnly` (every reader-facing call) also 404s comments readers cannot see.
+async function findComment(commentId, { readableOnly = true } = {}) {
   for (const type of commentRepo.COMMENT_TYPES) {
-    const comment = await commentRepo.findById(type, commentId);
+    const comment = await (readableOnly ? commentRepo.findReadable : commentRepo.findById)(type, commentId);
     if (comment) return { type, comment };
   }
   throw new NotFoundError('Comment not found');
@@ -41,7 +44,7 @@ async function findOwnedComment(commentId, userId, action) {
 
 // One page of root comments (with all their replies nested). Returns { items, totalItems }.
 export async function listForTarget(type, targetId, { sort, page }, viewerId = null) {
-  await assertTargetExists(type, targetId);
+  await assertTargetReadable(type, targetId);
   const [rows, totalItems] = await Promise.all([
     commentRepo.listPageWithReplies(type, targetId, { viewerId, sort, limit: page.limit, offset: page.offset }),
     commentRepo.countRoots(type, targetId),
@@ -59,7 +62,7 @@ export async function post(type, targetId, userId, { content, parentCommentId })
   const text = typeof content === 'string' ? content.trim() : '';
   if (!text) throw new BadRequestError('Comment content is required');
 
-  await assertTargetExists(type, targetId);
+  await assertTargetReadable(type, targetId);
   if (parentCommentId && !(await commentRepo.findInTarget(type, parentCommentId, targetId))) {
     throw new NotFoundError('Parent comment not found');
   }
@@ -116,10 +119,11 @@ export async function removeReaction(commentId, userId) {
 }
 
 // `sort` is validated against commentRepo.USER_SORTABLE_FIELDS by the controller.
-export async function listByUser(userId, { sort, page, publicOnly = false }) {
+// Only comments readers can see, on the user's own profile as on anyone else's.
+export async function listByUser(userId, { sort, page }) {
   const [items, totalItems] = await Promise.all([
-    commentRepo.listByUser(userId, { sort, limit: page.limit, offset: page.offset, publicOnly }),
-    commentRepo.countByUser(userId, { publicOnly }),
+    commentRepo.listByUser(userId, { sort, limit: page.limit, offset: page.offset }),
+    commentRepo.countByUser(userId),
   ]);
   return { items, totalItems };
 }
@@ -127,12 +131,12 @@ export async function listByUser(userId, { sort, page, publicOnly = false }) {
 // ---------- Moderation (role checks happen in the routes) ----------
 
 export async function forceDelete(commentId) {
-  const { type } = await findComment(commentId);
+  const { type } = await findComment(commentId, { readableOnly: false });
   await commentRepo.softDelete(type, commentId);
 }
 
 export async function setBanned(commentId, isBanned) {
-  const { type } = await findComment(commentId);
+  const { type } = await findComment(commentId, { readableOnly: false });
   await commentRepo.setBanned(type, commentId, isBanned);
   return { id: commentId, type, isBanned };
 }

@@ -1,0 +1,110 @@
+.keyIcon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-md);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.keyIconOff {
+  background: var(--surface-2);
+  color: var(--fg-faint);
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.history summary {
+  margin-bottom: var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form,
+.reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.field > span:first-child {
+  color: var(--fg-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 4px;
+  accent-color: var(--brand); /* inside a modal: portalled outside the console, so no --accent */
+}
+
+.check span {
+  display: flex;
+  flex-direction: column;
+}
+
+.check small {
+  color: var(--fg-faint);
+  font-size: var(--fs-2xs);
+}
+
+.help {
+  margin: 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--warn-tint);
+  color: var(--warn);
+  font-size: var(--fs-sm);
+}
+
+.warning svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}

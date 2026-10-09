@@ -4,7 +4,7 @@ import type { ComicContributor } from '../../types/types';
 import { formatTimeAgo } from '../../helpers/formatDate';
 import { getImage } from '../../helpers/getImage';
 import Cover from '../Cover/Cover';
-import StatusBadge from '../StatusBadge/StatusBadge';
+import StatusBadge, { EditInReviewBadge } from '../StatusBadge/StatusBadge';
 import styles from './UploadComicCard.module.css';
 
 interface ComicRowProps {
@@ -38,7 +38,7 @@ export function ComicRow({ contributor, onEdit }: ComicRowProps) {
       </div>
 
       <div className={styles.actions}>
-        <StatusBadge status={contributor.status} />
+        {contributor.pendingEdit ? <EditInReviewBadge /> : <StatusBadge status={contributor.status} />}
         {onEdit ? (
           <button type="button" className="btn btn--ghost btn--sm" onClick={onEdit}>
             <Pencil size={13} />

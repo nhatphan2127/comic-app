@@ -36,10 +36,16 @@ export async function createUser(role = 'user', password = 'secret123') {
   if (role !== 'user') await models.User.update({ role }, { where: { id } });
 
   const login = await api().post('/auth/login').send({ userName, password });
-  return { id, userName, password, token: login.body.data.token };
+  return { id, userName, password, cookie: sessionCookie(login) };
 }
 
-export const auth = (user) => ({ Authorization: `Bearer ${user.token}` });
+// "sid=<token>" from a login response's Set-Cookie, ready to send back in a Cookie header.
+export const sessionCookie = (res) => res.headers['set-cookie']?.find((c) => c.startsWith('sid='))?.split(';')[0];
+
+// One of the default CLIENT_ORIGIN values: cookie-authenticated writes must come from a trusted origin.
+export const ORIGIN = 'http://localhost:5173';
+
+export const auth = (user) => ({ Cookie: user.cookie, Origin: ORIGIN });
 
 export async function createComic(owner, overrides = {}) {
   const url = overrides.url || unique('comic-');
@@ -54,6 +60,12 @@ export async function createComic(owner, overrides = {}) {
     .attach('coverImage', PNG, { filename: 'cover.png', contentType: 'image/png' });
   if (res.status !== 201) throw new Error(`createComic failed: ${res.status} ${JSON.stringify(res.body)}`);
   return { id: res.body.data.id, url };
+}
+
+// Marks comics / chapters as approved by staff, which readers need before they can see them.
+export async function approve({ comicId, chapterIds = [] }) {
+  if (comicId) await models.Comic.update({ status: 'accept' }, { where: { id: comicId } });
+  if (chapterIds.length) await models.Chapter.update({ status: 'accept' }, { where: { id: chapterIds } });
 }
 
 export async function createChapter(owner, comicId, chapterNumber = 1) {

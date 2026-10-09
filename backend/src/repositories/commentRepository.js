@@ -8,6 +8,7 @@ import { col, fn, literal } from 'sequelize';
 import { now, select } from '../config/database.js';
 import { ChapterComment, ChapterCommentReaction, ComicComment, ComicCommentReaction } from '../models/index.js';
 import { BadRequestError } from '../errors.js';
+import { readableSql } from './visibility.js';
 
 const TARGETS = {
   comic: {
@@ -17,6 +18,9 @@ const TARGETS = {
     reactions: 'comic_comment_reactions',
     fk: 'comicId',
     idColumns: 'cc.comicId, NULL AS chapterId',
+    // Joins from a comment `cc` to what it is posted on, and the condition for readers to see it.
+    joins: 'JOIN comics c ON cc.comicId = c.id',
+    readable: `cc.deletedAt IS NULL AND cc.isBanned = 0 AND ${readableSql('c')}`,
   },
   chapter: {
     Comment: ChapterComment,
@@ -25,6 +29,8 @@ const TARGETS = {
     reactions: 'chapter_comment_reactions',
     fk: 'chapterId',
     idColumns: 'NULL AS comicId, cc.chapterId',
+    joins: 'JOIN chapters ch ON cc.chapterId = ch.id JOIN comics c ON ch.comicId = c.id',
+    readable: `cc.deletedAt IS NULL AND cc.isBanned = 0 AND ${readableSql('ch')} AND ${readableSql('c')}`,
   },
 };
 
@@ -105,6 +111,13 @@ export const countRoots = (type, targetId) => {
 
 export const findById = (type, id) => target(type).Comment.findByPk(id, { attributes: ['id', 'userId'], raw: true });
 
+// A comment readers may see and act on: not deleted or banned, on a readable comic / chapter.
+export const findReadable = async (type, id) => {
+  const t = target(type);
+  const [row] = await select(`SELECT cc.id, cc.userId FROM ${t.table} cc ${t.joins} WHERE cc.id = ? AND ${t.readable}`, [id]);
+  return row ?? null;
+};
+
 export const findInTarget = (type, id, targetId) => {
   const t = target(type);
   return t.Comment.findOne({ attributes: ['id'], where: { id, [t.fk]: targetId }, raw: true });
@@ -168,20 +181,18 @@ export async function countReactions(type, commentId) {
 
 // ---------- Cross-type listings ----------
 
-// A user's comments of both kinds in one list (UNION, kept in SQL). `publicOnly` (someone else's
-// profile) also drops banned comments and comments on hidden comics or chapters.
-const userComments = (publicOnly) => {
-  const comicFilter = publicOnly ? " AND cc.isBanned = 0 AND c.visibility = 'public'" : '';
-  const chapterFilter = publicOnly ? " AND cc.isBanned = 0 AND c.visibility = 'public' AND ch.visibility = 'public'" : '';
-  return `
+// A user's comments of both kinds in one list (UNION, kept in SQL). Only what readers can see:
+// banned comments and comments on hidden or unapproved comics / chapters are left out, on the
+// user's own profile as well as on someone else's.
+const userComments = () => `
      SELECT * FROM (
        SELECT cc.id, cc.content, cc.createdAt, cc.likes, cc.dislikes,
               c.name AS targetName, c.url AS targetUrl, c.coverUrl AS targetCoverUrl,
               NULL AS chapterId, 'comic' AS type,
               (SELECT COUNT(*) FROM comic_comments WHERE parentCommentId = cc.id) AS replyCount
        FROM comic_comments cc
-       JOIN comics c ON cc.comicId = c.id
-       WHERE cc.userId = ? AND cc.deletedAt IS NULL${comicFilter}
+       ${TARGETS.comic.joins}
+       WHERE cc.userId = ? AND ${TARGETS.comic.readable}
 
        UNION ALL
 
@@ -190,22 +201,20 @@ const userComments = (publicOnly) => {
               cc.chapterId AS chapterId, 'chapter' AS type,
               (SELECT COUNT(*) FROM chapter_comments WHERE parentCommentId = cc.id) AS replyCount
        FROM chapter_comments cc
-       JOIN chapters ch ON cc.chapterId = ch.id
-       JOIN comics c ON ch.comicId = c.id
-       WHERE cc.userId = ? AND cc.deletedAt IS NULL${chapterFilter}
+       ${TARGETS.chapter.joins}
+       WHERE cc.userId = ? AND ${TARGETS.chapter.readable}
      )`;
-};
 
 export const USER_SORTABLE_FIELDS = ['createdAt', 'likes', 'replyCount'];
 
 // `sort` is [[field, direction], ...] already validated against USER_SORTABLE_FIELDS.
-export function listByUser(userId, { sort, limit, offset, publicOnly = false }) {
+export function listByUser(userId, { sort, limit, offset }) {
   const orderBy = [...sort, ['id', 'ASC']].map(([field, direction]) => `${field} ${direction}`).join(', ');
-  return select(`${userComments(publicOnly)} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [userId, userId, limit, offset]);
+  return select(`${userComments()} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [userId, userId, limit, offset]);
 }
 
-export async function countByUser(userId, { publicOnly = false } = {}) {
-  const [row] = await select(`SELECT COUNT(*) AS total FROM (${userComments(publicOnly)})`, [userId, userId]);
+export async function countByUser(userId) {
+  const [row] = await select(`SELECT COUNT(*) AS total FROM (${userComments()})`, [userId, userId]);
   return row.total;
 }
 

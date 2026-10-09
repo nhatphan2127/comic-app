@@ -33,14 +33,14 @@ const isUntouched = (p: Preferences | null | undefined) => !p || (p.reader == nu
  * settings are uploaded. Afterwards every change is saved to the account. Renders nothing.
  */
 export default function PreferenceSync() {
-  const { token } = useAuth();
+  const userId = useAuth().user?.id;
   const { theme, setTheme } = useTheme();
   const synced = useRef(false);
 
   // Pull (or seed) once per login.
   useEffect(() => {
     synced.current = false;
-    if (!token) return;
+    if (!userId) return;
     let cancelled = false;
 
     userApi
@@ -73,17 +73,17 @@ export default function PreferenceSync() {
     };
     // `theme` is read once when seeding, not a trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, setTheme]);
+  }, [userId, setTheme]);
 
   // Push theme changes.
   useEffect(() => {
-    if (!token || !synced.current) return;
+    if (!userId || !synced.current) return;
     userApi.updatePreferences({ theme: THEME_TO_SERVER[theme] }).catch(() => undefined);
-  }, [theme, token]);
+  }, [theme, userId]);
 
   // Push content filter and (debounced, sliders fire often) reader setting changes.
   useEffect(() => {
-    if (!token) return;
+    if (!userId) return;
     let timer: number | undefined;
 
     const onFilter = () => {
@@ -104,7 +104,7 @@ export default function PreferenceSync() {
       window.removeEventListener('content-filter-changed', onFilter);
       window.removeEventListener(READER_SETTINGS_CHANGED, onReader);
     };
-  }, [token]);
+  }, [userId]);
 
   return null;
 }

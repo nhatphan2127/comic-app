@@ -36,7 +36,7 @@ interface CommentsSectionProps {
 }
 
 export default function CommentsSection({ id = '', targetId, type = 'comic' }: CommentsSectionProps) {
-  const { isLoggedIn, user, token } = useAuth();
+  const { isLoggedIn, user } = useAuth();
   const currentUserName = user?.displayName || user?.userName || 'You';
   const api = type === 'comic' ? comicApi : chapterApi;
 
@@ -69,9 +69,9 @@ export default function CommentsSection({ id = '', targetId, type = 'comic' }: C
         setIsLoading(false);
       }
     },
-    // `token`: logging in or out re-fetches, so "my reaction" and "my comment" are right.
+    // `user?.id`: logging in or out re-fetches, so "my reaction" and "my comment" are right.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, type, sortBy, token],
+    [id, type, sortBy, user?.id],
   );
 
   const reload = useCallback(() => fetchPage(0), [fetchPage]);

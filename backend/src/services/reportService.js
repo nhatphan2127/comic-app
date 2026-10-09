@@ -8,10 +8,11 @@ export const STATUSES = ['open', 'resolved', 'dismissed'];
 const REASON_MAX = 100;
 const DETAILS_MAX = 1000;
 
+// Readers can only report what they can see.
 async function targetExists(targetType, targetId) {
-  if (targetType === 'comic') return Boolean(await comicRepo.findActiveById(targetId));
+  if (targetType === 'comic') return Boolean(await comicRepo.findReadable(targetId));
   for (const type of commentRepo.COMMENT_TYPES) {
-    if (await commentRepo.findById(type, targetId)) return true;
+    if (await commentRepo.findReadable(type, targetId)) return true;
   }
   return false;
 }

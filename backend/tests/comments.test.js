@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { api, createUser, createComic, createChapter, auth, PREFIX } from './helpers.js';
+import { api, createUser, createComic, createChapter, approve, auth, PREFIX } from './helpers.js';
 
 // Comic comments and chapter comments must behave identically, so the same suite runs for both.
 describe.each(['comics', 'chapters'])('comments on %s', (kind) => {
@@ -12,7 +12,9 @@ describe.each(['comics', 'chapters'])('comments on %s', (kind) => {
     author = await createUser();
     other = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     targetId = kind === 'comics' ? comic.id : (await createChapter(owner, comic.id)).id;
+    if (kind === 'chapters') await approve({ chapterIds: [targetId] });
   });
 
   const post = (user, body) => api().post(`/${kind}/${targetId}/comments`).set(auth(user)).send(body);
@@ -45,7 +47,9 @@ describe.each(['comics', 'chapters'])('comments on %s', (kind) => {
   it('pages and sorts root comments in the database', async () => {
     const owner = await createUser('contributor');
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const id = kind === 'comics' ? comic.id : (await createChapter(owner, comic.id)).id;
+    if (kind === 'chapters') await approve({ chapterIds: [id] });
     for (const content of ['first', 'second', 'third']) {
       await api().post(`/${kind}/${id}/comments`).set(auth(author)).send({ content });
     }
@@ -105,7 +109,9 @@ describe('GET /me/comments', () => {
     const owner = await createUser('contributor');
     const me = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const chapter = await createChapter(owner, comic.id);
+    await approve({ chapterIds: [chapter.id] });
     await api().post(`/comics/${comic.id}/comments`).set(auth(me)).send({ content: 'on comic' });
     await api().post(`/chapters/${chapter.id}/comments`).set(auth(me)).send({ content: 'on chapter' });
 

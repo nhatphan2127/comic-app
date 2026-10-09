@@ -3,9 +3,10 @@ import * as comicRepo from '../repositories/comicRepository.js';
 import * as chapterRepo from '../repositories/chapterRepository.js';
 import { listRecentForDashboard } from './commentService.js';
 import { isAutoAcceptEnabled } from './settingsService.js';
+import { select } from '../config/database.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
 
-const VALID_ROLES = ['user', 'contributor', 'moderator', 'admin'];
+export const VALID_ROLES = ['user', 'contributor', 'moderator', 'admin'];
 const VISIBILITIES = ['public', 'hidden'];
 
 export const REVIEW_STATUSES = ['pending', 'accept', 'reject'];
@@ -44,18 +45,38 @@ export async function setVisibility(type, targetId, visibility) {
 }
 
 // Every comic or chapter (hidden ones too), for admin and moderation tables. Returns { items, totalItems }.
-export async function listContent(type, { statuses, visibilities, sort, page }) {
-  const { rows, count } = await CONTENT_TARGETS[type].list({ statuses, visibilities, sort, limit: page.limit, offset: page.offset });
+export async function listContent(type, { q, statuses, visibilities, sort, page }) {
+  const { rows, count } = await CONTENT_TARGETS[type].list({ q, statuses, visibilities, sort, limit: page.limit, offset: page.offset });
   return { items: rows, totalItems: count };
 }
 
+export async function listUsers({ q, roles, isBanned, page }) {
+  const { rows, count } = await userRepo.listForAdmin({ q, roles, isBanned, limit: page.limit, offset: page.offset });
+  return { items: rows, totalItems: count };
+}
+
+// Headline numbers for the admin overview.
+async function countTotals() {
+  const [row] = await select(`SELECT
+    (SELECT COUNT(*) FROM users) AS users,
+    (SELECT COUNT(*) FROM users WHERE role != 'user') AS staff,
+    (SELECT COUNT(*) FROM comics WHERE deletedAt IS NULL) AS comics,
+    (SELECT COUNT(*) FROM chapters WHERE deletedAt IS NULL) AS chapters,
+    (SELECT COUNT(*) FROM comics WHERE deletedAt IS NULL AND status = 'pending')
+      + (SELECT COUNT(*) FROM chapters WHERE deletedAt IS NULL AND status = 'pending') AS pendingReviews,
+    (SELECT COUNT(*) FROM reports WHERE status = 'open') AS openReports,
+    (SELECT COUNT(*) FROM role_requests WHERE status = 'pending') AS pendingRoleRequests`);
+  return row;
+}
+
 export async function getDashboard() {
-  const [autoAccept, users, comments, comics, chapters] = await Promise.all([
+  const [totals, autoAccept, users, comments, comics, chapters] = await Promise.all([
+    countTotals(),
     isAutoAcceptEnabled(),
     userRepo.listRecent(100),
     listRecentForDashboard(50),
     comicRepo.listByStatuses(['pending'], 10),
     chapterRepo.listByStatuses(['pending'], 10),
   ]);
-  return { autoAccept, users, comments, comics, chapters };
+  return { totals, autoAccept, users, comments, comics, chapters };
 }

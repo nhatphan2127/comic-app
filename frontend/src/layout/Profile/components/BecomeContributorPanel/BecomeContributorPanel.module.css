@@ -1,0 +1,160 @@
+.perks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.perk {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.perk strong {
+  color: var(--fg-strong);
+}
+
+.perkIcon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: var(--sp-1);
+  border-radius: var(--r-md);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid;
+  border-radius: var(--r-lg);
+}
+
+.status > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.status strong {
+  color: var(--fg-strong);
+}
+
+.status p {
+  margin: 0;
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+}
+
+.statusOk {
+  border-color: color-mix(in oklab, var(--ok) 35%, transparent);
+  background: var(--ok-tint);
+  color: var(--ok);
+}
+
+.statusWait {
+  border-color: color-mix(in oklab, var(--warn) 35%, transparent);
+  background: var(--warn-tint);
+  color: var(--warn);
+}
+
+.statusErr {
+  border-color: color-mix(in oklab, var(--err) 35%, transparent);
+  background: var(--err-tint);
+  color: var(--err);
+}
+
+.quote {
+  margin: 0;
+  padding-left: var(--sp-3);
+  border-left: 3px solid currentColor;
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field > span {
+  color: var(--fg-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.field em {
+  color: var(--fg-faint);
+  font-style: normal;
+  font-weight: 400;
+}
+
+.counter {
+  align-self: flex-end;
+  color: var(--fg-faint);
+  font-size: var(--fs-2xs);
+}
+
+.counterLow {
+  color: var(--warn);
+}
+
+.agree {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.agree input {
+  margin-top: 3px;
+  accent-color: var(--brand);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+  .perks {
+    grid-template-columns: 1fr;
+  }
+}

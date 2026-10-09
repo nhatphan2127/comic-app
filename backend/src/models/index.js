@@ -7,7 +7,7 @@ import { Author, Artist, Genre, Format, Comic, ComicGenre, ComicFormat, ComicOth
 import { Chapter, ChapterImage, ChapterContributor } from './chapter.js';
 import { ReadHistory, RatingHistory, FollowingCategory, Following } from './interaction.js';
 import { ComicComment, ComicCommentReaction, ChapterComment, ChapterCommentReaction } from './comment.js';
-import { Notification, AdminSetting, Report, EditRequest, ModerationLog } from './system.js';
+import { Notification, AdminSetting, Report, RoleRequest, ApiKey, EditRequest, ModerationLog } from './system.js';
 
 // Foreign keys are already declared on the columns (see ref() in columns.js), so the
 // associations only describe joins and must not add constraints of their own.
@@ -23,6 +23,8 @@ belongsTo(ComicContributor, User, 'user', 'userId');
 belongsTo(Chapter, Comic, 'comic', 'comicId');
 belongsTo(ChapterContributor, Chapter, 'chapter', 'chapterId');
 belongsTo(ChapterContributor, User, 'user', 'userId');
+belongsTo(RoleRequest, User, 'user', 'userId');
+belongsTo(ApiKey, User, 'user', 'userId');
 
 await sequelize.sync();
 
@@ -39,6 +41,8 @@ async function addColumnIfMissing(table, column, definition, afterAdd) {
 await addColumnIfMissing('user_preferences', 'reader', 'TEXT', () =>
   sequelize.query("UPDATE user_preferences SET theme = 'main'"));
 
+await addColumnIfMissing('comics', 'pendingChanges', 'TEXT');
+
 export {
   sequelize,
   User, UserPreference, PasswordReset, Session,
@@ -46,5 +50,5 @@ export {
   Chapter, ChapterImage, ChapterContributor,
   ReadHistory, RatingHistory, FollowingCategory, Following,
   ComicComment, ComicCommentReaction, ChapterComment, ChapterCommentReaction,
-  Notification, AdminSetting, Report, EditRequest, ModerationLog,
+  Notification, AdminSetting, Report, RoleRequest, ApiKey, EditRequest, ModerationLog,
 };

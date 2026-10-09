@@ -35,7 +35,7 @@ export default function RegisterForm({ onSwitch, onSuccess }: Props) {
       await authApi.register(form.username, form.email, form.password, form.username);
       // Sign straight in instead of asking for the password that was just typed.
       const session = await authApi.login(form.username, form.password);
-      login(session.token, session.user);
+      login(session.user);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Có lỗi xảy ra trong quá trình đăng ký');

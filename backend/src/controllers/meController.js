@@ -8,6 +8,8 @@ import * as interactionService from '../services/interactionService.js';
 import * as notificationService from '../services/notificationService.js';
 import * as commentService from '../services/commentService.js';
 import * as contributorService from '../services/contributorService.js';
+import * as comicService from '../services/comicService.js';
+import * as roleRequestService from '../services/roleRequestService.js';
 import { USER_SORTABLE_FIELDS as COMMENT_SORT_FIELDS } from '../repositories/commentRepository.js';
 import { BadRequestError } from '../errors.js';
 
@@ -143,10 +145,34 @@ export const listMyComments = asyncHandler(async (req, res) => {
   ok(res, items, pageMeta(page, totalItems));
 });
 
+// GET /me/editable-comics/:comicId (id or url slug): a comic the user may edit, in any review state and
+// including an edit still waiting for review. The public GET /comics/:comicId only knows approved comics.
+export const getEditableComic = asyncHandler(async (req, res) => {
+  ok(res, await comicService.getForEditing(req.user, req.params.comicId));
+});
+
 export const listMyComicContributions = asyncHandler(async (req, res) => {
   ok(res, await contributorService.listMyComicContributions(req.user.id));
 });
 
 export const listMyChapterContributions = asyncHandler(async (req, res) => {
   ok(res, await contributorService.listMyChapterContributions(req.user.id));
+});
+
+// ---------- Contributor request ----------
+
+// GET /me/role-request → { request | null, canRequest, retryAfterDays }
+export const getRoleRequest = asyncHandler(async (req, res) => {
+  ok(res, await roleRequestService.getForUser(req.user));
+});
+
+// POST /me/role-request { reason, portfolio? }
+export const createRoleRequest = asyncHandler(async (req, res) => {
+  created(res, '/me/role-request', await roleRequestService.create(req.user, req.body || {}));
+});
+
+// DELETE /me/role-request → withdraws the pending request
+export const cancelRoleRequest = asyncHandler(async (req, res) => {
+  await roleRequestService.cancel(req.user.id);
+  noContent(res);
 });

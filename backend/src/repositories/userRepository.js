@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import { now, select } from '../config/database.js';
 import { User } from '../models/index.js';
+import { readableSql } from './visibility.js';
 
 const PUBLIC_COLUMNS = ['id', 'avatar', 'background', 'displayName', 'username', 'email', 'bio', 'socialLinks', 'role', 'isBanned'];
 
@@ -57,16 +58,40 @@ export const listRecent = (limit = 100) =>
     raw: true,
   });
 
-// Counters shown on the profile header. Deleted comments don't count.
+// Admin user table: search by username / display name / email, filter by role and ban state.
+export function listForAdmin({ q, roles = [], isBanned, limit, offset }) {
+  const where = {};
+  if (q) {
+    const like = { [Op.like]: `%${q}%` };
+    where[Op.or] = [{ username: like }, { displayName: like }, { email: like }];
+  }
+  if (roles.length) where.role = roles;
+  if (isBanned !== undefined) where.isBanned = isBanned ? 1 : 0;
+  return User.findAndCountAll({
+    attributes: ['id', 'username', 'displayName', 'email', 'avatar', 'role', 'isBanned', 'createdAt'],
+    where,
+    order: [['createdAt', 'DESC'], ['id', 'ASC']],
+    limit,
+    offset,
+    raw: true,
+  });
+}
+
+// Counters shown on the profile header: the same rows the profile lists show, so follows of hidden or
+// unapproved comics, and deleted, banned or hidden comments don't count.
+const COMIC_COMMENTS = `FROM comic_comments cc JOIN comics c ON cc.comicId = c.id
+  WHERE cc.userId = :id AND cc.deletedAt IS NULL AND cc.isBanned = 0 AND ${readableSql('c')}`;
+const CHAPTER_COMMENTS = `FROM chapter_comments cc JOIN chapters ch ON cc.chapterId = ch.id JOIN comics c ON ch.comicId = c.id
+  WHERE cc.userId = :id AND cc.deletedAt IS NULL AND cc.isBanned = 0 AND ${readableSql('ch')} AND ${readableSql('c')}`;
+
 export async function stats(id) {
   const [row] = await select(
     `SELECT
-       (SELECT COUNT(*) FROM following WHERE userId = :id) AS following,
+       (SELECT COUNT(*) FROM following f JOIN comics c ON f.comicId = c.id
+        WHERE f.userId = :id AND ${readableSql('c')}) AS following,
        (SELECT COUNT(*) FROM following_categories WHERE userId = :id) AS collections,
-       (SELECT COUNT(*) FROM comic_comments WHERE userId = :id AND deletedAt IS NULL)
-         + (SELECT COUNT(*) FROM chapter_comments WHERE userId = :id AND deletedAt IS NULL) AS comments,
-       (SELECT COALESCE(SUM(likes), 0) FROM comic_comments WHERE userId = :id AND deletedAt IS NULL)
-         + (SELECT COALESCE(SUM(likes), 0) FROM chapter_comments WHERE userId = :id AND deletedAt IS NULL) AS likes`,
+       (SELECT COUNT(*) ${COMIC_COMMENTS}) + (SELECT COUNT(*) ${CHAPTER_COMMENTS}) AS comments,
+       (SELECT COALESCE(SUM(cc.likes), 0) ${COMIC_COMMENTS}) + (SELECT COALESCE(SUM(cc.likes), 0) ${CHAPTER_COMMENTS}) AS likes`,
     { id }
   );
   return row;

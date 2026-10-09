@@ -14,6 +14,7 @@ async function seedUserAndComic() {
   await User.create({ id: userId, username: `u-${userId}`, password: 'x' });
   await Comic.create({
     id: comicId, name: 'c', types: 'manga', contentRating: 'safe', demographic: 'shounen', releaseStatus: 'releasing', url: `c-${comicId}`,
+    status: 'accept',
   });
   return { userId, comicId };
 }
@@ -27,6 +28,13 @@ describe('interactionService (no HTTP)', () => {
   it('rateComic validates the range before touching the database', async () => {
     const { userId, comicId } = await seedUserAndComic();
     await expect(interactionService.rateComic(userId, comicId, 0)).rejects.toBeInstanceOf(BadRequestError);
+  });
+
+  it('followComic and rateComic refuse comics not yet approved', async () => {
+    const { userId, comicId } = await seedUserAndComic();
+    await Comic.update({ status: 'pending' }, { where: { id: comicId } });
+    await expect(interactionService.followComic(userId, comicId)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(interactionService.rateComic(userId, comicId, 5)).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('followComic is idempotent for the counter', async () => {

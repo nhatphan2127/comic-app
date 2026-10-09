@@ -14,6 +14,9 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 const MangaDetail = lazy(() => import('./pages/MangaDetail'));
 const MangaReader = lazy(() => import('./pages/MangaReader'));
 const UserProfile = lazy(() => import('./pages/UserProfile'));
+// Separate workspaces with their own shell (see src/console and src/features).
+const Studio = lazy(() => import('./pages/Studio'));
+const Admin = lazy(() => import('./pages/Admin'));
 
 export default function App() {
   return (
@@ -37,6 +40,8 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="studio/*" element={<Studio />} />
+              <Route path="admin/*" element={<Admin />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>

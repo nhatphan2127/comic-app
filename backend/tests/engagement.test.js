@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { api, createUser, createComic, createChapter, auth } from './helpers.js';
+import { api, createUser, createComic, createChapter, approve, auth } from './helpers.js';
 import { outbox } from '../src/utils/mailer.js';
 
 const notificationsOf = async (user) => (await api().get('/me/notifications').set(auth(user))).body.data;
@@ -40,6 +40,7 @@ describe('notifications', () => {
     const alice = await createUser();
     const bob = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const root = await api().post(`/comics/${comic.id}/comments`).set(auth(alice)).send({ content: 'first' });
 
     await api().post(`/comics/${comic.id}/comments`).set(auth(alice)).send({ content: 'me again', parentCommentId: root.body.data.id });
@@ -109,6 +110,7 @@ describe('ratings', () => {
     const a = await createUser();
     const b = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     await api().put(`/me/ratings/${comic.id}`).set(auth(a)).send({ rating: 5 });
     await api().put(`/me/ratings/${comic.id}`).set(auth(b)).send({ rating: 1 });
 
@@ -119,12 +121,80 @@ describe('ratings', () => {
   });
 });
 
+describe('reader actions only reach content readers can see', () => {
+  it('unapproved content: nobody can follow, rate, comment or track it, staff included', async () => {
+    const owner = await createUser('contributor');
+    const moderator = await createUser('moderator');
+    const admin = await createUser('admin');
+    const reader = await createUser();
+    const comic = await createComic(owner);
+    const chapter = await createChapter(owner, comic.id);
+
+    for (const user of [reader, owner, moderator, admin]) {
+      expect((await api().put(`/me/following/${comic.id}`).set(auth(user))).status).toBe(404);
+      expect((await api().put(`/me/ratings/${comic.id}`).set(auth(user)).send({ rating: 5 })).status).toBe(404);
+      expect((await api().get(`/comics/${comic.id}/comments`).set(auth(user))).status).toBe(404);
+      expect((await api().post(`/chapters/${chapter.id}/comments`).set(auth(user)).send({ content: 'hi' })).status).toBe(404);
+      expect((await api().put(`/me/history/${chapter.id}`).set(auth(user)).send({ currentPage: 1 })).status).toBe(404);
+    }
+
+    await approve({ comicId: comic.id, chapterIds: [chapter.id] });
+    expect((await api().put(`/me/following/${comic.id}`).set(auth(reader))).status).toBe(201);
+    expect((await api().post(`/chapters/${chapter.id}/comments`).set(auth(reader)).send({ content: 'hi' })).status).toBe(201);
+    expect((await api().put(`/me/history/${chapter.id}`).set(auth(reader)).send({ currentPage: 1 })).status).toBe(200);
+  });
+
+  it('once hidden, follows, ratings, history and comments vanish from the profile and cannot be touched', async () => {
+    const owner = await createUser('contributor');
+    const admin = await createUser('admin');
+    const reader = await createUser();
+    const comic = await createComic(owner);
+    const chapter = await createChapter(owner, comic.id);
+    await approve({ comicId: comic.id, chapterIds: [chapter.id] });
+
+    await api().put(`/me/following/${comic.id}`).set(auth(reader));
+    await api().put(`/me/ratings/${comic.id}`).set(auth(reader)).send({ rating: 4 });
+    await api().get(`/chapters/${chapter.id}`).set(auth(reader));
+    const comment = await api().post(`/comics/${comic.id}/comments`).set(auth(reader)).send({ content: 'nice' });
+    const commentId = comment.body.data.id;
+    expect((await api().get('/me').set(auth(reader))).body.data.stats).toMatchObject({ following: 1, comments: 1 });
+
+    expect((await api().patch(`/admin/comics/${comic.id}`).set(auth(admin)).send({ visibility: 'hidden' })).status).toBe(200);
+
+    // Gone from every list and counter...
+    expect((await api().get('/me').set(auth(reader))).body.data.stats).toMatchObject({ following: 0, comments: 0 });
+    expect((await api().get('/me/following').set(auth(reader))).body.data).toHaveLength(0);
+    expect((await api().get('/me/history').set(auth(reader))).body.meta.totalItems).toBe(0);
+    expect((await api().get('/me/comments').set(auth(reader))).body.meta.totalItems).toBe(0);
+    expect((await api().get(`/users/${reader.id}/comments`)).body.meta.totalItems).toBe(0);
+
+    // ...and out of reach, removal included.
+    expect((await api().delete(`/me/following/${comic.id}`).set(auth(reader))).status).toBe(404);
+    expect((await api().get(`/me/following/${comic.id}`).set(auth(reader))).status).toBe(404);
+    expect((await api().delete(`/me/ratings/${comic.id}`).set(auth(reader))).status).toBe(404);
+    expect((await api().delete(`/me/history/${chapter.id}`).set(auth(reader))).status).toBe(404);
+    expect((await api().patch(`/comments/${commentId}`).set(auth(reader)).send({ content: 'edit' })).status).toBe(404);
+    expect((await api().delete(`/comments/${commentId}`).set(auth(reader))).status).toBe(404);
+    expect((await api().put(`/comments/${commentId}/reaction`).set(auth(owner)).send({ type: 'like' })).status).toBe(404);
+    expect((await api().post('/reports').set(auth(owner)).send({ targetType: 'comic', targetId: comic.id, reason: 'x' })).status).toBe(404);
+    // Clearing history leaves the hidden entry alone.
+    expect((await api().delete('/me/history').set(auth(reader))).status).toBe(204);
+
+    // Nothing was lost: showing the comic again brings everything back.
+    await api().patch(`/admin/comics/${comic.id}`).set(auth(admin)).send({ visibility: 'public' });
+    expect((await api().get('/me').set(auth(reader))).body.data.stats).toMatchObject({ following: 1, comments: 1 });
+    expect((await api().get('/me/history').set(auth(reader))).body.meta.totalItems).toBe(1);
+    expect((await api().get(`/comics/${comic.id}`).set(auth(reader))).body.data.userRating).toBe(4);
+  });
+});
+
 describe('public profiles', () => {
   it('shows public fields and visible comments, never private data', async () => {
     const owner = await createUser('contributor');
     const admin = await createUser('admin');
     const user = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const kept = await api().post(`/comics/${comic.id}/comments`).set(auth(user)).send({ content: 'visible' });
     const banned = await api().post(`/comics/${comic.id}/comments`).set(auth(user)).send({ content: 'bad' });
     await api().patch(`/admin/comments/${banned.body.data.id}`).set(auth(admin)).send({ isBanned: true });
@@ -133,7 +203,7 @@ describe('public profiles', () => {
     expect(profile.status).toBe(200);
     expect(profile.body.data.username).toBe(user.userName);
     expect(profile.body.data).not.toHaveProperty('email');
-    expect(profile.body.data.stats.comments).toBe(2);
+    expect(profile.body.data.stats.comments).toBe(1); // the banned one is hidden
 
     const comments = await api().get(`/users/${user.id}/comments`);
     expect(comments.body.data.map((c) => c.id)).toEqual([kept.body.data.id]);

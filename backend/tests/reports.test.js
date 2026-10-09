@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { api, createUser, createComic, createChapter, auth } from './helpers.js';
+import { api, createUser, createComic, createChapter, approve, auth } from './helpers.js';
 
 describe('reports', () => {
   it('readers report comics and comments; moderators list and resolve them', async () => {
@@ -7,7 +7,9 @@ describe('reports', () => {
     const reader = await createUser();
     const moderator = await createUser('moderator');
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const chapter = await createChapter(owner, comic.id);
+    await approve({ chapterIds: [chapter.id] });
     const comment = await api().post(`/chapters/${chapter.id}/comments`).set(auth(owner)).send({ content: 'spam spam' });
 
     expect((await api().post('/reports').send({ targetType: 'comic', targetId: comic.id, reason: 'x' })).status).toBe(401);
@@ -52,6 +54,7 @@ describe('profile stats', () => {
     const owner = await createUser('contributor');
     const fan = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     await api().put(`/me/following/${comic.id}`).set(auth(owner));
     await api().post('/me/following-categories').set(auth(owner)).send({ category: 'Later' });
     const comment = await api().post(`/comics/${comic.id}/comments`).set(auth(owner)).send({ content: 'hi' });

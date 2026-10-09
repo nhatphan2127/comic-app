@@ -2,14 +2,20 @@
 import { Op, col, fn, literal, where } from 'sequelize';
 import { now, sequelize } from '../config/database.js';
 import { Artist, Author, Comic, ComicFormat, ComicGenre, ComicOtherName, Format, Genre } from '../models/index.js';
+import { READABLE } from './visibility.js';
 
-export const findById = (id) => Comic.findByPk(id, { attributes: ['id', 'url', 'coverUrl'], raw: true });
+export const findById = (id) =>
+  Comic.findByPk(id, { attributes: ['id', 'url', 'coverUrl', 'status', 'pendingChanges'], raw: true });
 
 export const findActiveById = (id) => Comic.findOne({ attributes: ['id'], where: { id, deletedAt: null }, raw: true });
 
 export const findStatusById = async (id) => (await Comic.findByPk(id, { attributes: ['status'], raw: true }))?.status;
 
 export const findSummaryById = (id) => Comic.findByPk(id, { attributes: ['id', 'name'], raw: true });
+
+// A non-deleted comic by id or url slug, whatever its review state (publishing API).
+export const findForPublishing = (key) =>
+  Comic.findOne({ attributes: ['id', 'name', 'url', 'status'], where: { ...idOrUrl(key), deletedAt: null }, raw: true });
 
 export const findIdByUrl = (url) => Comic.findOne({ attributes: ['id'], where: { url }, raw: true });
 
@@ -21,7 +27,7 @@ const findDetail = (whereClause) =>
   Comic.findOne({
     attributes: [
       'id', 'name', 'description', 'types', 'contentRating', 'demographic', 'rating', 'coverUrl', 'view', 'follow',
-      'releaseStatus', 'visibility', 'url', 'releasingYear', 'source', 'status',
+      'releaseStatus', 'visibility', 'url', 'releasingYear', 'source', 'status', 'pendingChanges',
       [col('author.name'), 'authorName'],
       [col('artist.name'), 'artistName'],
     ],
@@ -36,12 +42,18 @@ const findDetail = (whereClause) =>
 // Public pages address a comic by id or by its url slug.
 const idOrUrl = (key) => ({ [Op.or]: [{ id: key }, { url: key }] });
 
-export const findPublicDetail = (key) => findDetail({ ...idOrUrl(key), visibility: 'public', deletedAt: null });
+export const findPublicDetail = (key) => findDetail({ ...idOrUrl(key), ...READABLE });
 
 export const findPublicIdByKey = (key) =>
-  Comic.findOne({ attributes: ['id'], where: { ...idOrUrl(key), visibility: 'public', deletedAt: null }, raw: true });
+  Comic.findOne({ attributes: ['id'], where: { ...idOrUrl(key), ...READABLE }, raw: true });
+
+// A comic readers may act on (follow, rate, comment, report), whatever the user's role.
+export const findReadable = (id) => Comic.findOne({ attributes: ['id'], where: { id, ...READABLE }, raw: true });
 
 export const findDetailById = (id) => findDetail({ id });
+
+// The studio editor: any non-deleted comic, by id or url slug, including its pending edit.
+export const findDetailForEditing = (key) => findDetail({ ...idOrUrl(key), deletedAt: null });
 
 // Genre / format names for many comics at once: [{ comicId, name }].
 export const listGenresForComics = (comicIds) =>
@@ -78,7 +90,7 @@ const lowerIn = (column, values) => where(fn('lower', col(column)), { [Op.in]: v
 // `filters` comes from the controller, already validated: q (string), and lower-case lists
 // contentRatings, types, demographics, releaseStatuses, genres, formats. Empty list = no filter.
 function publicWhere({ q, contentRatings = [], types = [], demographics = [], releaseStatuses = [], genres = [], formats = [] } = {}) {
-  const conditions = [{ visibility: 'public', deletedAt: null }];
+  const conditions = [READABLE];
   if (contentRatings.length) conditions.push(lowerIn('contentRating', contentRatings));
   if (types.length) conditions.push(lowerIn('types', types));
   if (demographics.length) conditions.push(lowerIn('demographic', demographics));
@@ -139,9 +151,21 @@ export const countPublic = (filters) => Comic.count({ where: publicWhere(filters
 
 export const insert = (comic) => Comic.create({ ...comic, visibility: 'public' });
 
-// Editing a comic sends it back to moderation (status = 'pending').
+// Editing a comic that is not live yet sends it back to moderation (status = 'pending').
 export const updateAndResubmit = (id, columns) =>
   Comic.update({ ...columns, status: 'pending', updatedAt: now() }, { where: { id } });
+
+// An edit of a live comic is parked here until a moderator decides; null discards it.
+export const setPendingChanges = (id, changes) =>
+  Comic.update({ pendingChanges: changes ? JSON.stringify(changes) : null, updatedAt: now() }, { where: { id } });
+
+// Accepting a parked edit: its columns become the live ones.
+export const applyPendingChanges = (id, columns) =>
+  Comic.update({ ...columns, pendingChanges: null, updatedAt: now() }, { where: { id } });
+
+// What moderation sees: a live comic with a parked edit is waiting for review like a new one.
+const REVIEW_STATUS = literal("CASE WHEN Comic.pendingChanges IS NOT NULL THEN 'pending' ELSE Comic.status END");
+const REVIEW_COLUMNS = [[REVIEW_STATUS, 'status'], [literal('Comic.pendingChanges IS NOT NULL'), 'pendingEdit']];
 
 export async function replaceGenres(comicId, genreIds) {
   await ComicGenre.destroy({ where: { comicId } });
@@ -166,22 +190,51 @@ export const setVisibility = (id, visibility) => Comic.update({ visibility, upda
 // `limit` undefined = no limit.
 export const listByStatuses = (statuses, limit) =>
   Comic.findAll({
-    attributes: ['id', 'name', 'url', 'coverUrl', 'status', 'createdAt', 'updatedAt'],
-    where: { status: { [Op.in]: statuses } },
+    attributes: ['id', 'name', 'url', 'coverUrl', ...REVIEW_COLUMNS, 'createdAt', 'updatedAt'],
+    where: where(REVIEW_STATUS, { [Op.in]: statuses }),
     order: [['updatedAt', 'DESC']],
     limit,
     raw: true,
   });
 
+// Comics a contributor can add chapters to (same rule as publishService.createChapter): approved ones,
+// plus the unreviewed ones they contribute to. Staff (`userId` null) get every comic.
+// `latestChapter` counts pending chapters too, since those numbers are already taken.
+export const listUploadable = ({ userId = null, q = '', limit, offset }) => {
+  const conditions = [{ deletedAt: null }];
+  if (userId) {
+    conditions.push({
+      [Op.or]: [
+        { status: 'accept' },
+        literal(`Comic.id IN (SELECT cc.comicId FROM comic_contributors cc WHERE cc.userId = ${sequelize.escape(userId)})`),
+      ],
+    });
+  }
+  if (q) conditions.push({ [Op.or]: [{ name: { [Op.like]: `%${q}%` } }, { url: { [Op.like]: `%${q}%` } }] });
+  return Comic.findAndCountAll({
+    attributes: [
+      'id', 'name', 'url', 'coverUrl', 'types', 'status', 'visibility',
+      [literal("(SELECT MAX(ch.chapterNumber) FROM chapters ch WHERE ch.comicId = Comic.id AND ch.deletedAt IS NULL AND ch.status <> 'reject')"), 'latestChapter'],
+      [literal(`EXISTS (SELECT 1 FROM comic_contributors cc WHERE cc.comicId = Comic.id AND cc.userId = ${sequelize.escape(userId ?? '')})`), 'mine'],
+    ],
+    where: { [Op.and]: conditions },
+    order: [['name', 'ASC'], ['id', 'ASC']],
+    limit,
+    offset,
+    raw: true,
+  });
+};
+
 export const STAFF_SORTABLE_FIELDS = ['createdAt', 'updatedAt', 'name'];
 
 // Admin / moderation listing: every comic (hidden ones too), filtered by moderation status and visibility.
-export const listForStaff = ({ statuses = [], visibilities = [], sort = [], limit, offset }) =>
+export const listForStaff = ({ q = '', statuses = [], visibilities = [], sort = [], limit, offset }) =>
   Comic.findAndCountAll({
-    attributes: ['id', 'name', 'url', 'coverUrl', 'visibility', 'status', 'createdAt', 'updatedAt'],
+    attributes: ['id', 'name', 'url', 'coverUrl', 'visibility', ...REVIEW_COLUMNS, 'createdAt', 'updatedAt'],
     where: {
-      ...(statuses.length && { status: { [Op.in]: statuses } }),
+      ...(statuses.length && { [Op.and]: [where(REVIEW_STATUS, { [Op.in]: statuses })] }),
       ...(visibilities.length && { visibility: { [Op.in]: visibilities } }),
+      ...(q && { name: { [Op.like]: `%${q}%` } }),
     },
     order: [...(sort.length ? sort : [['updatedAt', 'DESC']]), ['id', 'ASC']],
     limit,

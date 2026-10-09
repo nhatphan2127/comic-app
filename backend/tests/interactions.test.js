@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { api, models, createUser, createComic, createChapter, auth, PREFIX } from './helpers.js';
+import { api, models, createUser, createComic, createChapter, approve, auth, PREFIX } from './helpers.js';
 
 const followCount = async (comicId) => (await models.Comic.findByPk(comicId, { raw: true })).follow;
 
@@ -8,6 +8,7 @@ describe('/me interactions', () => {
     const owner = await createUser('contributor');
     const reader = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
 
     expect((await api().get(`/me/following/${comic.id}`).set(auth(reader))).status).toBe(404);
 
@@ -30,6 +31,7 @@ describe('/me interactions', () => {
     const owner = await createUser('contributor');
     const reader = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const cat = await api().post('/me/following-categories').set(auth(reader)).send({ category: 'Later' });
     expect(cat.status).toBe(201);
     expect(cat.headers.location).toBe(`${PREFIX}/me/following-categories/${cat.body.data.id}`);
@@ -45,6 +47,7 @@ describe('/me interactions', () => {
     const alice = await createUser();
     const bob = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
 
     const cat = await api().post('/me/following-categories').set(auth(alice)).send({ category: 'Fav' });
     const res = await api().put(`/me/following/${comic.id}`).set(auth(bob)).send({ categoryId: cat.body.data.id });
@@ -61,6 +64,7 @@ describe('/me interactions', () => {
     const a = await createUser();
     const b = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
 
     expect((await api().put(`/me/ratings/${comic.id}`).set(auth(a)).send({ rating: 9 })).status).toBe(400);
 
@@ -78,7 +82,9 @@ describe('/me interactions', () => {
     const owner = await createUser('contributor');
     const reader = await createUser();
     const comic = await createComic(owner);
+    await approve({ comicId: comic.id });
     const chapter = await createChapter(owner, comic.id);
+    await approve({ chapterIds: [chapter.id] });
 
     expect((await api().put(`/me/history/${chapter.id}`).set(auth(reader)).send({ currentPage: 0 })).status).toBe(400);
     const hist = await api().put(`/me/history/${chapter.id}`).set(auth(reader)).send({ currentPage: 3 });

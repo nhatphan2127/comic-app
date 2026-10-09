@@ -93,12 +93,17 @@ export interface Chapter {
     // Admin properties
     status?: 'pending' | 'accept' | 'reject';
     visibility?: 'public' | 'hidden';
+    /** Staff listings include the comic the chapter belongs to. */
+    comicName?: string | null;
+    comicUrl?: string | null;
 }
 
 export interface ComicContributor {
     comicId: string;
     userId: string;
     status: 'pending' | 'accept' | 'reject'; // Trạng thái đóng góp
+    /** The comic is live and an edit of it is waiting for review. */
+    pendingEdit?: boolean;
     unread: number; 
     createdAt: string;
     updatedAt: string;
@@ -186,6 +191,8 @@ export interface Comic {
     // Admin properties
     status?: 'pending' | 'accept' | 'reject';
     visibility?: 'public' | 'hidden';
+    /** Studio / moderation only: the comic is live and an edit of it is waiting for review. */
+    pendingEdit?: boolean | number;
 
     latestChapters?: Chapter[] | [];
 
@@ -228,6 +235,8 @@ export interface AdminUser {
     id: string;
     username: string;
     displayName?: string;
+    email?: string | null;
+    avatar?: string | null;
     role?: UserRole;
     isBanned: number;
     createdAt?: string;
@@ -252,10 +261,69 @@ export interface UserFollowingCategory {
     category: string;
 }
 
+export interface DashboardTotals {
+    users: number;
+    staff: number;
+    comics: number;
+    chapters: number;
+    pendingReviews: number;
+    openReports: number;
+    pendingRoleRequests: number;
+}
+
 export interface DashboardResponse {
+    totals: DashboardTotals;
     users: AdminUser[];
     comments: Comment[];
+    comics: Comic[];
+    chapters: Chapter[];
     autoAccept: boolean;
+}
+
+export type ApiKeyScope = 'comics:write' | 'chapters:write';
+
+/** A publishing API key as its owner sees it (never the secret, except `token` right after creation). */
+export interface ApiKey {
+    id: string;
+    name: string;
+    prefix: string;
+    hint: string;
+    scopes: ApiKeyScope[];
+    status: 'active' | 'expired' | 'revoked';
+    expiresAt: string;
+    lastUsedAt: string | null;
+    lastUsedIp: string | null;
+    revokedAt: string | null;
+    createdAt: string;
+    token?: string;
+}
+
+export type RoleRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+/** A reader's request to become a contributor. */
+export interface RoleRequest {
+    id: string;
+    requestedRole: 'contributor';
+    reason: string;
+    portfolio: string | null;
+    status: RoleRequestStatus;
+    reviewNote: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+/** GET /me/role-request */
+export interface RoleRequestState {
+    request: RoleRequest | null;
+    canRequest: boolean;
+    /** Days left before a rejected reader may ask again. */
+    retryAfterDays: number;
+}
+
+/** A request as admins see it, with the applicant. */
+export interface RoleRequestListItem extends RoleRequest {
+    user: { id: string; username: string; displayName: string | null; avatar: string | null; role: UserRole; createdAt: string };
+    reviewer: { username: string; displayName: string | null } | null;
 }
 
 export interface HistoryItem {

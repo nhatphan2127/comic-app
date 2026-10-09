@@ -4,7 +4,6 @@ import * as comicRepo from '../repositories/comicRepository.js';
 import * as chapterRepo from '../repositories/chapterRepository.js';
 import * as historyRepo from '../repositories/historyRepository.js';
 import * as contributorRepo from '../repositories/contributorRepository.js';
-import { isStaff } from './permissions.js';
 import { initialReviewStatus } from './settingsService.js';
 import { notifyNewChapter } from './notificationService.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../errors.js';
@@ -17,9 +16,10 @@ export async function listPublicByComic(comicKey, { sort, page }) {
   return { items: rows, totalItems: count };
 }
 
-// Opening a chapter as a logged-in reader also records it in their reading history.
+// Opening a chapter as a logged-in reader also records it in their reading history. Readers of any role
+// only open approved, public chapters; staff preview the rest through getForReview.
 export async function openForReading(chapterId, viewer = null) {
-  const chapter = await chapterRepo.findReadable(chapterId, isStaff(viewer));
+  const chapter = await chapterRepo.findReadable(chapterId);
   if (!chapter) throw new NotFoundError('Chapter not found');
 
   const images = await chapterRepo.listImages(chapter.id);
@@ -31,6 +31,14 @@ export async function openForReading(chapterId, viewer = null) {
   metadata.totalPages = images.length;
 
   return { id: chapter.id, chapterNumber: chapter.chapterNumber, title: chapter.title, images, metadata };
+}
+
+// Moderation preview: any chapter with its pages, without touching anyone's reading history.
+export async function getForReview(chapterId) {
+  const chapter = await chapterRepo.findForReview(chapterId);
+  if (!chapter) throw new NotFoundError('Chapter not found');
+  const images = await chapterRepo.listImages(chapter.id);
+  return { ...chapter, images, metadata: { totalPages: images.length } };
 }
 
 // Any contributor may upload chapters to any comic (by design); chapters still go through moderation.

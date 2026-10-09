@@ -16,3 +16,12 @@ export default function StatusBadge({ status, className }: { status?: ReviewStat
   const s = STATUS[status] ?? { label: status, tone: '' };
   return <span className={cx('badge', s.tone, className)}>{s.label}</span>;
 }
+
+/** The comic is live and an edit of it is waiting for review (readers still see the approved version). */
+export function EditInReviewBadge({ className }: { className?: string }) {
+  return (
+    <span className={cx('badge', 'badge--info', className)} title="Live comic: readers see the approved version until this edit is reviewed.">
+      Edit in review
+    </span>
+  );
+}

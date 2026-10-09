@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { select } from '../config/database.js';
 import { Following } from '../models/index.js';
+import { readableSql } from './visibility.js';
 
 export const find = (userId, comicId) =>
   Following.findOne({ attributes: ['id', 'comicId', ['followingCategoryId', 'categoryId'], 'createdAt'], where: { userId, comicId }, raw: true });
@@ -17,6 +18,7 @@ export const clearCategory = (userId, categoryId) =>
   Following.update({ followingCategoryId: null }, { where: { followingCategoryId: categoryId, userId } });
 
 // The "following" page: one row per followed comic with its category and reading progress.
+// Only comics readers can see; follows of hidden or unapproved comics stay in the table but out of sight.
 // Kept in SQL because of the per-row subqueries.
 export const listForUser = (userId) =>
   select(
@@ -52,13 +54,13 @@ export const listForUser = (userId) =>
             WHERE ch.comicId = c.id AND rh.userId = f.userId), -1)) AS unreadChapters,
        (SELECT MAX(updatedAt) FROM chapters WHERE comicId = c.id AND deletedAt IS NULL AND status = 'accept' AND visibility = 'public') AS latestChapterAt,
        (SELECT MAX(rh.readAt) FROM read_history rh JOIN chapters ch ON rh.chapterId = ch.id
-        WHERE ch.comicId = c.id AND rh.userId = f.userId) AS lastReadAt,
+        WHERE ch.comicId = c.id AND rh.userId = f.userId AND ${readableSql('ch')}) AS lastReadAt,
        f.createdAt AS followedAt,
        -- Chapter number of the most recently read chapter
        (SELECT ch.chapterNumber
         FROM read_history rh
         JOIN chapters ch ON rh.chapterId = ch.id
-        WHERE ch.comicId = c.id AND rh.userId = f.userId AND ch.deletedAt IS NULL
+        WHERE ch.comicId = c.id AND rh.userId = f.userId AND ${readableSql('ch')}
         ORDER BY rh.readAt DESC
         LIMIT 1) AS readedChapter
      FROM following f
@@ -66,7 +68,7 @@ export const listForUser = (userId) =>
      LEFT JOIN following_categories fc ON f.followingCategoryId = fc.id
      LEFT JOIN author au ON c.authorId = au.id
      LEFT JOIN artist ar ON c.artistId = ar.id
-     WHERE f.userId = ?
+     WHERE f.userId = ? AND ${readableSql('c')}
      ORDER BY c.name`,
     [userId]
   );

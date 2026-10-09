@@ -55,6 +55,11 @@
   color: var(--fg-strong);
 }
 
+.out {
+  margin-left: auto;
+  color: var(--fg-faint);
+}
+
 .itemOn,
 .itemOn:hover {
   background: var(--brand-tint);

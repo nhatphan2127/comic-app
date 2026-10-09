@@ -1,9 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { storageRoot, cleanupUploadsOnFailure } from './middlewares/uploadMiddleware.js';
 import errorHandler, { notFoundHandler } from './middlewares/errorMiddleware.js';
+import { requireTrustedOrigin } from './middlewares/csrfMiddleware.js';
 import { TooManyRequestsError } from './errors.js';
 import { API_PREFIX } from './utils/http.js';
 import v1Routes from './routes/index.js';
@@ -31,7 +33,9 @@ app.disable('x-powered-by');
 // Images in /storage are loaded by the frontend from another origin, so allow cross-origin resource loading.
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // Location is exposed so the browser lets the frontend read it after a 201.
-app.use(cors({ origin: allowedOrigins, exposedHeaders: ['Location'] }));
+// credentials: the frontend sends the session cookie with every request.
+app.use(cors({ origin: allowedOrigins, credentials: true, exposedHeaders: ['Location'] }));
+app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use('/storage', express.static(storageRoot, { dotfiles: 'deny' }));
@@ -42,6 +46,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api', docsRoutes);
+app.use(API_PREFIX, requireTrustedOrigin(allowedOrigins));
 app.use(`${API_PREFIX}/auth`, authLimiter);
 app.use(API_PREFIX, v1Routes);
 
