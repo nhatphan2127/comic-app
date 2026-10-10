@@ -1,7 +1,5 @@
 backend/data
-backend/docs
 backend/script
-backend/src/docs
 backend/storage
 frontend/dist
 frontend/src/assets
