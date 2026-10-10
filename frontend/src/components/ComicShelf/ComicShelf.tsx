@@ -18,13 +18,18 @@ interface ComicShelfProps {
   comics: Comic[];
   isLoading?: boolean;
   className?: string;
+  /**
+   * Size the cards as the catalogue grid would in a container this wide (e.g. the "Latest updates" column,
+   * so both show cards of the same size). Default: the shelf's own width.
+   */
+  cardLayoutWidth?: number;
 }
 
 /**
  * A horizontal row of comic cards (the same cards as "Latest updates"), e.g. "For you" or "Similar comics".
  * No scrollbar: drag it with the mouse, use the < > buttons, or swipe on touch screens.
  */
-export default function ComicShelf({ headingId, title, subtitle, comics, isLoading = false, className }: ComicShelfProps) {
+export default function ComicShelf({ headingId, title, subtitle, comics, isLoading = false, className, cardLayoutWidth }: ComicShelfProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointerId: number; startX: number; startScroll: number; moved: boolean } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -44,7 +49,7 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
     if (!row) return;
     const measure = () => {
       const style = getComputedStyle(row);
-      const width = row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const width = cardLayoutWidth ?? row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
       const min = parseFloat(style.getPropertyValue('--card-min')) || 150;
       const gap = parseFloat(style.columnGap) || 0;
       const columns = Math.max(1, Math.floor((width + gap) / (min + gap)));
@@ -55,7 +60,7 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
     const observer = new ResizeObserver(measure);
     observer.observe(row);
     return () => observer.disconnect();
-  }, [updateArrows, comics.length]);
+  }, [updateArrows, comics.length, cardLayoutWidth]);
 
   // One press = one screenful of cards.
   const scroll = (direction: 1 | -1) => {

@@ -8,7 +8,13 @@ import ComicShelf from '../ComicShelf/ComicShelf';
 const MAX_ITEMS = 20;
 
 /** "You might like": recommendations for logged-in readers on the home page. */
-export default function ForYou({ className }: { className?: string }) {
+interface ForYouProps {
+  className?: string;
+  /** See ComicShelf: size the cards like a grid of this width. */
+  cardLayoutWidth?: number;
+}
+
+export default function ForYou({ className, cardLayoutWidth }: ForYouProps) {
   const { isLoggedIn } = useAuth();
   const contentFilter = useContentFilter();
   const [comics, setComics] = useState<Comic[]>([]);
@@ -46,6 +52,7 @@ export default function ForYou({ className }: { className?: string }) {
       comics={comics}
       isLoading={isLoading}
       className={className}
+      cardLayoutWidth={cardLayoutWidth}
     />
   );
 }

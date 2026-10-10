@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LayoutGrid, List } from 'lucide-react';
 import type { Comic, RankingPeriod } from '../../types/types';
 import ComicCardList from '../../components/ComicCard/ComicCard';
@@ -32,6 +32,17 @@ export default function MainLayout() {
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Width of the "Latest updates" column: the recommendation cards are sized as if laid out in it.
+  const latestRef = useRef<HTMLElement>(null);
+  const [latestWidth, setLatestWidth] = useState<number>();
+
+  useEffect(() => {
+    const section = latestRef.current;
+    if (!section) return;
+    const observer = new ResizeObserver(() => setLatestWidth(section.clientWidth));
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,50 +123,47 @@ export default function MainLayout() {
 
       <ContinueReading />
 
-      {/* Same column as "Latest updates", so the recommended cards are exactly as wide as its cards. */}
-      <div className={styles.mainColumn}>
-        <ForYou />
+      <ForYou className={styles.wide} cardLayoutWidth={latestWidth} />
 
-        <section className={styles.main} aria-labelledby="latest-heading">
-          <header className={styles.sectionHead}>
-            <div>
-              <h2 id="latest-heading" className={styles.title}>
-                Latest updates
-              </h2>
-              <p className={styles.subtitle}>Fresh chapters from the titles you love</p>
+      <section ref={latestRef} className={styles.main} aria-labelledby="latest-heading">
+        <header className={styles.sectionHead}>
+          <div>
+            <h2 id="latest-heading" className={styles.title}>
+              Latest updates
+            </h2>
+            <p className={styles.subtitle}>Fresh chapters from the titles you love</p>
+          </div>
+
+          <div className={styles.viewToggle} role="group" aria-label="View mode">
+            {VIEW_MODES.map(({ mode, label, icon: Icon }) => (
+              <button
+                key={mode}
+                type="button"
+                className={cx(styles.viewBtn, viewMode === mode && styles.viewBtnOn)}
+                onClick={() => setViewMode(mode)}
+                aria-label={label}
+                aria-pressed={viewMode === mode}
+                title={label}
+              >
+                <Icon size={16} />
+              </button>
+            ))}
+          </div>
+        </header>
+
+        {isFirstLoad ? (
+          <p className={styles.state}>Loading comics…</p>
+        ) : error ? (
+          <p className={cx(styles.state, styles.stateError)}>{error}</p>
+        ) : (
+          <>
+            <div className={cx(styles.results, isLoading && styles.resultsLoading)} aria-busy={isLoading}>
+              <ComicCardList comics={comics} viewMode={viewMode} />
             </div>
-
-            <div className={styles.viewToggle} role="group" aria-label="View mode">
-              {VIEW_MODES.map(({ mode, label, icon: Icon }) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={cx(styles.viewBtn, viewMode === mode && styles.viewBtnOn)}
-                  onClick={() => setViewMode(mode)}
-                  aria-label={label}
-                  aria-pressed={viewMode === mode}
-                  title={label}
-                >
-                  <Icon size={16} />
-                </button>
-              ))}
-            </div>
-          </header>
-
-          {isFirstLoad ? (
-            <p className={styles.state}>Loading comics…</p>
-          ) : error ? (
-            <p className={cx(styles.state, styles.stateError)}>{error}</p>
-          ) : (
-            <>
-              <div className={cx(styles.results, isLoading && styles.resultsLoading)} aria-busy={isLoading}>
-                <ComicCardList comics={comics} viewMode={viewMode} />
-              </div>
-              <Pagination currentPage={page} totalPages={totalPages} onPageChange={changePage} isLoading={isLoading} />
-            </>
-          )}
-        </section>
-      </div>
+            <Pagination currentPage={page} totalPages={totalPages} onPageChange={changePage} isLoading={isLoading} />
+          </>
+        )}
+      </section>
 
       <PopularCard
         comics={rankedComics}
