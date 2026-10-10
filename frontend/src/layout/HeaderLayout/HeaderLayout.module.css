@@ -311,7 +311,8 @@
   transition: background var(--t-fast);
 }
 
-.result:hover {
+.result:hover,
+.resultActive {
   background: var(--surface-2);
 }
 

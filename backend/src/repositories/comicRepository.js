@@ -2,7 +2,7 @@
 import { Op, col, fn, literal, where } from 'sequelize';
 import { now, sequelize } from '../config/database.js';
 import { Artist, Author, Comic, ComicFormat, ComicGenre, ComicOtherName, Format, Genre } from '../models/index.js';
-import { READABLE } from './visibility.js';
+import { READABLE, readableSql } from './visibility.js';
 
 export const findById = (id) =>
   Comic.findByPk(id, { attributes: ['id', 'url', 'coverUrl', 'status', 'pendingChanges'], raw: true });
@@ -107,20 +107,22 @@ function publicWhere({ q, contentRatings = [], types = [], demographics = [], re
       `Comic.id IN (SELECT cf.comicId FROM comic_formats cf JOIN formats fo ON fo.id = cf.formatId WHERE lower(fo.name) IN (${names}))`
     ));
   }
-  if (q) {
-    // Name, url, any alternative name, the author or the artist contains q (case-insensitive).
-    const like = sequelize.escape(`%${q}%`);
-    conditions.push({
-      [Op.or]: [
-        literal(`lower(Comic.name) LIKE lower(${like})`),
-        literal(`lower(Comic.url) LIKE lower(${like})`),
-        literal(`EXISTS (SELECT 1 FROM comic_other_names con WHERE con.comicId = Comic.id AND lower(con.name) LIKE lower(${like}))`),
-        literal(`EXISTS (SELECT 1 FROM author au WHERE au.id = Comic.authorId AND lower(au.name) LIKE lower(${like}))`),
-        literal(`EXISTS (SELECT 1 FROM artist ar WHERE ar.id = Comic.artistId AND lower(ar.name) LIKE lower(${like}))`),
-      ],
-    });
-  }
+  if (q) conditions.push(matchesText(q));
   return { [Op.and]: conditions };
+}
+
+// Name, url, any alternative name, the author or the artist contains q (case-insensitive).
+function matchesText(q) {
+  const like = sequelize.escape(`%${q}%`);
+  return {
+    [Op.or]: [
+      literal(`lower(Comic.name) LIKE lower(${like})`),
+      literal(`lower(Comic.url) LIKE lower(${like})`),
+      literal(`EXISTS (SELECT 1 FROM comic_other_names con WHERE con.comicId = Comic.id AND lower(con.name) LIKE lower(${like}))`),
+      literal(`EXISTS (SELECT 1 FROM author au WHERE au.id = Comic.authorId AND lower(au.name) LIKE lower(${like}))`),
+      literal(`EXISTS (SELECT 1 FROM artist ar WHERE ar.id = Comic.artistId AND lower(ar.name) LIKE lower(${like}))`),
+    ],
+  };
 }
 
 // Without an explicit sort: exact name matches first when searching, otherwise newest first.
@@ -151,6 +153,29 @@ export const listPublic = ({ filters, sort = [], limit, offset }) =>
   });
 
 export const countPublic = (filters) => Comic.count({ where: publicWhere(filters) });
+
+// Search-as-you-type: few, light columns. The same matching as the catalogue search; exact name first,
+// then names starting with q, then the rest, most viewed first.
+export const suggest = ({ q, contentRatings = [], limit }) => {
+  const text = sequelize.escape(q);
+  return Comic.findAll({
+    attributes: [
+      'id', 'url', 'name', 'coverUrl', 'types', 'rating',
+      [literal(`(SELECT MAX(ch.chapterNumber) FROM chapters ch WHERE ch.comicId = Comic.id AND ${readableSql('ch')})`), 'latestChapter'],
+    ],
+    where: publicWhere({ q, contentRatings }),
+    order: [
+      // substr() instead of LIKE 'q%' so that % and _ typed by the user are not wildcards.
+      [literal(`CASE WHEN lower(Comic.name) = lower(${text}) THEN 0
+                     WHEN substr(lower(Comic.name), 1, length(${text})) = lower(${text}) THEN 1
+                     ELSE 2 END`), 'ASC'],
+      ['view', 'DESC'],
+      ['id', 'ASC'],
+    ],
+    limit,
+    raw: true,
+  });
+};
 
 export const insert = (comic) => Comic.create({ ...comic, visibility: 'public' });
 

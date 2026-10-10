@@ -27,6 +27,16 @@ export async function list({ filters, sort, page }) {
   return { items: await withGenresAndLatestChapters(comics), totalItems };
 }
 
+export const SUGGEST_LIMIT = 8;
+export const SUGGEST_MIN_LENGTH = 2;
+
+// Search-as-you-type. Too short a query matches almost everything, so it answers nothing instead.
+export async function suggest({ q, contentRatings }) {
+  if (q.length < SUGGEST_MIN_LENGTH) return [];
+  const rows = await comicRepo.suggest({ q, contentRatings, limit: SUGGEST_LIMIT });
+  return rows.map((row) => ({ ...row, rating: Number(row.rating || 0) }));
+}
+
 // Most active comics of the period (see viewRepository.listRanked), as catalogue items plus `rank` and `score`.
 export async function rankings({ period, contentRatings, page }) {
   const [comics, totalItems] = await Promise.all([

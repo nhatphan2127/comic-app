@@ -1,8 +1,19 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import { TooManyRequestsError } from '../errors.js';
 import { authenticateTokenOptional, authenticateToken, requireRole } from '../middlewares/authMiddleware.js';
 import upload from '../middlewares/uploadMiddleware.js';
 import * as comics from '../controllers/comicController.js';
 import * as comments from '../controllers/commentController.js';
+
+// Search-as-you-type fires a request every few keystrokes; this still stops scripts hammering it.
+const suggestLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.SUGGEST_RATE_LIMIT) || 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (req, res, next) => next(new TooManyRequestsError('Too many searches, slow down a little')),
+});
 
 const uploaders = requireRole('contributor', 'moderator', 'admin');
 const staff = requireRole('admin', 'moderator');
@@ -12,7 +23,9 @@ export const comicRouter = express.Router();
 
 comicRouter.get('/', comics.listComics);
 comicRouter.post('/', authenticateToken, uploaders, upload.single('coverImage'), comics.createComic);
-comicRouter.get('/rankings', comics.listRankings); // before /:comicId, which would match "rankings"
+// Before /:comicId, which would match "rankings" and "suggest".
+comicRouter.get('/rankings', comics.listRankings);
+comicRouter.get('/suggest', suggestLimiter, comics.suggestComics);
 // Reading routes accept the comic's id or its url slug in :comicId; writing routes need the id.
 comicRouter.get('/:comicId', authenticateTokenOptional, comics.getComic);
 comicRouter.patch('/:comicId', authenticateToken, uploaders, upload.single('coverImage'), comics.updateComic);

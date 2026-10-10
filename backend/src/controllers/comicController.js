@@ -41,6 +41,16 @@ export const listComics = asyncHandler(async (req, res) => {
   ok(res, items, pageMeta(page, totalItems));
 });
 
+const SUGGEST_MAX_LENGTH = 100;
+
+// GET /comics/suggest?q=&contentRating= → at most 8 light items, [] when q is shorter than 2 characters.
+export const suggestComics = asyncHandler(async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (q.length > SUGGEST_MAX_LENGTH) throw new BadRequestError(`"q" must be at most ${SUGGEST_MAX_LENGTH} characters`);
+  const contentRatings = parseEnumList(req.query.contentRating, 'contentRating', CONTENT_RATINGS);
+  ok(res, await comicService.suggest({ q, contentRatings }));
+});
+
 // GET /comics/rankings?period=day|week|month|all&contentRating=&page=&pageSize=
 export const listRankings = asyncHandler(async (req, res) => {
   const { query } = req;

@@ -226,18 +226,9 @@ export const comicApi = {
     return { comics: data, meta };
   },
 
-  search: async (q: string): Promise<ComicSearchResult[]> => {
-    const { data } = await requestPage<Comic & { latestChapters?: Array<{ chapterNumber: number }> }>(`/comics${query({ q, pageSize: 6 })}`);
-    return data.map((comic) => ({
-      id: comic.id,
-      name: comic.name ?? '',
-      url: comic.url,
-      coverUrl: comic.coverUrl,
-      types: comic.types,
-      rating: comic.rating,
-      latestChapter: comic.latestChapters?.[0]?.chapterNumber ?? null,
-    }));
-  },
+  // use HeaderSearch.tsx: search-as-you-type, at most 8 items ([] when q is shorter than 2 characters)
+  suggest: (q: string, signal?: AbortSignal, contentFilter?: ContentFilter | string) =>
+    request<ComicSearchResult[]>(`/comics/suggest${query({ q, contentRating: contentRatingParam(contentFilter) })}`, { signal }),
 
   // use MangaDetailLayout.tsx (accepts the url slug or the id). Approved, public comics only.
   getByUrl: (url: string) => request<Comic>(`/comics/${url}`),

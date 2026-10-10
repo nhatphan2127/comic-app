@@ -990,6 +990,40 @@ paths:
                   meta: { $ref: '#/components/schemas/PageMeta' }
         '400': { $ref: '#/components/responses/BadRequest' }
 
+  /comics/suggest:
+    get:
+      tags: [Comics]
+      summary: Search-as-you-type suggestions (at most 8 public comics)
+      description: |
+        Same matching as `GET /comics?q=` (name, url slug, alternative names, author, artist; case-insensitive
+        for ASCII letters only, and accents must match: "kiem" does not find "kiếm"). Order: exact name, then
+        names starting with `q`, then the rest by views. A `q` shorter than 2 characters (after trimming)
+        answers `[]`. Limited to 60 requests per minute per IP.
+      security: []
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 100 }
+        - name: contentRating
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: '#/components/schemas/ContentRating' } }
+      responses:
+        '200':
+          description: The suggestions, best first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    maxItems: 8
+                    items: { $ref: '#/components/schemas/ComicSuggestion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
   /comics/{comicId}:
     get:
       tags: [Comics]
@@ -2318,7 +2352,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
     TooManyRequests:
-      description: Rate limit reached (login and register).
+      description: Rate limit reached; the RateLimit headers say when to retry.
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
@@ -2718,6 +2752,16 @@ components:
           type: array
           maxItems: 3
           items: { $ref: '#/components/schemas/LatestChapter' }
+    ComicSuggestion:
+      type: object
+      properties:
+        id: { type: string }
+        url: { type: string }
+        name: { type: string }
+        coverUrl: { type: [string, 'null'] }
+        types: { type: string }
+        rating: { type: number }
+        latestChapter: { type: [number, 'null'], description: Highest readable chapter number. }
     RankedComic:
       allOf:
         - $ref: '#/components/schemas/ComicSummary'
