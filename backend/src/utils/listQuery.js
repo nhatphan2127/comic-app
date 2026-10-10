@@ -23,6 +23,13 @@ export function parsePagination(query, { defaultPageSize = 20, maxPageSize = 100
   return { page, pageSize, limit: pageSize, offset: (page - 1) * pageSize };
 }
 
+// ?limit= for short, unpaginated lists (recommendations, similar comics).
+export function parseLimit(query, { defaultLimit, maxLimit }) {
+  const limit = toInteger(query.limit, 'limit', defaultLimit);
+  if (limit < 1 || limit > maxLimit) throw new BadRequestError(`"limit" must be between 1 and ${maxLimit}`);
+  return limit;
+}
+
 // Returns [[field, 'ASC' | 'DESC'], ...] or `fallback` when no sort is given.
 // `fields` is the whitelist: only these names ever reach the database layer.
 export function parseSort(value, fields, fallback = []) {

@@ -49,15 +49,16 @@ export const auth = (user) => ({ Cookie: user.cookie, Origin: ORIGIN });
 
 export async function createComic(owner, overrides = {}) {
   const url = overrides.url || unique('comic-');
-  const res = await api()
+  const req = api()
     .post('/comics')
     .set(auth(owner))
     .field('name', overrides.name || url)
     .field('types', overrides.types || 'manga')
-    .field('demographic', 'shounen')
+    .field('demographic', overrides.demographic || 'shounen')
     .field('contentRating', overrides.contentRating || 'safe')
-    .field('url', url)
-    .attach('coverImage', PNG, { filename: 'cover.png', contentType: 'image/png' });
+    .field('url', url);
+  (overrides.genres || []).forEach((genre) => req.field('genres', genre));
+  const res = await req.attach('coverImage', PNG, { filename: 'cover.png', contentType: 'image/png' });
   if (res.status !== 201) throw new Error(`createComic failed: ${res.status} ${JSON.stringify(res.body)}`);
   return { id: res.body.data.id, url };
 }

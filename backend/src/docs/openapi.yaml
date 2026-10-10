@@ -519,6 +519,41 @@ paths:
         '204': { $ref: '#/components/responses/NoContent' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /me/recommendations:
+    get:
+      tags: [Me]
+      summary: Comics recommended for me ("For you")
+      description: |
+        A hybrid of content-based filtering (genres, formats, demographic and type, weighted by IDF, compared
+        with the comics I like) and user-based collaborative filtering (what readers with tastes like mine
+        like). How much I like a comic comes from what I did with it: following it, the chapters I read and
+        my rating. Comics I follow, read or rated are left out, as are those above my content filter
+        (`filter` in PATCH /me/preferences).
+
+        Each item says why it is there (`reason`): `similar_readers` (readers like me like it; `count` of
+        them), `because_you_liked` (closest to `comic`, one I like) or `trending` (this week's rankings,
+        used when I have not liked anything yet and to fill up a short list).
+
+        The list is cached for 15 minutes and recomputed as soon as I follow, rate, open a new chapter or
+        change my content filter.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: The recommendations, best first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/RecommendedComic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /me/notifications:
     get:
       tags: [Me]
@@ -1078,6 +1113,40 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
+  /comics/{comicId}/similar:
+    get:
+      tags: [Comics]
+      summary: Public comics similar to this one
+      description: |
+        Closest in content: cosine similarity of the genre / format / demographic / type vectors, each
+        feature weighted by IDF (`ln(N / n)`, rare features count more, one every comic has counts 0).
+        Ties go to the most viewed. The comic itself is never included; comics sharing nothing with it
+        are left out, so the list may be shorter than `limit`. Not personalised.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/comicIdOrSlug' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 30, default: 10 }
+        - name: contentRating
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: '#/components/schemas/ContentRating' } }
+      responses:
+        '200':
+          description: The similar comics, most similar first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SimilarComic' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /comics/{comicId}/chapters:
     get:
@@ -2771,6 +2840,41 @@ components:
           properties:
             rank: { type: integer, minimum: 1 }
             score: { type: integer, description: Activity score within the requested period. }
+    SimilarComic:
+      allOf:
+        - $ref: '#/components/schemas/ComicSummary'
+        - type: object
+          properties:
+            similarity: { type: number, minimum: 0, maximum: 1 }
+    RecommendedComic:
+      allOf:
+        - $ref: '#/components/schemas/ComicSummary'
+        - type: object
+          properties:
+            score: { type: number, minimum: 0, maximum: 1, description: 'Blended score; 0 for `trending` items.' }
+            reason: { $ref: '#/components/schemas/RecommendationReason' }
+    RecommendationReason:
+      oneOf:
+        - type: object
+          required: [type, count]
+          properties:
+            type: { const: similar_readers }
+            count: { type: integer, minimum: 2, description: Readers with similar tastes who like it. }
+        - type: object
+          required: [type, comic]
+          properties:
+            type: { const: because_you_liked }
+            comic:
+              type: object
+              description: The comic I like that is closest to this one.
+              properties:
+                id: { type: string }
+                url: { type: string }
+                name: { type: string }
+        - type: object
+          required: [type]
+          properties:
+            type: { const: trending }
     ComicDetail:
       type: object
       properties:

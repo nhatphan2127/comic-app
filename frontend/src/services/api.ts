@@ -230,6 +230,10 @@ export const comicApi = {
   suggest: (q: string, signal?: AbortSignal, contentFilter?: ContentFilter | string) =>
     request<ComicSearchResult[]>(`/comics/suggest${query({ q, contentRating: contentRatingParam(contentFilter) })}`, { signal }),
 
+  // use MangaDetailLayout.tsx: closest in genres / formats / demographic / type, not personalised
+  getSimilar: (urlOrId: string, limit = 12, contentFilter?: ContentFilter | string) =>
+    request<Comic[]>(`/comics/${urlOrId}/similar${query({ limit, contentRating: contentRatingParam(contentFilter) })}`),
+
   // use MangaDetailLayout.tsx (accepts the url slug or the id). Approved, public comics only.
   getByUrl: (url: string) => request<Comic>(`/comics/${url}`),
 
@@ -351,6 +355,10 @@ export const userApi = {
     formData.append('background', backgroundFile);
     return multipartRequest<UserProfile>('/me/background', formData, { method: 'PUT' });
   },
+
+  // use ForYou.tsx: hybrid recommendations (readers like me + comics like mine), each with a `reason`.
+  // The server applies the account's content filter.
+  getRecommendations: (limit = 20) => request<Comic[]>(`/me/recommendations${query({ limit })}`),
 
   // Only the fields sent change (see PreferenceSync).
   updatePreferences: (preferences: Preferences) =>

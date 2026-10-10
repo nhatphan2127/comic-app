@@ -46,6 +46,8 @@ router.delete('/history', me.clearHistory);
 router.put('/history/:chapterId', me.putHistory);
 router.delete('/history/:chapterId', me.deleteHistoryEntry);
 
+router.get('/recommendations', me.listRecommendations);
+
 router.get('/notifications', me.listNotifications);
 router.patch('/notifications/:notificationId', me.updateNotification);
 

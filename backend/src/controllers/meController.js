@@ -2,7 +2,7 @@
 // reading history, notifications, own comments and contributions).
 import asyncHandler from '../utils/asyncHandler.js';
 import { created, noContent, ok } from '../utils/http.js';
-import { pageMeta, parseBoolean, parsePagination, parseSort } from '../utils/listQuery.js';
+import { pageMeta, parseBoolean, parseLimit, parsePagination, parseSort } from '../utils/listQuery.js';
 import * as userService from '../services/userService.js';
 import * as interactionService from '../services/interactionService.js';
 import * as notificationService from '../services/notificationService.js';
@@ -10,6 +10,7 @@ import * as commentService from '../services/commentService.js';
 import * as contributorService from '../services/contributorService.js';
 import * as comicService from '../services/comicService.js';
 import * as roleRequestService from '../services/roleRequestService.js';
+import * as recommendationService from '../services/recommendationService.js';
 import { USER_SORTABLE_FIELDS as COMMENT_SORT_FIELDS } from '../repositories/commentRepository.js';
 import { BadRequestError } from '../errors.js';
 
@@ -116,6 +117,14 @@ export const deleteHistoryEntry = asyncHandler(async (req, res) => {
 export const clearHistory = asyncHandler(async (req, res) => {
   await userService.clearReadingHistory(req.user.id);
   noContent(res);
+});
+
+// ---------- Recommendations ----------
+
+// GET /me/recommendations?limit= → "For you": catalogue items with `score` and `reason`.
+export const listRecommendations = asyncHandler(async (req, res) => {
+  const limit = parseLimit(req.query, { defaultLimit: 20, maxLimit: recommendationService.MAX_RECOMMENDATIONS });
+  ok(res, await recommendationService.recommendFor(req.user.id, limit));
 });
 
 // ---------- Notifications ----------

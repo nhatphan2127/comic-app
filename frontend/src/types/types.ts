@@ -153,6 +153,12 @@ export interface ComicDetail extends Comic {
     chapters?: Chapter[];
 }
 
+/** Why GET /me/recommendations suggests a comic. */
+export type RecommendationReason =
+    | { type: 'similar_readers'; count: number }
+    | { type: 'because_you_liked'; comic: { id: string; url: string; name: string } }
+    | { type: 'trending' };
+
 /** GET /comics/rankings: today, the last 7 days, the last 30 days, or all time. */
 export type RankingPeriod = 'day' | 'week' | 'month' | 'all';
 
@@ -201,7 +207,13 @@ export interface Comic {
 
     /** Rankings only: position (1-based) and activity score within the requested period. */
     rank?: number;
+    /** Rankings: activity score. Recommendations: blended score 0..1 (0 for trending). */
     score?: number;
+
+    /** GET /me/recommendations only: why the comic is recommended. */
+    reason?: RecommendationReason;
+    /** GET /comics/:id/similar only: content similarity 0..1. */
+    similarity?: number;
 
     /** Where the logged-in viewer left off (public detail only); null = never opened. */
     progress?: {

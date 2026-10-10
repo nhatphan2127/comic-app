@@ -6,6 +6,7 @@ import HeroCarousel from '../../components/HeroCarousel/HeroCarousel';
 import Pagination from '../../components/Pagination/Pagination';
 import PopularCard from '../../components/PopularCard/PopularCard';
 import ContinueReading from '../../components/ContinueReading/ContinueReading';
+import ForYou from '../../components/ForYou/ForYou';
 import { comicApi } from '../../services/api';
 import useContentFilter from '../../hooks/useContentFilter';
 import cx from '../../helpers/cx';
@@ -110,6 +111,8 @@ export default function MainLayout() {
       </div>
 
       <ContinueReading />
+
+      <ForYou className={styles.wide} />
 
       <section className={styles.main} aria-labelledby="latest-heading">
         <header className={styles.sectionHead}>

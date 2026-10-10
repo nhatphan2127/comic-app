@@ -153,6 +153,10 @@ export const listPublic = ({ filters, sort = [], limit, offset }) =>
 
 export const countPublic = (filters) => Comic.count({ where: publicWhere(filters) });
 
+// Catalogue items for the given ids (readable ones only), in no particular order.
+export const listPublicByIds = (ids) =>
+  ids.length ? Comic.findAll({ attributes: LIST_COLUMNS, where: { id: ids, ...READABLE }, raw: true }) : [];
+
 // Search-as-you-type: few, light columns. The same matching as the catalogue search; exact name first,
 // then names starting with q, then the rest, most viewed first.
 export const suggest = ({ q, contentRatings = [], limit }) =>

@@ -48,7 +48,8 @@ export async function rankings({ period, contentRatings, page }) {
   return { items, totalItems };
 }
 
-async function withGenresAndLatestChapters(comics) {
+// Catalogue items (genres and latest chapters added), same order as `comics`. Also used by recommendations.
+export async function withGenresAndLatestChapters(comics) {
   const ids = comics.map((c) => c.id);
   const [genres, chapters] = ids.length
     ? await Promise.all([comicRepo.listGenresForComics(ids), chapterRepo.listPublicForComics(ids)])

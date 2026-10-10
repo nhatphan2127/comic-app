@@ -1,10 +1,11 @@
 // /comics and /chapters: the public catalogue, uploads and contributor review.
 import asyncHandler from '../utils/asyncHandler.js';
 import { created, ok } from '../utils/http.js';
-import { pageMeta, parseEnumList, parseList, parsePagination, parseSort } from '../utils/listQuery.js';
+import { pageMeta, parseEnumList, parseLimit, parseList, parsePagination, parseSort } from '../utils/listQuery.js';
 import * as comicService from '../services/comicService.js';
 import * as chapterService from '../services/chapterService.js';
 import * as contributorService from '../services/contributorService.js';
+import * as recommendationService from '../services/recommendationService.js';
 import { SORTABLE_FIELDS as COMIC_SORT_FIELDS } from '../repositories/comicRepository.js';
 import { SORTABLE_FIELDS as CHAPTER_SORT_FIELDS } from '../repositories/chapterRepository.js';
 import { RANKING_PERIODS } from '../repositories/viewRepository.js';
@@ -67,6 +68,14 @@ export const listRankings = asyncHandler(async (req, res) => {
 // GET /comics/:comicId (id or url slug)
 export const getComic = asyncHandler(async (req, res) => {
   ok(res, await comicService.getPublicDetail(req.params.comicId, req.user?.id));
+});
+
+// GET /comics/:comicId/similar?limit=&contentRating= (id or url slug): closest in genres, formats,
+// demographic and type, each item with its `similarity` (0..1).
+export const listSimilarComics = asyncHandler(async (req, res) => {
+  const limit = parseLimit(req.query, { defaultLimit: 10, maxLimit: recommendationService.MAX_SIMILAR });
+  const contentRatings = parseEnumList(req.query.contentRating, 'contentRating', CONTENT_RATINGS);
+  ok(res, await recommendationService.similarTo(req.params.comicId, { limit, contentRatings }));
 });
 
 // POST /comics (multipart, field "coverImage") → 201, Location: /comics/:id

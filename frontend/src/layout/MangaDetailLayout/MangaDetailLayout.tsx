@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, Bookmark, BookOpen, Check, ChevronDown, Flag, RotateCcw, Search, Star } from 'lucide-react';
 import { comicApi } from '../../services/api';
+import useContentFilter from '../../hooks/useContentFilter';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import type { Chapter, Comic } from '../../types/types';
@@ -12,6 +13,7 @@ import cx from '../../helpers/cx';
 import Cover from '../../components/Cover/Cover';
 import Pagination from '../../components/Pagination/Pagination';
 import CommentsSection from '../../components/CommentsSection/CommentsSection';
+import ComicShelf from '../../components/ComicShelf/ComicShelf';
 import ReportDialog from '../../components/ReportDialog/ReportDialog';
 import AuthModalLayout from '../AuthModalLayout/AuthModalLayout';
 import styles from './MangaDetailLayout.module.css';
@@ -49,6 +51,8 @@ export default function MangaDetailLayout() {
   const [chapterQuery, setChapterQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [chapterPage, setChapterPage] = useState(1);
+  const contentFilter = useContentFilter();
+  const [similar, setSimilar] = useState<Comic[]>([]);
 
   useEffect(() => {
     if (!comicUrl) return;
@@ -101,6 +105,20 @@ export default function MangaDetailLayout() {
       .then((res) => setIsFollowing(Boolean(res?.isFollowing)))
       .catch(() => setIsFollowing(false));
   }, [comic?.id, isLoggedIn]);
+
+  // "Similar comics": closest in genres, formats, demographic and type.
+  const comicId = comic?.id;
+  useEffect(() => {
+    if (!comicId) return;
+    let cancelled = false;
+    comicApi
+      .getSimilar(comicId, 12, contentFilter)
+      .then((data) => !cancelled && setSimilar(data || []))
+      .catch(() => !cancelled && setSimilar([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [comicId, contentFilter]);
 
   // Reset to the first page whenever the visible set changes.
   useEffect(() => setChapterPage(1), [chapterQuery, sortOrder]);
@@ -389,6 +407,16 @@ export default function MangaDetailLayout() {
 
         <Pagination currentPage={chapterPage} totalPages={pageCount} onPageChange={setChapterPage} />
       </section>
+
+      {similar.length > 0 ? (
+        <ComicShelf
+          headingId="similar-heading"
+          title="Similar comics"
+          comics={similar}
+          caption={(item) => item.genres?.join(' · ') || null}
+          className={styles.similar}
+        />
+      ) : null}
 
       <div className={styles.comments}>
         <CommentsSection id={comic.id} targetId={commentTargetId} type="comic" />

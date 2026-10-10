@@ -8,6 +8,7 @@ import * as followRepo from '../repositories/followRepository.js';
 import * as historyRepo from '../repositories/historyRepository.js';
 import * as categoryRepo from '../repositories/categoryRepository.js';
 import { assertChapterReadable } from './interactionService.js';
+import { forgetUser as forgetRecommendations } from './recommendationService.js';
 import { assertValidPassword, hashPassword, verifyPassword } from './authService.js';
 import { BadRequestError, ConflictError, NotFoundError, UnauthorizedError } from '../errors.js';
 
@@ -89,6 +90,8 @@ export async function updatePreferences(userId, { theme, filter, reader }) {
     if (JSON.stringify(reader).length > READER_MAX_BYTES) throw new BadRequestError('"reader" is too large');
   }
   await preferenceRepo.upsert(userId, { theme, filter, reader });
+  // Recommendations follow the content filter.
+  if (filter !== undefined) forgetRecommendations(userId);
   return preferenceRepo.find(userId);
 }
 

@@ -7,6 +7,7 @@ import * as viewRepo from '../repositories/viewRepository.js';
 import * as contributorRepo from '../repositories/contributorRepository.js';
 import { initialReviewStatus } from './settingsService.js';
 import { notifyNewChapter } from './notificationService.js';
+import { forgetUser as forgetRecommendations } from './recommendationService.js';
 import { BadRequestError, ConflictError, NotFoundError } from '../errors.js';
 
 // `comicKey` is the comic's id or url slug. Returns one page: { items, totalItems }.
@@ -39,14 +40,17 @@ export async function openForReading(chapterId, viewer = null) {
 
 // A logged-in reader's open counts as a view only if they had not opened this chapter in the last
 // 30 minutes (refreshing the page is not a view), and as a chapter read today only once per day.
-// The previous visit is read before touch() overwrites it.
-function recordVisit(userId, chapter) {
-  return withTransaction(async () => {
-    const previous = await viewRepo.findPreviousVisit(userId, chapter.id);
+// The previous visit is read before touch() overwrites it. A chapter opened for the first time changes
+// what the reader likes, so their recommendations are recomputed.
+async function recordVisit(userId, chapter) {
+  const previous = await withTransaction(async () => {
+    const visit = await viewRepo.findPreviousVisit(userId, chapter.id);
     await historyRepo.touch(userId, chapter.id);
-    if (!previous?.recent) await viewRepo.addComicView(chapter.comicId);
-    if (!previous?.today) await viewRepo.addUserReadChapter(userId);
+    if (!visit?.recent) await viewRepo.addComicView(chapter.comicId);
+    if (!visit?.today) await viewRepo.addUserReadChapter(userId);
+    return visit;
   });
+  if (!previous) forgetRecommendations(userId);
 }
 
 // Moderation preview: any chapter with its pages, without touching anyone's reading history.

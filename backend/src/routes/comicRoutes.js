@@ -30,6 +30,8 @@ comicRouter.get('/suggest', suggestLimiter, comics.suggestComics);
 comicRouter.get('/:comicId', authenticateTokenOptional, comics.getComic);
 comicRouter.patch('/:comicId', authenticateToken, uploaders, upload.single('coverImage'), comics.updateComic);
 
+comicRouter.get('/:comicId/similar', comics.listSimilarComics);
+
 comicRouter.get('/:comicId/chapters', comics.listComicChapters);
 comicRouter.post('/:comicId/chapters', authenticateToken, uploaders, upload.array('images', 50), comics.createChapter);
 

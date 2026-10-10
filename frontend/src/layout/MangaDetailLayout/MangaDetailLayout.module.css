@@ -392,6 +392,10 @@
   white-space: nowrap;
 }
 
+.similar {
+  margin-top: var(--sp-10);
+}
+
 .comments {
   margin-top: var(--sp-8);
 }

@@ -7,6 +7,7 @@ import * as followRepo from '../repositories/followRepository.js';
 import * as ratingRepo from '../repositories/ratingRepository.js';
 import * as historyRepo from '../repositories/historyRepository.js';
 import * as categoryRepo from '../repositories/categoryRepository.js';
+import { forgetUser as forgetRecommendations } from './recommendationService.js';
 import { BadRequestError, NotFoundError } from '../errors.js';
 
 // Following, rating and reading history are reader actions: they only work on comics and chapters readers
@@ -47,6 +48,7 @@ export async function followComic(userId, comicId, categoryId = null) {
     await comicRepo.incrementFollowCount(comicId);
     return true;
   });
+  if (created) forgetRecommendations(userId);
   return { created, follow: await getFollow(userId, comicId) };
 }
 
@@ -59,6 +61,7 @@ export async function unfollowComic(userId, comicId) {
       await comicRepo.decrementFollowCount(comicId);
     }
   });
+  forgetRecommendations(userId);
 }
 
 export async function rateComic(userId, comicId, rating) {
@@ -66,24 +69,28 @@ export async function rateComic(userId, comicId, rating) {
     throw new BadRequestError('"rating" must be an integer between 1 and 5');
   }
 
-  return withTransaction(async () => {
+  const result = await withTransaction(async () => {
     await assertComicReadable(comicId);
     await ratingRepo.upsert(userId, comicId, rating);
     const average = await ratingRepo.averageForComic(comicId);
     await comicRepo.setRating(comicId, average);
     return { comicId, userRating: rating, averageRating: Number(average.toFixed(1)) };
   });
+  forgetRecommendations(userId);
+  return result;
 }
 
 // Taking a rating back is idempotent; the comic's average is recomputed without it.
 export async function unrateComic(userId, comicId) {
-  return withTransaction(async () => {
+  const result = await withTransaction(async () => {
     await assertComicReadable(comicId);
     await ratingRepo.remove(userId, comicId);
     const average = Number(await ratingRepo.averageForComic(comicId));
     await comicRepo.setRating(comicId, average);
     return { comicId, userRating: 0, averageRating: Number(average.toFixed(1)) };
   });
+  forgetRecommendations(userId);
+  return result;
 }
 
 export async function saveReadingHistory(userId, chapterId, currentPage) {
