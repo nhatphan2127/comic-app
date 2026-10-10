@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comic-translator"
+version = "0.1.0"
+description = "Translate English comic pages to Vietnamese (detect, OCR, translate, typeset) with LangGraph"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=1.0",
+    "torch",
+    "transformers>=4.49",  # RT-DETRv2 (the detector) needs 4.49+
+    "sentencepiece",
+    "easyocr",
+    "opencv-python-headless",
+    "pillow",
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+comic-translate = "comic_translator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

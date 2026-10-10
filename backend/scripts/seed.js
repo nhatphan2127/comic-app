@@ -316,6 +316,7 @@ async function seedDatabase() {
           follow: Math.floor(Math.random() * 9000) + 5,
           releaseStatus: comic.releaseStatus,
           visibility: 'public',
+          status: 'accept', // đã duyệt sẵn để người đọc mở được ngay
           url: comic.url,
           releasingYear: comic.releasingYear,
           authorId: randomAuthor.id,
@@ -352,6 +353,7 @@ async function seedDatabase() {
             title: `Chương ${j}: Hành trình mới bắt đầu`,
             chapterNumber: j,
             visibility: 'public',
+            status: 'accept',
             url: `${comic.url}-chuong-${j}`,
           });
 

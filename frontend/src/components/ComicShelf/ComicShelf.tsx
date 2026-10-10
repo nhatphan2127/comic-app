@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react';
+import { Children, useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Comic } from '../../types/types';
 import { ComicCard } from '../ComicCard/ComicCard';
@@ -15,7 +15,13 @@ interface ComicShelfProps {
   headingId: string;
   title: string;
   subtitle?: string;
-  comics: Comic[];
+  comics?: Comic[];
+  /** Cards to show instead of `comics` (e.g. history cards). */
+  children?: ReactNode;
+  /** Extra header content next to the arrows, e.g. a "See all" link. Stays visible on phones. */
+  action?: ReactNode;
+  /** Narrowest card width in px, for cards other than the catalogue's. Default: the catalogue grid's. */
+  cardMinWidth?: number;
   isLoading?: boolean;
   className?: string;
   /**
@@ -23,23 +29,51 @@ interface ComicShelfProps {
    * so both show cards of the same size). Default: the shelf's own width.
    */
   cardLayoutWidth?: number;
+  /**
+   * Turn a page by itself every this many milliseconds, back to the start after the last page.
+   * Pauses while the mouse is over the shelf, while it has keyboard focus, and for a while after the reader
+   * scrolls it. Off by default and for readers who prefer reduced motion.
+   */
+  autoScrollMs?: number;
 }
 
 /**
- * A horizontal row of comic cards (the same cards as "Latest updates"), e.g. "For you" or "Similar comics".
+ * A horizontal row of cards: comic cards (the same as "Latest updates"), e.g. "For you" or "Similar comics",
+ * or any cards passed as children, e.g. "Continue reading".
  * No scrollbar: drag it with the mouse, use the < > buttons, or swipe on touch screens.
  */
-export default function ComicShelf({ headingId, title, subtitle, comics, isLoading = false, className, cardLayoutWidth }: ComicShelfProps) {
+export default function ComicShelf({
+  headingId,
+  title,
+  subtitle,
+  comics = [],
+  children,
+  action,
+  cardMinWidth,
+  isLoading = false,
+  className,
+  cardLayoutWidth,
+  autoScrollMs,
+}: ComicShelfProps) {
+  const itemCount = children === undefined ? comics.length : Children.count(children);
   const rowRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointerId: number; startX: number; startScroll: number; moved: boolean } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [canScroll, setCanScroll] = useState({ back: false, forward: false });
+  const [isHovered, setIsHovered] = useState(false);
+  const [hasKeyboardFocus, setHasKeyboardFocus] = useState(false);
+  // When the reader last scrolled the shelf themselves; auto-scroll waits a full interval after it.
+  const lastInteraction = useRef(0);
+  const [canScroll, setCanScroll] = useState({ back: false, forward: false, overflow: false });
   const [cardWidth, setCardWidth] = useState<number | null>(null);
 
   const updateArrows = useCallback(() => {
     const row = rowRef.current;
     if (!row) return;
-    setCanScroll({ back: row.scrollLeft > 1, forward: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
+    setCanScroll({
+      back: row.scrollLeft > 1,
+      forward: row.scrollLeft + row.clientWidth < row.scrollWidth - 1,
+      overflow: row.scrollWidth > row.clientWidth + 1,
+    });
   }, []);
 
   // Cards as wide as in the "Latest updates" grid (repeat(auto-fill, minmax(--card-min, 1fr))): as many
@@ -60,18 +94,41 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
     const observer = new ResizeObserver(measure);
     observer.observe(row);
     return () => observer.disconnect();
-  }, [updateArrows, comics.length, cardLayoutWidth]);
+  }, [updateArrows, itemCount, cardLayoutWidth, cardMinWidth]);
 
-  // One press = one screenful of cards.
-  const scroll = (direction: 1 | -1) => {
+  // One press = one screenful of cards. Pressing > at the end glides back to the first card.
+  const scroll = useCallback((direction: 1 | -1) => {
     const row = rowRef.current;
     if (!row) return;
-    const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
-    row.scrollBy({ left: direction * (row.clientWidth + gap), behavior: 'smooth' });
+    const atEnd = row.scrollLeft + row.clientWidth >= row.scrollWidth - 1;
+    if (direction === 1 && atEnd) {
+      row.scrollTo({ left: 0, behavior: 'smooth' });
+      return;
+    }
+    const style = getComputedStyle(row);
+    const gap = parseFloat(style.columnGap) || 0;
+    const page = row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) + gap;
+    row.scrollBy({ left: direction * page, behavior: 'smooth' });
+  }, []);
+
+  const scrollByReader = (direction: 1 | -1) => {
+    lastInteraction.current = Date.now();
+    scroll(direction);
   };
+
+  useEffect(() => {
+    if (!autoScrollMs || isLoading || isHovered || hasKeyboardFocus || isDragging) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => {
+      if (document.hidden || Date.now() - lastInteraction.current < autoScrollMs) return;
+      scroll(1);
+    }, autoScrollMs);
+    return () => window.clearInterval(timer);
+  }, [autoScrollMs, isLoading, isHovered, hasKeyboardFocus, isDragging, scroll]);
 
   // Mouse drag to scroll. Touch and pens keep the browser's own swipe scrolling.
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    lastInteraction.current = Date.now();
     if (e.pointerType !== 'mouse' || e.button !== 0 || !rowRef.current) return;
     drag.current = { pointerId: e.pointerId, startX: e.clientX, startScroll: rowRef.current.scrollLeft, moved: false };
   };
@@ -108,10 +165,23 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
     drag.current = null;
   };
 
-  const showPlaceholders = isLoading && comics.length === 0;
+  const showPlaceholders = isLoading && itemCount === 0;
+  const rowStyle = {
+    ...(cardMinWidth ? { '--card-min': `${cardMinWidth}px` } : {}),
+    ...(cardWidth ? { '--card-w': `${cardWidth}px` } : {}),
+  } as CSSProperties;
 
   return (
-    <section className={cx(styles.section, className)} aria-labelledby={headingId}>
+    <section
+      className={cx(styles.section, className)}
+      aria-labelledby={headingId}
+      onPointerEnter={(e) => e.pointerType === 'mouse' && setIsHovered(true)}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && setIsHovered(false)}
+      onFocus={(e) => setHasKeyboardFocus(e.target.matches(':focus-visible'))}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setHasKeyboardFocus(false);
+      }}
+    >
       <header className={styles.head}>
         <div>
           <h2 id={headingId} className={styles.title}>
@@ -119,32 +189,35 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
           </h2>
           {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}
         </div>
-        <div className={styles.arrows}>
-          <button
-            type="button"
-            className={styles.arrow}
-            onClick={() => scroll(-1)}
-            disabled={!canScroll.back}
-            aria-label={`Scroll ${title} back`}
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <button
-            type="button"
-            className={styles.arrow}
-            onClick={() => scroll(1)}
-            disabled={!canScroll.forward}
-            aria-label={`Scroll ${title} forward`}
-          >
-            <ChevronRight size={16} />
-          </button>
+        <div className={styles.tools}>
+          {action}
+          <div className={styles.arrows}>
+            <button
+              type="button"
+              className={styles.arrow}
+              onClick={() => scrollByReader(-1)}
+              disabled={!canScroll.back}
+              aria-label={`Scroll ${title} back`}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              className={styles.arrow}
+              onClick={() => scrollByReader(1)}
+              disabled={!canScroll.overflow}
+              aria-label={canScroll.forward ? `Scroll ${title} forward` : `Back to the start of ${title}`}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
       </header>
 
       <div
         ref={rowRef}
         className={cx(styles.row, isLoading && styles.rowLoading, isDragging && styles.rowDragging)}
-        style={cardWidth ? ({ '--card-w': `${cardWidth}px` } as CSSProperties) : undefined}
+        style={rowStyle}
         aria-busy={isLoading}
         onScroll={updateArrows}
         onPointerDown={onPointerDown}
@@ -161,7 +234,7 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
                 <Cover />
               </div>
             ))
-          : comics.map((comic) => <ComicCard key={comic.id} comic={comic} viewMode="grid" />)}
+          : (children ?? comics.map((comic) => <ComicCard key={comic.id} comic={comic} viewMode="grid" />))}
       </div>
     </section>
   );

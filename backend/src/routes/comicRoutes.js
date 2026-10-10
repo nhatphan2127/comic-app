@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { TooManyRequestsError } from '../errors.js';
 import { authenticateTokenOptional, authenticateToken, requireRole } from '../middlewares/authMiddleware.js';
 import upload from '../middlewares/uploadMiddleware.js';
+import { comicCreateLimiter } from '../middlewares/rateLimitMiddleware.js';
 import * as comics from '../controllers/comicController.js';
 import * as comments from '../controllers/commentController.js';
 
@@ -22,7 +23,7 @@ const staff = requireRole('admin', 'moderator');
 export const comicRouter = express.Router();
 
 comicRouter.get('/', comics.listComics);
-comicRouter.post('/', authenticateToken, uploaders, upload.single('coverImage'), comics.createComic);
+comicRouter.post('/', authenticateToken, uploaders, comicCreateLimiter, upload.single('coverImage'), comics.createComic);
 // Before /:comicId, which would match "rankings" and "suggest".
 comicRouter.get('/rankings', comics.listRankings);
 comicRouter.get('/suggest', suggestLimiter, comics.suggestComics);

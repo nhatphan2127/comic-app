@@ -1,34 +1,38 @@
 # Publishing API
 
-Lets contributors create comics and upload chapters from scripts instead of the Studio form.
-User-facing guide: Studio → **API guide** (`/studio/api-guide`). Sample clients:
-`frontend/public/developers/inkverse_publish.py` (Python + requests) and `inkverse-publish.mjs` (Node 20+, no deps).
+Cho contributor tạo truyện và đăng chapter **bằng script** thay vì form trong Studio.
 
-## Endpoints
+- Hướng dẫn cho người dùng: Studio → **API guide** (`/studio/api-guide`).
+- Script mẫu: `inkverse.py` (Python + `requests`) và `inkverse.mjs` (Node 20+, không cần thư viện),
+  hiển thị và tải về từ trang API guide; mã nguồn nằm ở
+  [frontend/src/features/studio/api-guide/scripts.ts](../../frontend/src/features/studio/api-guide/scripts.ts).
+- Chi tiết từng field: `src/docs/openapi.yaml` (tag *Publishing*) và Swagger UI tại `/api/docs`.
 
-| Method | Path | Auth | Purpose |
+## 1. Endpoint
+
+| Method | Path | Xác thực | Mục đích |
 |---|---|---|---|
-| GET | `/api/v1/publish/whoami` | API key | Check a key |
-| POST | `/api/v1/publish/comics` | API key, `comics:write` | Create a comic (multipart, `cover` file) |
-| POST | `/api/v1/publish/comics/{comic}/chapters` | API key, `chapters:write` | Upload a chapter (multipart, `pages` files in order); `{comic}` = id or url slug |
-| POST | `/api/v1/publish/bulk` | API key, `bulk:write` (admins) | Import a zip of comic folders in one request (multipart, `archive`) |
-| GET / POST | `/api/v1/me/api-keys` | session | List / create keys (create needs the password) |
-| DELETE | `/api/v1/me/api-keys/{keyId}` | session | Revoke |
+| GET | `/api/v1/publish/whoami` | API key | kiểm tra key, xem key thuộc về ai |
+| POST | `/api/v1/publish/comics` | API key, scope `comics:write` | tạo truyện (multipart, file `cover`) |
+| POST | `/api/v1/publish/comics/{comic}/chapters` | API key, scope `chapters:write` | đăng chapter (multipart, các file `pages` theo thứ tự); `{comic}` = id hoặc slug |
+| POST | `/api/v1/publish/bulk` | API key, scope `bulk:write` (chỉ admin) | nhập cả thư viện từ một file zip (multipart, file `archive`) |
+| GET / POST | `/api/v1/me/api-keys` | phiên đăng nhập (cookie) | liệt kê / tạo key (tạo key phải nhập lại mật khẩu) |
+| DELETE | `/api/v1/me/api-keys/{keyId}` | phiên đăng nhập (cookie) | thu hồi key |
 
-Field-level details are in `src/docs/openapi.yaml` (tag *Publishing*) and at `/api/docs`.
+Gửi key bằng header `Authorization: Bearer ink_...`.
 
-## Bulk import (admins)
+## 2. Nhập hàng loạt (admin)
 
-An admin creates a key with the `bulk:write` scope (Studio → API keys → *Bulk import*; it is never part
-of the default scopes and is refused to non-admins) and sends a whole library as one zip:
+Admin tạo key có scope `bulk:write` (Studio → API keys → *Bulk import*; scope này không bao giờ nằm trong
+scope mặc định và bị từ chối với người không phải admin), rồi gửi cả thư viện trong một file zip:
 
 ```
 library.zip
-└── One Piece/                     any folder with a comic.json is a comic, at any depth
-    ├── comic.json                 same fields as POST /publish/comics ("genres" may be an array)
-    ├── cover.jpg                  only needed when the comic is new
-    ├── Chapter 1 - Romance Dawn/  first number = chapter number, text after " - " = title
-    │   ├── 001.jpg                pages in natural order (2.jpg before 10.jpg)
+└── One Piece/                     thư mục nào có comic.json là một truyện, ở bất kỳ độ sâu nào
+    ├── comic.json                 cùng các field như POST /publish/comics ("genres" có thể là mảng)
+    ├── cover.jpg                  chỉ cần khi truyện chưa có
+    ├── Chapter 1 - Romance Dawn/  số đầu tiên = số chapter, phần sau " - " = tiêu đề
+    │   ├── 001.jpg                các trang sắp theo thứ tự tự nhiên (2.jpg trước 10.jpg)
     │   └── 002.jpg
     └── Chapter 2/
 ```
@@ -37,41 +41,49 @@ library.zip
 curl -H "Authorization: Bearer $INKVERSE_API_KEY" -F archive=@library.zip http://localhost:5000/api/v1/publish/bulk
 ```
 
-It is the same folder layout as the uploader scripts, so a folder prepared for them can be zipped as is.
-The answer is `200` with `summary` (counts) and one entry per comic and chapter: `created`, `existing`
-(comic), `skipped` (chapter already there, or no images) or `failed` with `httpStatus` and `reason`.
+Cấu trúc thư mục giống hệt cái script mẫu dùng, nên thư mục chuẩn bị cho script có thể nén zip và gửi luôn.
+Kết quả là `200` với `summary` (số lượng) và một mục cho mỗi truyện, mỗi chapter: `created`, `existing`
+(truyện đã có), `skipped` (chapter đã có, hoặc không có ảnh) hoặc `failed` kèm `httpStatus` và `reason`.
 
-- **Re-runnable.** A comic is matched by `comic.json` `id`, else by `url` (or the slug of `name`); an existing
-  one receives the chapters instead of being created again, and existing chapter numbers are skipped
-  before anything is unpacked. After a partial failure, fix the folder and send the same zip again.
-- **Independent items.** Each comic and chapter is created in its own transaction through `publishService`,
-  i.e. the same validation and moderation as a single upload (`pending` unless auto-approve is on). A failed
-  one deletes its own files; the others are kept. Only an unexpected error (database, disk) stops the import.
-- **Checked before unpacking.** Entry count, declared sizes, path names (yauzl rejects absolute paths and
-  `..`), then every image's bytes. Stored files get random names and the extension of their real type.
-  The zip itself goes to the OS temp folder, never under `/storage`, and is deleted after the request.
+- **Chạy lại được.** Truyện được nhận diện theo `id` trong `comic.json`, nếu không có thì theo `url`
+  (hoặc slug sinh từ `name`). Truyện đã có thì nhận thêm chapter chứ không tạo lại; số chapter đã có bị bỏ qua
+  trước khi giải nén. Lỗi giữa chừng thì sửa thư mục rồi gửi lại đúng file zip đó.
+- **Mỗi mục độc lập.** Mỗi truyện, mỗi chapter được tạo trong transaction riêng qua `publishService`, tức là
+  cùng kiểm tra dữ liệu và kiểm duyệt như khi đăng từng cái (`pending` trừ khi admin bật tự duyệt).
+  Mục lỗi tự xoá file của nó; các mục khác giữ nguyên. Chỉ lỗi bất ngờ (DB, ổ đĩa) mới dừng cả lần nhập.
+- **Kiểm tra trước khi giải nén.** Số entry, kích thước khai báo, tên đường dẫn (yauzl từ chối đường dẫn tuyệt
+  đối và `..`), rồi đến byte đầu của từng ảnh. File lưu với tên ngẫu nhiên và đuôi theo loại thật của nó.
+  File zip nằm trong thư mục tạm của hệ điều hành, không bao giờ nằm dưới `/storage`, và bị xoá khi request xong.
 
-## Security design
+## 3. Thiết kế bảo mật
 
-| Risk | Mitigation |
+| Rủi ro | Cách giảm thiểu |
 |---|---|
-| Key leaks from the database | Only `SHA-256(key)` is stored. Keys are 256-bit random, so a fast hash is enough. |
-| Key guessing / timing | Lookup by public prefix, then `crypto.timingSafeEqual`; a dummy comparison runs when the prefix doesn't exist. Rejected keys are rate limited per IP (20 / 15 min). |
-| Leaked key used for more than publishing | Keys are accepted **only** on `/publish`; session tokens are **not** accepted there. Scopes (`comics:write`, `chapters:write`) narrow a key further. |
-| Stolen session mints a long-lived key | Creating a key asks for the password again (rate limited 10 / 15 min per user), and the owner gets a notification. |
-| Owner loses access | Role and ban are read from `users` on every request: demoted or banned users' keys stop working at once, and `bulk:write` only counts while the owner is still an admin. Password reset revokes all keys. |
-| Forgotten keys | Mandatory expiry (30/90/180/365 days), max 10 active keys, `lastUsedAt` / `lastUsedIp` shown in the Studio, one-click revoke. |
-| Flooding the queue or disk | 60 uploads per key per 10 min (`PUBLISH_RATE_LIMIT`), 429 with `Retry-After`. Auth and scope are checked **before** multer writes anything. 10 MB per image, 100 pages per chapter. |
-| Malicious files | Declared MIME must be JPEG/PNG/WEBP/GIF (no SVG) **and** the file's magic bytes must match; stored names are random UUIDs. Failed requests delete their uploads. |
-| Bad or spammy metadata | Strict validation: enums, lengths, slug pattern, year range; genres/formats must come from the fixed vocabulary (the API never creates new ones). Duplicate comic url / chapter number → 409. |
-| Bypassing review | Uploads go through the same services as the Studio: `pending` unless an admin enabled auto-approve; unreviewed comics only accept chapters from their own contributors. |
+| Lộ key từ database | Chỉ lưu `SHA-256(key)`. Key là 256 bit ngẫu nhiên nên hash nhanh là đủ (không cần bcrypt). |
+| Đoán key / tấn công thời gian | Tìm theo prefix công khai, rồi so sánh bằng `crypto.timingSafeEqual`; khi prefix không tồn tại vẫn chạy một phép so sánh giả. Key sai bị giới hạn theo IP (20 / 15 phút). |
+| Key bị lộ dùng vào việc khác | Key **chỉ** được chấp nhận ở `/publish`; cookie phiên **không** được chấp nhận ở đó. Scope (`comics:write`, `chapters:write`) thu hẹp thêm quyền của key. |
+| Phiên bị đánh cắp dùng để tạo key dài hạn | Tạo key phải nhập lại mật khẩu (giới hạn 10 lần / 15 phút / người dùng), và chủ tài khoản nhận thông báo. |
+| Chủ key mất quyền | Role và trạng thái ban được đọc lại từ bảng `users` ở mỗi request: người bị hạ quyền hoặc bị ban thì key ngừng hoạt động ngay, `bulk:write` chỉ có tác dụng khi chủ key vẫn là admin. Đặt lại mật khẩu thu hồi mọi key. |
+| Key bị bỏ quên | Bắt buộc có hạn (30/90/180/365 ngày), tối đa 10 key đang hoạt động, Studio hiện `lastUsedAt` / `lastUsedIp`, thu hồi một cú bấm. |
+| Spam hàng đợi duyệt hoặc đầy ổ đĩa | 60 lượt upload / tài khoản / 10 phút, tính chung mọi key (`PUBLISH_RATE_LIMIT`), và tối đa 10 truyện mới / tài khoản / giờ, tính chung với Studio (`COMIC_CREATE_RATE_LIMIT`); trả `429` kèm `Retry-After`. Key và scope được kiểm tra **trước** khi multer ghi file. 10 MB / ảnh, 100 trang / chapter. |
+| File độc hại | MIME khai báo phải là JPEG/PNG/WEBP/GIF (không SVG) **và** magic bytes của file phải khớp; tên file lưu là UUID ngẫu nhiên. Request lỗi tự xoá file đã upload. |
+| Metadata sai hoặc rác | Kiểm tra chặt: enum, độ dài, mẫu slug, khoảng năm; genre/format phải thuộc danh mục cố định (API không bao giờ tạo genre mới). Trùng url truyện / số chapter → `409`. |
+| Lách kiểm duyệt | Upload đi qua cùng service với Studio: `pending` trừ khi admin bật tự duyệt; truyện chưa duyệt chỉ nhận chapter từ chính contributor của nó. |
 
-Keys use the `ink_<12 hex>_<43 base64url>` format so leaked keys are easy to spot (e.g. by secret scanners).
+Key có dạng `ink_<12 hex>_<43 base64url>` để dễ nhận ra khi bị lộ (ví dụ bởi công cụ quét secret).
 
-## Environment
+Thứ tự middleware trên route upload ([publishRoutes.js](../src/routes/publishRoutes.js)):
+`kiểm tra key → scope → rate limit → multer ghi file → kiểm tra magic bytes → controller`.
 
-- `PUBLISH_RATE_LIMIT` — uploads per key per 10 minutes (default 60).
-- `PUBLISH_BAD_KEY_LIMIT` — rejected keys per IP per 15 minutes (default 20).
-- `PUBLISH_BULK_RATE_LIMIT` — bulk imports per key per hour (default 10).
-- `BULK_MAX_ARCHIVE_MB` (default 2048), `BULK_MAX_UNCOMPRESSED_MB` (default 4096), `BULK_MAX_ENTRIES` (default 20000).
-- `REQUEST_TIMEOUT_MS` — how long a request body may take to arrive (default 30 minutes; Node's own default is 5).
+## 4. Biến môi trường
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `PUBLISH_RATE_LIMIT` | 60 | lượt upload / tài khoản (mọi key) / 10 phút |
+| `COMIC_CREATE_RATE_LIMIT` | 10 | truyện mới / tài khoản / giờ, Studio và API cộng chung; lần tạo thất bại không tính |
+| `PUBLISH_BAD_KEY_LIMIT` | 20 | key sai / IP / 15 phút |
+| `PUBLISH_BULK_RATE_LIMIT` | 10 | lần nhập hàng loạt / key / giờ |
+| `BULK_MAX_ARCHIVE_MB` | 2048 | dung lượng file zip |
+| `BULK_MAX_UNCOMPRESSED_MB` | 4096 | tổng dung lượng sau giải nén |
+| `BULK_MAX_ENTRIES` | 20000 | số entry trong zip |
+| `REQUEST_TIMEOUT_MS` | 30 phút | thời gian tối đa để nhận xong body request (mặc định của Node là 5 phút, không đủ cho zip lớn) |

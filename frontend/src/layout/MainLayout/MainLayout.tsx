@@ -121,7 +121,7 @@ export default function MainLayout() {
         <HeroCarousel comics={popular} isLoading={isPopularLoading} />
       </div>
 
-      <ContinueReading />
+      <ContinueReading className={styles.wide} />
 
       <ForYou className={styles.wide} cardLayoutWidth={latestWidth} />
 

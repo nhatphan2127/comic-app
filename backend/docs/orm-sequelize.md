@@ -18,19 +18,22 @@ Backend dùng **Express** (HTTP) + **Sequelize** (ORM) trên **SQLite**. Tài li
 src/config/database.js   ← tạo `sequelize`, withTransaction(), select(), now()
 src/models/
 ├── columns.js           ← viết tắt cho cột: primaryId, ref('users'), timestamp()...
-├── user.js              ← User, UserPreference, Session
+├── user.js              ← User, UserPreference, Session, PasswordReset, UserBlock
 ├── comic.js             ← Comic, Author, Artist, Genre, Format, ComicGenre, ComicFormat, ComicOtherName, ComicContributor
 ├── chapter.js           ← Chapter, ChapterImage, ChapterContributor
-├── interaction.js       ← ReadHistory, RatingHistory, FollowingCategory, Following
+├── interaction.js       ← ReadHistory, RatingHistory, FollowingCategory, Following, ComicDailyView, UserReadDay
 ├── comment.js           ← ComicComment, ChapterComment (+ Reaction), sinh bởi cùng một hàm
-├── system.js            ← Notification, AdminSetting, EditRequest, ModerationLog
-└── index.js             ← quan hệ (belongsTo) + sequelize.sync() + export tất cả
+├── system.js            ← Notification, AdminSetting, Report, RoleRequest, ApiKey, EditRequest, ModerationLog
+├── searchText.js        ← cột comics.searchText (bỏ dấu) + trigger SQLite giữ nó luôn đúng
+└── index.js             ← quan hệ (belongsTo) + sequelize.sync() + thêm cột thiếu + export tất cả
 ```
 
 `models/index.js` chạy `await sequelize.sync()` khi được import lần đầu: **tạo bảng còn thiếu, không sửa bảng đã có**. Vì vậy file `data/comic-platform.sqlite` hiện tại dùng tiếp được, không mất dữ liệu. Tên index được đặt trùng với schema cũ (`idx_comic_genres_comic`...) để `sync()` không tạo index thừa.
 
+**Khoá ngoại có hiệu lực**: SQLite chỉ kiểm tra `FOREIGN KEY` khi bật `PRAGMA foreign_keys = ON` trên từng kết nối; dialect SQLite của Sequelize tự bật điều này khi mở kết nối.
+
 Hai lựa chọn có chủ ý trong model:
-- **`timestamps: false`**: `createdAt`/`updatedAt` là cột TEXT mặc định `CURRENT_TIMESTAMP` (dạng `2026-10-07 16:12:23`), giống dữ liệu cũ. Khi cập nhật, repository tự đặt `updatedAt: now()`.
+- **`timestamps: false`**: `createdAt`/`updatedAt` là cột TEXT mặc định `CURRENT_TIMESTAMP` (giờ UTC, dạng `2026-10-07 16:12:23`), giống dữ liệu cũ. Khi cập nhật, repository tự đặt `updatedAt: now()` (`now()` = `literal('CURRENT_TIMESTAMP')`). So sánh thời gian bằng chuỗi phải dùng đúng định dạng này.
 - **Khoá ngoại khai báo trên cột** (`ref('users')`), còn `belongsTo(..., { constraints: false })` trong `index.js` chỉ để JOIN. Nhờ vậy schema sinh ra giống hệt schema cũ.
 
 ## 3. Cách viết truy vấn
@@ -91,7 +94,7 @@ await withTransaction(async () => {
 
 Không cần truyền `tx`. [database.js](../src/config/database.js) đăng ký `AsyncLocalStorage` với `Sequelize.useCLS(...)`, nên mọi query chạy trong callback (kể cả trong hàm phụ, repository) tự động thuộc transaction. Request khác chạy song song không bị cuốn vào, vì mỗi luồng async có ngữ cảnh riêng.
 
-Các transaction được xếp hàng (SQLite chỉ cho một transaction ghi tại một thời điểm), dùng `BEGIN IMMEDIATE`, và query ghi bị `SQLITE_BUSY` sẽ tự thử lại. **Không lồng `withTransaction`** (xem mục 4 trong [instruction.md](../instruction.md)).
+Các transaction được xếp hàng (SQLite chỉ cho một transaction ghi tại một thời điểm), dùng `BEGIN IMMEDIATE` (giữ khoá ghi ngay từ đầu thay vì thất bại giữa chừng), và query bị `SQLITE_BUSY` sẽ tự thử lại tối đa 10 lần. **Không lồng `withTransaction`** (xem mục 4 trong [instruction.md](../instruction.md)).
 
 ## 5. Thêm bảng mới
 
@@ -99,4 +102,13 @@ Các transaction được xếp hàng (SQLite chỉ cho một transaction ghi t�
 2. Import và export nó trong `models/index.js`; thêm `belongsTo(...)` nếu cần JOIN.
 3. Khởi động lại server: `sync()` tạo bảng.
 
-`sync()` **không** thêm cột vào bảng đã có. Nếu cần thêm cột cho DB đang chạy, dùng `sequelize.getQueryInterface().addColumn(...)` một lần, hoặc chuyển sang migration (`sequelize-cli`) khi dự án lớn hơn.
+## 6. Thêm cột vào bảng đã có
+
+`sync()` **không** thêm cột vào bảng đã có. Khai báo cột trong model (cho DB mới), **và** thêm một dòng vào `models/index.js` (cho DB đang chạy):
+
+```js
+await addColumnIfMissing('comics', 'pendingChanges', 'TEXT');
+// tham số thứ 4 (tuỳ chọn): hàm chạy một lần ngay sau khi thêm cột, để sửa dữ liệu cũ
+```
+
+`addColumnIfMissing` đọc `PRAGMA table_info` rồi chạy `ALTER TABLE ... ADD COLUMN` nếu cột chưa có, nên khởi động lại bao nhiêu lần cũng an toàn. Khi dự án lớn hơn (đổi kiểu cột, xoá cột, đổi dữ liệu hàng loạt) thì nên chuyển sang migration có version (`sequelize-cli` / Umzug).

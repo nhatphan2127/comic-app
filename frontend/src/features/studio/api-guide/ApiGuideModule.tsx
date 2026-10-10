@@ -67,7 +67,7 @@ const ERRORS: [string, string][] = [
   ['404', 'Comic not found (or not open to you yet).'],
   ['409', 'Comic url or chapter number already exists. Safe to skip when re-running a batch.'],
   ['413 / 415', 'Image over 10 MB, or not a real JPEG/PNG/WEBP/GIF (contents are checked).'],
-  ['429', 'Rate limit: 60 uploads per key per 10 minutes. Wait for `Retry-After` seconds.'],
+  ['429', 'Rate limit: 60 uploads per account per 10 minutes (all your keys together), and 10 new comics per hour (Studio included). Wait for `Retry-After` seconds.'],
 ];
 
 /** /studio/api-guide: how contributors publish from scripts. */

@@ -6,6 +6,8 @@ import type { Comic } from '../../types/types';
 import ComicShelf from '../ComicShelf/ComicShelf';
 
 const MAX_ITEMS = 20;
+// Long enough to read a page of titles before the next one slides in.
+const AUTO_SCROLL_MS = 6000;
 
 /** "You might like": recommendations for logged-in readers on the home page. */
 interface ForYouProps {
@@ -53,6 +55,7 @@ export default function ForYou({ className, cardLayoutWidth }: ForYouProps) {
       isLoading={isLoading}
       className={className}
       cardLayoutWidth={cardLayoutWidth}
+      autoScrollMs={AUTO_SCROLL_MS}
     />
   );
 }

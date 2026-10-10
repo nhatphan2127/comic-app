@@ -9,6 +9,7 @@ export default defineConfig({
       DB_PATH: ':memory:',
       STORAGE_ROOT: path.join(os.tmpdir(), 'comic-app-test-storage'),
       AUTH_RATE_LIMIT: '10000',
+      COMIC_CREATE_RATE_LIMIT: '10000',
     },
   },
 });

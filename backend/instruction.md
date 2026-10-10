@@ -12,7 +12,7 @@ ORM (Sequelize): [docs/orm-sequelize.md](docs/orm-sequelize.md).
 
 | Trước | Sau |
 |---|---|
-| Không có test nào | 48 test (Vitest + supertest), chạy bằng `npm test` |
+| Không có test nào | 48 test lúc tách tầng; **hiện 146 test / 19 file** (Vitest + supertest), chạy bằng `npm test` |
 | Controller vừa đọc `req`, vừa xử lý nghiệp vụ, vừa viết SQL | Route → Controller → Service → Repository → DB, mỗi tầng một việc |
 | `comicController.js` 885 dòng | 91 dòng; nghiệp vụ nằm ở `comicService` / `chapterService` / `contributorService` |
 | Comment truyện và comment chapter: 12 handler, 12 route | 6 handler, 6 route, 1 repository dùng chung |
@@ -153,14 +153,14 @@ export async function followComic(userId, comicId, categoryId = null) {
 // controllers/interactionController.js: chỉ có HTTP
 export const followComic = asyncHandler(async (req, res) => {
   const data = await interactionService.followComic(req.user.id, req.params.comicId, req.body?.categoryId || null);
-  res.json({ status: 'success', data });
+  ok(res, data);   // utils/http.js: 200 { data }
 });
 ```
 
 ### Tách ra như vậy được lợi gì
 
 - **Test được mà không cần server.** [tests/services.test.js](tests/services.test.js) gọi `interactionService.followComic(userId, comicId)` trực tiếp, nhanh và hẹp hơn test HTTP.
-- **Dùng lại được.** Ví dụ `moderationService.review()` giờ phục vụ 3 route (`PATCH /moderator/:targetType/:id`, `/moderator/comics/:id/status`, `/moderator/chapters/:id/status`). Trước đây là 3 bản copy, và 2 trong số đó không có transaction.
+- **Dùng lại được.** Ví dụ `moderationService.review()` phục vụ cả `PATCH /moderation/comics/:id` lẫn `PATCH /moderation/chapters/:id`. Trước đây là 3 bản copy, và 2 trong số đó không có transaction.
 - **Transaction có chỗ đặt rõ ràng.** Transaction là quy tắc nghiệp vụ ("hai thao tác này phải cùng thành công"), nên nằm ở service.
 - **Kiểm tra quyền có chỗ đặt rõ ràng.** Quy tắc như "contributor chỉ sửa được truyện của mình" nằm trong [services/permissions.js](src/services/permissions.js) và được gọi từ service, nên không bị quên ở route nào.
 - **Dễ đổi DB.** Chuyển sang Postgres hay Prisma chỉ phải sửa tầng repository.
@@ -192,7 +192,8 @@ asyncHandler: .catch(next)            ← src/utils/asyncHandler.js
                 ▼
 errorMiddleware: status = err.status (404)
                  message = err.message nếu < 500, "Internal server error" nếu ≥ 500
-                 → res.status(404).json({ status: 'fail', message: 'Comic not found' })
+                 → 404, Content-Type: application/problem+json
+                   { type, title: 'Not Found', status: 404, detail: 'Comic not found', instance }  (RFC 9457)
 ```
 
 **Vì sao cần `asyncHandler`?** Express 4 không tự bắt lỗi từ hàm `async`. Nếu handler async throw mà không ai `catch`, request sẽ treo. Trước đây mỗi handler tự viết `try { ... } catch (e) { next(e) }`. Giờ wrapper 3 dòng làm việc đó một lần cho tất cả:
@@ -258,15 +259,16 @@ Hai model cũng được tạo bởi cùng một hàm `defineComments(...)` tron
 
 **Vì sao các câu SQL thô (cây comment) ghép tên bảng vào chuỗi mà không bị SQL injection?** Dấu `?` chỉ thay được **giá trị**, không thay được tên bảng hay tên cột. Nên tên bảng buộc phải ghép vào chuỗi. Điều này an toàn **chỉ vì** tên bảng lấy từ `TARGETS` cố định trong code, không bao giờ lấy từ input. `type` không hợp lệ thì `target()` throw `BadRequestError`.
 
-**Route** gộp 12 thành 6 bằng tham số có regex ([commentRoutes.js](src/routes/commentRoutes.js)):
+**Route** (từ khi có `/api/v1`): liệt kê và đăng comment nằm dưới tài nguyên cha, còn thao tác trên một comment dùng id của nó:
 
 ```js
-const KIND = ':kind(comics|chapters)';
-router.get(`/${KIND}/:targetId`, authenticateTokenOptional, listComments);
-router.post(`/${KIND}/:commentId/react`, authenticateToken, reactComment);
+// comicRoutes.js
+comicRouter.get('/:comicId/comments', authenticateTokenOptional, comments.listComments('comic'));
+chapterRouter.get('/:chapterId/comments', authenticateTokenOptional, comments.listComments('chapter'));
+// commentRoutes.js: /comments/:commentId, /comments/:commentId/reaction
 ```
 
-`:kind(comics|chapters)` chỉ khớp đúng hai từ đó, nên URL giữ nguyên như cũ và frontend không phải đổi gì. Controller chuyển `comics` → `'comic'`, `chapters` → `'chapter'` rồi gọi service. Đây cũng là bài học về cách Express khớp route: tham số `:param` khớp **bất kỳ** đoạn URL nào, trừ khi bạn giới hạn nó bằng regex. Ở [moderatorRoutes.js](src/routes/moderatorRoutes.js), `/:targetType(comic|chapter)/:targetId` được giới hạn để không bao giờ "nuốt" nhầm `/comics/...`.
+`listComments(type)` là factory (mục 5.2), nên hai loại comment dùng chung một handler. Bài học về cách Express khớp route vẫn đúng: tham số `:param` khớp **bất kỳ** đoạn URL nào, nên route cố định (`/comics/rankings`, `/comics/suggest`) phải khai báo **trước** `/comics/:comicId`.
 
 Bộ test `describe.each(['comics', 'chapters'])` trong [comments.test.js](tests/comments.test.js) bảo đảm hai loại vẫn hành xử giống hệt nhau.
 
@@ -279,10 +281,10 @@ Bộ test `describe.each(['comics', 'chapters'])` trong [comments.test.js](tests
 Ở controller, kỹ thuật dùng là **factory function**: một hàm trả về handler, với `type` được cố định sẵn:
 
 ```js
-export const getContributors = (type) => asyncHandler(async (req, res) => { ... });
+export const listContributors = (type) => asyncHandler(async (req, res) => { ... });
 // routes:
-router.get('/:comicId/contributors', ..., getContributors('comic'));
-router.get('/:chapterId/contributors', ..., getContributors('chapter'));
+comicRouter.get('/:comicId/contributors', ..., listContributors('comic'));
+chapterRouter.get('/:chapterId/contributors', ..., listContributors('chapter'));
 ```
 
 ### 5.3. getOrCreateEntity + normalizeValues
@@ -380,31 +382,12 @@ Ví dụ: thêm "báo cáo comment vi phạm".
 
 ---
 
-## 10. Gợi ý commit
+## 10. Bước tiếp theo
 
-Các thay đổi này chưa được commit. Nên chia thành nhiều commit theo đúng thứ tự đã làm, để lịch sử kể lại được quá trình:
-
-```
-test: add supertest suite covering auth, authorization, comics, interactions, comments
-refactor: split app.js from server.js and read DB_PATH/STORAGE_ROOT from env
-refactor: add AppError classes and asyncHandler
-refactor(interaction): extract interactionService and repositories
-refactor(auth,user): extract authService/userService, replace userModel
-refactor(comment): merge comic/chapter comment code into one service
-refactor(comic): extract comic/chapter/contributor services, merge lookup helpers
-refactor(admin): extract admin/moderation services, share review logic
-chore: remove /api double mount, dead commentModel and upload health route
-fix(frontend): drop /api prefix and rename childCommment to childComment
-```
-
----
-
-## 11. Bước tiếp theo
-
-Theo lộ trình, những việc còn lại sau Giai đoạn A:
-
-1. **Validation bằng zod.** Hiện các kiểm tra kiểu "thiếu field", "không phải số" nằm rải rác ở controller và service (ví dụ `authService.register`). Định nghĩa schema cho `body` / `query` / `params`, viết một middleware `validate(schema)` throw `BadRequestError`. Service khi đó chỉ còn kiểm tra quy tắc nghiệp vụ thật sự (quyền, trùng lặp, trạng thái).
-2. **Migration có version** (bước 7). Thay `ensureColumn` và `try { ALTER TABLE } catch {}` trong `database.js` bằng knex migrations hoặc Drizzle. Đây cũng là lúc cân nhắc gộp 2 bảng comment ở tầng DB.
-3. **Cấu hình qua `.env`.** Code đã đọc `PORT`, `CLIENT_ORIGIN`, `DB_PATH`, `STORAGE_ROOT`, `AUTH_RATE_LIMIT` từ biến môi trường. Node 20+ có sẵn `node --env-file=.env src/server.js`. Sau đó validate biến môi trường bằng zod khi khởi động.
-4. **`.gitignore`**: thêm `backend/data/*.sqlite` và một dòng `backend/storage/` thay cho danh sách từng file ảnh.
-5. **CI**: GitHub Actions chạy `npm test` mỗi lần push. Bộ test đã có, chỉ cần một file workflow khoảng 15 dòng.
+| Việc | Trạng thái |
+|---|---|
+| Validation bằng schema (zod) thay cho kiểm tra rải rác trong service | ⬜ chưa làm |
+| Migration có version | 🟡 tạm dùng `addColumnIfMissing` trong `models/index.js` (xem [docs/orm-sequelize.md](docs/orm-sequelize.md#6-thêm-cột-vào-bảng-đã-có)) |
+| Cấu hình qua `.env` (`node --env-file=.env src/server.js`) + validate biến môi trường khi khởi động | ⬜ chưa làm; biến hiện có xem `docs/publishing-api.md` (mục 4) và `docs/security-and-bugfix-changes.md` (Khi triển khai) |
+| `.gitignore` cho `backend/data` và `backend/storage` | ✅ xong |
+| CI (GitHub Actions chạy `npm test`) | ⬜ chưa làm |

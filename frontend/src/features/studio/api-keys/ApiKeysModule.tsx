@@ -246,7 +246,7 @@ function NewKeyModal({ apiKey, onClose, guidePath }: { apiKey: ApiKey | null; on
         <p className={style.help}>Check that it works:</p>
         <CodeBlock
           label="bash"
-          code={`export INKVERSE_API_KEY="${apiKey.token}"\npython inkverse_publish.py whoami`}
+          code={`export INKVERSE_API_KEY="${apiKey.token}"\npython inkverse.py   # no folder given: it only checks the key`}
         />
         <div className={style.actions}>
           <Link to={guidePath} className="btn btn--ghost" onClick={onClose}>

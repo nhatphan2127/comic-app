@@ -1008,7 +1008,9 @@ paths:
     post:
       tags: [Comics]
       summary: Upload a new comic (contributor, moderator, admin)
-      description: Goes to the moderation queue unless auto-accept is on.
+      description: >-
+        Goes to the moderation queue unless auto-accept is on. Each account can create
+        10 comics per hour (`COMIC_CREATE_RATE_LIMIT`), shared with `POST /publish/comics`.
       requestBody:
         required: true
         content:
@@ -1037,6 +1039,7 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /comics/rankings:
     get:
@@ -2097,6 +2100,9 @@ paths:
     post:
       tags: [Publishing]
       summary: Create a comic (goes to the review queue)
+      description: >-
+        Each account can create 10 comics per hour (`COMIC_CREATE_RATE_LIMIT`), across all its
+        keys and the Studio. Only successful creations count.
       security: [{ apiKey: [] }]
       requestBody:
         required: true

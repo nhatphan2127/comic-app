@@ -36,6 +36,13 @@
   font-size: var(--fs-sm);
 }
 
+.tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
 .arrows {
   display: flex;
   flex-shrink: 0;
@@ -78,6 +85,8 @@
   padding: 6px 2px var(--sp-2);
   cursor: grab;
   scroll-snap-type: x proximity;
+  /* Snap cards to the padding edge, not the border edge, or the first card loses its left 2px. */
+  scroll-padding-inline: 2px;
   scrollbar-width: none;
 }
 

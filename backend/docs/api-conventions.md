@@ -6,6 +6,30 @@ Tài liệu này ghi lại **chiến lược đã chọn**, **vì sao chọn**, 
 - File OpenAPI thô (cho Postman, sinh client...): <http://localhost:5000/api/v1/openapi.json>
 - Nguồn của tài liệu: [src/docs/openapi.yaml](../src/docs/openapi.yaml)
 
+## Mục lục
+
+0. [Xác thực](#0-xác-thực)
+1. [Versioning](#1-versioning-đặt-version-trên-uri-apiv1)
+2. [Thiết kế URL](#2-thiết-kế-url)
+3. [Status code](#3-status-code)
+4. [Phân trang, lọc, sắp xếp](#4-phân-trang-lọc-sắp-xếp)
+5. [Tài liệu API: OpenAPI 3.1](#5-tài-liệu-api-openapi-31-design-first)
+6. [Bảng đổi URL (v0 → v1)](#6-bảng-đổi-url-v0--v1)
+7. [Checklist khi thêm endpoint](#7-checklist-khi-thêm-endpoint)
+
+---
+
+## 0. Xác thực
+
+| Ai gọi | Cách xác thực | Dùng ở đâu |
+|---|---|---|
+| Trình duyệt (frontend) | **Cookie phiên `sid`**: `HttpOnly`, `SameSite=Lax`, `Path=/api`, `Secure` khi production. `POST /auth/login` đặt cookie; token **không** nằm trong body | mọi route trừ `/publish` |
+| Script của contributor | **API key**: `Authorization: Bearer ink_...` | chỉ `/publish` (xem [publishing-api.md](publishing-api.md)) |
+
+- Frontend gọi `fetch(..., { credentials: 'include' })`; CORS bật `credentials: true` và chỉ cho các origin trong `CLIENT_ORIGIN`.
+- **Chống CSRF**: request thay đổi dữ liệu (không phải GET/HEAD/OPTIONS) có cookie phải có `Origin` (hoặc `Referer`) nằm trong danh sách tin cậy, nếu không → `403` ([csrfMiddleware.js](../src/middlewares/csrfMiddleware.js)). `SameSite=Lax` là lớp bảo vệ thứ hai.
+- Phiên hết hạn sau 30 ngày; đổi mật khẩu đăng xuất mọi phiên khác; đặt lại mật khẩu đăng xuất tất cả và thu hồi mọi API key.
+
 ---
 
 ## 1. Versioning: đặt version trên URI (`/api/v1`)
@@ -55,13 +79,13 @@ Ví dụ: trước đây "react lại cùng loại" sẽ **bật/tắt** (toggle
 | `201 Created` | Tạo mới (POST, hoặc PUT tạo mới) | `{ data }` + header `Location: /api/v1/...` |
 | `204 No Content` | Thành công, không có gì để trả (DELETE, logout, đổi mật khẩu) | không có |
 | `400 Bad Request` | Input sai: body, path, **cả query string** (`pageSize=500`, `sort=password`) | problem |
-| `401 Unauthorized` | Thiếu/sai/hết hạn token, sai mật khẩu. Có header `WWW-Authenticate: Bearer` | problem |
-| `403 Forbidden` | Đã đăng nhập nhưng không có quyền | problem |
+| `401 Unauthorized` | Thiếu/sai/hết hạn phiên (cookie `sid`) hoặc API key, sai mật khẩu. Có header `WWW-Authenticate: Bearer` | problem |
+| `403 Forbidden` | Đã đăng nhập nhưng không có quyền; tài khoản bị ban khi đăng nhập; API key thiếu scope; request bị chặn vì khác origin (CSRF) | problem |
 | `404 Not Found` | Không tồn tại **hoặc không được thấy** (thông báo của người khác → 404, không phải 403, để không lộ id) | problem |
 | `409 Conflict` | Trùng dữ liệu (username, slug, tên category) | problem |
-| `413 Payload Too Large` | File > 10 MB, body JSON > 1 MB | problem |
+| `413 Payload Too Large` | File > 10 MB, quá số file cho phép, body JSON > 1 MB | problem |
 | `415 Unsupported Media Type` | Upload không phải JPEG/PNG/WEBP/GIF | problem |
-| `429 Too Many Requests` | Vượt giới hạn login/register | problem |
+| `429 Too Many Requests` | Vượt rate limit: đăng nhập/đăng ký/đặt lại mật khẩu (20 / 15 phút / IP), gợi ý tìm kiếm (60 / phút), tạo truyện (10 / giờ / tài khoản), publishing API. Có header `RateLimit` (và `Retry-After` ở `/publish`) | problem |
 | `500` | Lỗi không lường trước. Chi tiết chỉ ghi log, client chỉ thấy "Internal server error" | problem |
 
 Route không tồn tại cũng trả **JSON 404**, không còn trang HTML mặc định của Express.
@@ -120,7 +144,9 @@ Hai quy tắc quan trọng:
 | `GET /comics/top-rated?limit=8` | `GET /api/v1/comics?sort=-rating,-view&pageSize=8` |
 | `GET /comics/search?q=x` | `GET /api/v1/comics?q=x&pageSize=6` (khớp đúng tên lên đầu khi không truyền `sort`) |
 
-Mỗi item đều có `genres` và `latestChapters`. Filter: `contentRating`, `type`, `demographic`, `releaseStatus`, `genre`, `q`.
+Mỗi item đều có `genres` và `latestChapters`. Filter: `contentRating`, `type`, `demographic`, `releaseStatus`, `genre`, `format`, `q` (tìm không dấu, không phân biệt hoa thường: "kiem than" khớp "Kiếm Thần").
+
+Các danh sách khác của truyện: `GET /comics/rankings?period=day|week|month|all`, `GET /comics/suggest?q=` (gợi ý khi gõ, tối đa 8), `GET /comics/:comicId/similar?limit=`, `GET /me/recommendations?limit=` (dùng `limit` thay cho phân trang vì là danh sách ngắn).
 
 Collection **nhỏ và giới hạn tự nhiên** (danh sách đang follow, category, contributor của một truyện, hàng đợi moderation) trả về đủ trong `{ data }` mà không phân trang. Điều này ghi rõ trong OpenAPI.
 
@@ -178,7 +204,7 @@ Tất cả URL dưới đây có tiền tố `/api/v1`.
 | `PATCH /admin/comments/:type/:id/ban` | `PATCH /admin/comments/:id { isBanned }` |
 | `PATCH /admin/settings/auto-accept { enabled }` | `GET/PATCH /admin/settings { autoAccept }` |
 
-Response thành công **không còn field `status: 'success'`** (HTTP status đã nói điều đó): `{ data }` / `{ data, meta }`.
+Response thành công **không còn field `status: 'success'`** (HTTP status đã nói điều đó): `{ data }` / `{ data, meta }`. Response lỗi cũng không còn `{ status: 'fail', message }` mà theo RFC 9457 (mục 3).
 
 Frontend đã chuyển xong: mọi thay đổi nằm trong [frontend/src/services/api.ts](../../frontend/src/services/api.ts), chữ ký các hàm giữ nguyên nên component không phải sửa.
 
