@@ -11,6 +11,9 @@ const SIGNATURES = {
   'image/webp': (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP',
 };
 
+// The image type a file really is, from its first 12 bytes (null = none we accept).
+export const detectImageType = (head) => Object.keys(SIGNATURES).find((type) => head.length >= 12 && SIGNATURES[type](head)) ?? null;
+
 async function readHead(path) {
   const handle = await fs.open(path, 'r');
   try {

@@ -1,9 +1,12 @@
 // /publish (API key) and /me/api-keys (session): the contributors' publishing API.
+import fs from 'node:fs/promises';
 import asyncHandler from '../utils/asyncHandler.js';
 import { created, noContent, ok } from '../utils/http.js';
 import { pageMeta, parsePagination } from '../utils/listQuery.js';
 import * as publishService from '../services/publishService.js';
 import * as apiKeyService from '../services/apiKeyService.js';
+import * as bulkImportService from '../services/bulkImportService.js';
+import { BadRequestError } from '../errors.js';
 
 // ---------- Publishing (Authorization: Bearer ink_...) ----------
 
@@ -22,6 +25,18 @@ export const createComic = asyncHandler(async (req, res) => {
 export const createChapter = asyncHandler(async (req, res) => {
   const data = await publishService.createChapter(req.user, req.params.comic, req.body, req.files || []);
   created(res, `/chapters/${data.id}`, data);
+});
+
+// POST /publish/bulk (multipart: "archive" = a .zip of comic folders) → 200 with a report per comic and chapter.
+// 200 rather than 201: some items may have failed or been skipped, the report says which.
+export const bulkImport = asyncHandler(async (req, res) => {
+  if (!req.file) throw new BadRequestError('"archive" (a .zip of comic folders) is required');
+  try {
+    ok(res, await bulkImportService.importArchive(req.user, req.file.path));
+  } finally {
+    // The zip is only a carrier: what was imported now lives in /storage.
+    await fs.rm(req.file.path, { force: true });
+  }
 });
 
 // ---------- Key management (logged-in session) ----------

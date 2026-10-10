@@ -1,13 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
 import { now, select } from '../config/database.js';
+import { literal } from 'sequelize';
 import { Notification } from '../models/index.js';
 
 // `isRead` undefined = both read and unread.
+// createdAt only has second precision (CURRENT_TIMESTAMP), so rowid (insertion order) breaks ties:
+// two notices sent in the same second still come out newest first.
 export const listForUser = (userId, { isRead, limit, offset }) =>
   Notification.findAndCountAll({
     attributes: ['id', 'title', 'content', 'type', 'redirectPath', 'isRead', 'createdAt'],
     where: { userId, ...(isRead !== undefined && { isRead: isRead ? 1 : 0 }) },
-    order: [['createdAt', 'DESC'], ['id', 'ASC']],
+    order: [['createdAt', 'DESC'], [literal('rowid'), 'DESC']],
     limit,
     offset,
     raw: true,

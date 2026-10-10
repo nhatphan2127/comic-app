@@ -10,13 +10,17 @@ import Page, { Notice, PageState } from '../../../console/ui/Page';
 import ManageRow, { ManageList } from '../../../console/ui/ManageRow';
 import CodeBlock from '../../../console/ui/CodeBlock';
 import { useConsole } from '../../../console/ConsoleContext';
+import { useAuth } from '../../../context/AuthContext';
 import cx from '../../../helpers/cx';
 import style from './ApiKeys.module.css';
 
-const SCOPES: { value: ApiKeyScope; label: string; hint: string }[] = [
+const SCOPES: { value: ApiKeyScope; label: string; hint: string; adminOnly?: boolean }[] = [
   { value: 'comics:write', label: 'Create comics', hint: 'POST /publish/comics' },
   { value: 'chapters:write', label: 'Upload chapters', hint: 'POST /publish/comics/{comic}/chapters' },
+  { value: 'bulk:write', label: 'Bulk import (zip of comic folders)', hint: 'POST /publish/bulk · admins only', adminOnly: true },
 ];
+// bulk:write is opt-in, like on the server.
+const DEFAULT_SCOPES = SCOPES.filter((s) => !s.adminOnly).map((s) => s.value);
 const EXPIRY = [30, 90, 180, 365];
 const STATUS_BADGE: Record<ApiKey['status'], string> = { active: 'badge--ok', expired: 'badge--warn', revoked: 'badge--err' };
 
@@ -143,7 +147,9 @@ export default function ApiKeysModule() {
 
 function CreateKeyModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClose: () => void; onCreated: (key: ApiKey) => void }) {
   const [name, setName] = useState('');
-  const [scopes, setScopes] = useState<ApiKeyScope[]>(SCOPES.map((s) => s.value));
+  const isAdmin = useAuth().user?.role === 'admin';
+  const scopeOptions = SCOPES.filter((s) => isAdmin || !s.adminOnly);
+  const [scopes, setScopes] = useState<ApiKeyScope[]>(DEFAULT_SCOPES);
   const [expiresInDays, setExpiresInDays] = useState(90);
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -152,7 +158,7 @@ function CreateKeyModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClo
   useEffect(() => {
     if (!isOpen) return;
     setName('');
-    setScopes(SCOPES.map((s) => s.value));
+    setScopes(DEFAULT_SCOPES);
     setExpiresInDays(90);
     setPassword('');
     setError(null);
@@ -183,7 +189,7 @@ function CreateKeyModal({ isOpen, onClose, onCreated }: { isOpen: boolean; onClo
 
         <fieldset className={style.field}>
           <span>Permissions</span>
-          {SCOPES.map((s) => (
+          {scopeOptions.map((s) => (
             <label key={s.value} className={style.check}>
               <input type="checkbox" checked={scopes.includes(s.value)} onChange={() => toggleScope(s.value)} />
               <span>

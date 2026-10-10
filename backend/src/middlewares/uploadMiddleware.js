@@ -1,12 +1,13 @@
 import multer from 'multer';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { UnsupportedMediaTypeError } from '../errors.js';
 
 // SVG is intentionally excluded: it can carry scripts and is served from our own origin.
-const ALLOWED_IMAGE_TYPES = {
+export const ALLOWED_IMAGE_TYPES = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
   'image/webp': '.webp',
@@ -15,8 +16,8 @@ const ALLOWED_IMAGE_TYPES = {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const storageRoot = process.env.STORAGE_ROOT || path.join(__dirname, '..', '..', 'storage');
-const comicsFolder = path.join(storageRoot, 'comics');
-const chapterImagesFolder = path.join(storageRoot, 'chapter-images');
+export const comicsFolder = path.join(storageRoot, 'comics');
+export const chapterImagesFolder = path.join(storageRoot, 'chapter-images');
 const userAvatarsFolder = path.join(storageRoot, 'avatars');
 const userBackgroundsFolder = path.join(storageRoot, 'backgrounds');
 
@@ -77,3 +78,25 @@ const upload = multer({
   },
 });
 export default upload;
+
+// Zip archives for POST /publish/bulk. They go to the OS temp folder (never under /storage, so they
+// are never served) and the controller deletes them once the import is done, whatever the outcome.
+const archiveFolder = path.join(os.tmpdir(), 'comic-platform-bulk');
+fs.mkdirSync(archiveFolder, { recursive: true });
+const ZIP_TYPES = ['application/zip', 'application/x-zip-compressed', 'application/octet-stream'];
+
+export const BULK_MAX_ARCHIVE_MB = Number(process.env.BULK_MAX_ARCHIVE_MB) || 2048;
+
+export const archiveUpload = multer({
+  storage: multer.diskStorage({
+    destination: archiveFolder,
+    filename: (req, file, cb) => cb(null, `${randomUUID()}.zip`),
+  }),
+  fileFilter(req, file, cb) {
+    if (!ZIP_TYPES.includes(file.mimetype) && path.extname(file.originalname).toLowerCase() !== '.zip') {
+      return cb(new UnsupportedMediaTypeError('"archive" must be a .zip file'));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: BULK_MAX_ARCHIVE_MB * 1024 * 1024, files: 1 },
+});

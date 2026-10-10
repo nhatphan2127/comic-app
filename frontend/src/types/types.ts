@@ -280,7 +280,7 @@ export interface DashboardResponse {
     autoAccept: boolean;
 }
 
-export type ApiKeyScope = 'comics:write' | 'chapters:write';
+export type ApiKeyScope = 'comics:write' | 'chapters:write' | 'bulk:write';
 
 /** A publishing API key as its owner sees it (never the secret, except `token` right after creation). */
 export interface ApiKey {

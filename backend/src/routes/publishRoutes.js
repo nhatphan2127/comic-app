@@ -6,7 +6,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { authenticateApiKey, requireScope } from '../middlewares/apiKeyMiddleware.js';
 import { verifyImageSignatures } from '../middlewares/imageSignatureMiddleware.js';
-import upload from '../middlewares/uploadMiddleware.js';
+import upload, { archiveUpload } from '../middlewares/uploadMiddleware.js';
 import * as publish from '../controllers/publishController.js';
 import { TooManyRequestsError } from '../errors.js';
 
@@ -38,6 +38,16 @@ const uploadLimiter = rateLimit({
   handler: tooMany('Upload limit reached for this API key, wait a few minutes (see the RateLimit headers)'),
 });
 
+// One bulk import can hold thousands of chapters, so it has its own, much smaller budget.
+const bulkLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.PUBLISH_BULK_RATE_LIMIT) || 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `bulk:${req.apiKey.id}`,
+  handler: tooMany('Bulk import limit reached for this API key, try again later (see the RateLimit headers)'),
+});
+
 const router = express.Router();
 router.use(badKeyLimiter, authenticateApiKey);
 
@@ -51,5 +61,7 @@ router.post(
   verifyImageSignatures,
   publish.createChapter,
 );
+// Admin keys only (bulk:write is refused to everyone else, see apiKeyService).
+router.post('/bulk', requireScope('bulk:write'), bulkLimiter, archiveUpload.single('archive'), publish.bulkImport);
 
 export default router;

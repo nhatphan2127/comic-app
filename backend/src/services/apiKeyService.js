@@ -12,7 +12,11 @@ import { verifyPassword } from './authService.js';
 import { sendTo } from './notificationService.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../errors.js';
 
-export const SCOPES = ['comics:write', 'chapters:write'];
+export const SCOPES = ['comics:write', 'chapters:write', 'bulk:write'];
+// What a key gets when `scopes` is omitted. bulk:write must be asked for explicitly.
+export const DEFAULT_SCOPES = ['comics:write', 'chapters:write'];
+// bulk:write imports a whole zip of comic folders in one request, so only admins may hold it.
+const ADMIN_SCOPES = ['bulk:write'];
 export const EXPIRY_DAYS = [30, 90, 180, 365];
 export const MAX_ACTIVE_KEYS = 10;
 const NAME_MAX = 60;
@@ -29,6 +33,9 @@ const parseScopes = (raw) => {
     return [];
   }
 };
+
+// Admin-only scopes count only while the owner is still an admin.
+const effectiveScopes = (scopes, role) => scopes.filter((s) => role === 'admin' || !ADMIN_SCOPES.includes(s));
 
 const isExpired = (key) => new Date(key.expiresAt) <= new Date();
 
@@ -57,10 +64,12 @@ export async function create(user, { name, scopes, expiresInDays, password }) {
   const cleanName = typeof name === 'string' ? name.trim() : '';
   if (!cleanName || cleanName.length > NAME_MAX) throw new BadRequestError(`"name" is required (max ${NAME_MAX} characters)`);
 
-  const wanted = scopes === undefined ? SCOPES : scopes;
+  const wanted = scopes === undefined ? DEFAULT_SCOPES : scopes;
   if (!Array.isArray(wanted) || !wanted.length || wanted.some((s) => !SCOPES.includes(s))) {
     throw new BadRequestError(`"scopes" must be a non-empty list of: ${SCOPES.join(', ')}`);
   }
+  const adminOnly = wanted.filter((s) => ADMIN_SCOPES.includes(s));
+  if (adminOnly.length && user.role !== 'admin') throw new ForbiddenError(`Only admins can create keys with: ${adminOnly.join(', ')}`);
 
   const days = expiresInDays === undefined ? 90 : Number(expiresInDays);
   if (!EXPIRY_DAYS.includes(days)) throw new BadRequestError(`"expiresInDays" must be one of: ${EXPIRY_DAYS.join(', ')}`);
@@ -116,13 +125,13 @@ export async function authenticate(token, ip) {
   if (row.revokedAt) throw new UnauthorizedError('This API key was revoked');
   if (isExpired(row)) throw new UnauthorizedError('This API key has expired');
   // Role and ban are read from the users table on every request: demoting or banning someone
-  // disables their keys immediately, without having to revoke them one by one.
+  // disables their keys (or their admin-only scopes) immediately, without having to revoke them one by one.
   if (row.isBanned) throw new ForbiddenError('This account is banned');
   if (!UPLOADER_ROLES.includes(row.role)) throw new ForbiddenError('This account no longer has contributor access');
 
   await apiKeyRepo.touch(row.id, ip);
   return {
-    key: { id: row.id, name: row.name, prefix: row.prefix, scopes: parseScopes(row.scopes), expiresAt: row.expiresAt },
+    key: { id: row.id, name: row.name, prefix: row.prefix, scopes: effectiveScopes(parseScopes(row.scopes), row.role), expiresAt: row.expiresAt },
     user: { id: row.userId, username: row.username, displayName: row.displayName, role: row.role },
   };
 }
