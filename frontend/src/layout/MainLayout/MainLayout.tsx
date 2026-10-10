@@ -112,47 +112,50 @@ export default function MainLayout() {
 
       <ContinueReading />
 
-      <ForYou className={styles.wide} />
+      {/* Same column as "Latest updates", so the recommended cards are exactly as wide as its cards. */}
+      <div className={styles.mainColumn}>
+        <ForYou />
 
-      <section className={styles.main} aria-labelledby="latest-heading">
-        <header className={styles.sectionHead}>
-          <div>
-            <h2 id="latest-heading" className={styles.title}>
-              Latest updates
-            </h2>
-            <p className={styles.subtitle}>Fresh chapters from the titles you love</p>
-          </div>
-
-          <div className={styles.viewToggle} role="group" aria-label="View mode">
-            {VIEW_MODES.map(({ mode, label, icon: Icon }) => (
-              <button
-                key={mode}
-                type="button"
-                className={cx(styles.viewBtn, viewMode === mode && styles.viewBtnOn)}
-                onClick={() => setViewMode(mode)}
-                aria-label={label}
-                aria-pressed={viewMode === mode}
-                title={label}
-              >
-                <Icon size={16} />
-              </button>
-            ))}
-          </div>
-        </header>
-
-        {isFirstLoad ? (
-          <p className={styles.state}>Loading comics…</p>
-        ) : error ? (
-          <p className={cx(styles.state, styles.stateError)}>{error}</p>
-        ) : (
-          <>
-            <div className={cx(styles.results, isLoading && styles.resultsLoading)} aria-busy={isLoading}>
-              <ComicCardList comics={comics} viewMode={viewMode} />
+        <section className={styles.main} aria-labelledby="latest-heading">
+          <header className={styles.sectionHead}>
+            <div>
+              <h2 id="latest-heading" className={styles.title}>
+                Latest updates
+              </h2>
+              <p className={styles.subtitle}>Fresh chapters from the titles you love</p>
             </div>
-            <Pagination currentPage={page} totalPages={totalPages} onPageChange={changePage} isLoading={isLoading} />
-          </>
-        )}
-      </section>
+
+            <div className={styles.viewToggle} role="group" aria-label="View mode">
+              {VIEW_MODES.map(({ mode, label, icon: Icon }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={cx(styles.viewBtn, viewMode === mode && styles.viewBtnOn)}
+                  onClick={() => setViewMode(mode)}
+                  aria-label={label}
+                  aria-pressed={viewMode === mode}
+                  title={label}
+                >
+                  <Icon size={16} />
+                </button>
+              ))}
+            </div>
+          </header>
+
+          {isFirstLoad ? (
+            <p className={styles.state}>Loading comics…</p>
+          ) : error ? (
+            <p className={cx(styles.state, styles.stateError)}>{error}</p>
+          ) : (
+            <>
+              <div className={cx(styles.results, isLoading && styles.resultsLoading)} aria-busy={isLoading}>
+                <ComicCardList comics={comics} viewMode={viewMode} />
+              </div>
+              <Pagination currentPage={page} totalPages={totalPages} onPageChange={changePage} isLoading={isLoading} />
+            </>
+          )}
+        </section>
+      </div>
 
       <PopularCard
         comics={rankedComics}

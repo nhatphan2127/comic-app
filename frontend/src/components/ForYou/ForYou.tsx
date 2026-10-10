@@ -7,7 +7,7 @@ import ComicShelf from '../ComicShelf/ComicShelf';
 
 const MAX_ITEMS = 20;
 
-/** "For you": recommendations for logged-in readers on the home page. */
+/** "You might like": recommendations for logged-in readers on the home page. */
 export default function ForYou({ className }: { className?: string }) {
   const { isLoggedIn } = useAuth();
   const contentFilter = useContentFilter();
@@ -40,9 +40,9 @@ export default function ForYou({ className }: { className?: string }) {
 
   return (
     <ComicShelf
-      headingId="for-you-heading"
-      title="For you"
-      subtitle="Picked from what you read, follow and rate"
+      headingId="you-might-like-heading"
+      title="You might like"
+      subtitle="Based on what you read, follow and rate"
       comics={comics}
       isLoading={isLoading}
       className={className}

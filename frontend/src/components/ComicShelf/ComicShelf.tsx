@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Comic } from '../../types/types';
 import { ComicCard } from '../ComicCard/ComicCard';
@@ -29,6 +29,7 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
   const drag = useRef<{ pointerId: number; startX: number; startScroll: number; moved: boolean } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [canScroll, setCanScroll] = useState({ back: false, forward: false });
+  const [cardWidth, setCardWidth] = useState<number | null>(null);
 
   const updateArrows = useCallback(() => {
     const row = rowRef.current;
@@ -36,15 +37,32 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
     setCanScroll({ back: row.scrollLeft > 1, forward: row.scrollLeft + row.clientWidth < row.scrollWidth - 1 });
   }, []);
 
+  // Cards as wide as in the "Latest updates" grid (repeat(auto-fill, minmax(--card-min, 1fr))): as many
+  // columns of at least --card-min as fit, stretched to fill the width.
   useEffect(() => {
-    updateArrows();
-    window.addEventListener('resize', updateArrows);
-    return () => window.removeEventListener('resize', updateArrows);
+    const row = rowRef.current;
+    if (!row) return;
+    const measure = () => {
+      const style = getComputedStyle(row);
+      const width = row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const min = parseFloat(style.getPropertyValue('--card-min')) || 150;
+      const gap = parseFloat(style.columnGap) || 0;
+      const columns = Math.max(1, Math.floor((width + gap) / (min + gap)));
+      setCardWidth((width - (columns - 1) * gap) / columns);
+      updateArrows();
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
   }, [updateArrows, comics.length]);
 
+  // One press = one screenful of cards.
   const scroll = (direction: 1 | -1) => {
     const row = rowRef.current;
-    if (row) row.scrollBy({ left: direction * row.clientWidth * 0.9, behavior: 'smooth' });
+    if (!row) return;
+    const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+    row.scrollBy({ left: direction * (row.clientWidth + gap), behavior: 'smooth' });
   };
 
   // Mouse drag to scroll. Touch and pens keep the browser's own swipe scrolling.
@@ -121,6 +139,7 @@ export default function ComicShelf({ headingId, title, subtitle, comics, isLoadi
       <div
         ref={rowRef}
         className={cx(styles.row, isLoading && styles.rowLoading, isDragging && styles.rowDragging)}
+        style={cardWidth ? ({ '--card-w': `${cardWidth}px` } as CSSProperties) : undefined}
         aria-busy={isLoading}
         onScroll={updateArrows}
         onPointerDown={onPointerDown}

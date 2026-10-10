@@ -64,14 +64,17 @@
   cursor: default;
 }
 
-/* Same card width as the "Latest updates" grid. No scrollbar: drag, arrows or swipe.
-   The padding leaves room for the cards' hover lift and outline. */
+/* Same card width as the "Latest updates" grid (--card-w is measured in ComicShelf.tsx from --card-min
+   and the gap, which match ComicCard.module.css). No scrollbar: drag, arrows or swipe.
+   The padding leaves room for the cards' hover lift and outline; the negative margin cancels it out. */
 .row {
+  --card-min: 150px;
   display: grid;
-  grid-auto-columns: 150px;
+  grid-auto-columns: var(--card-w, var(--card-min));
   grid-auto-flow: column;
   gap: var(--sp-4);
   overflow-x: auto;
+  margin: -6px -2px 0;
   padding: 6px 2px var(--sp-2);
   cursor: grab;
   scroll-snap-type: x proximity;
@@ -103,7 +106,7 @@
 
 @media (max-width: 600px) {
   .row {
-    grid-auto-columns: 110px;
+    --card-min: 110px;
     gap: var(--sp-3);
   }
 
