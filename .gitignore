@@ -1,7 +1,7 @@
 node_modules/
 backend/data
 backend/docs
-backend/script
+backend/scripts
 backend/instruction.md
 backend/storage
 
@@ -11,6 +11,6 @@ frontend/src/assets
 .env
 frontend/node_modules
 backend/node_modules
-frontend/FEATURES-PLAN.md
-frontend/plan.md
-frontend/TECHNIQUES.md
+FEATURES-PLAN.md
+plan.md
+TECHNIQUES.md
