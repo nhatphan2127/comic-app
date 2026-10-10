@@ -2,6 +2,7 @@ import * as notificationRepo from '../repositories/notificationRepository.js';
 import * as comicRepo from '../repositories/comicRepository.js';
 import * as chapterRepo from '../repositories/chapterRepository.js';
 import * as commentRepo from '../repositories/commentRepository.js';
+import * as blockRepo from '../repositories/blockRepository.js';
 import * as contributorRepo from '../repositories/contributorRepository.js';
 import { NotFoundError } from '../errors.js';
 
@@ -90,6 +91,7 @@ export async function notifyReviewDecision(type, targetId, status, { edit = fals
 export async function notifyReply(type, targetId, parentCommentId, replyId, replierId, replyText) {
   const parent = await commentRepo.findById(type, parentCommentId);
   if (!parent || parent.userId === replierId) return;
+  if (await blockRepo.exists(parent.userId, replierId)) return; // the parent's author blocked the replier
 
   let base;
   if (type === 'comic') {

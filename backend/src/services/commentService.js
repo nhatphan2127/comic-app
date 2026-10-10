@@ -2,7 +2,8 @@
 // Routes address a single comment only by its id (/comments/:commentId), so findComment()
 // looks it up in both tables. Readers (whatever their role) only reach comments they can see; hidden ones
 // (banned, or on hidden / unapproved comics and chapters) are 404 even to their author. The moderation
-// console works on every comment.
+// console works on every comment. Comments by someone the viewer blocked, with the replies under them, are left
+// out of what that viewer is shown (see blockService.js).
 import { v4 as uuidv4 } from 'uuid';
 import { withTransaction } from '../config/database.js';
 import * as commentRepo from '../repositories/commentRepository.js';
@@ -43,11 +44,12 @@ async function findOwnedComment(commentId, userId, action) {
 }
 
 // One page of root comments (with all their replies nested). Returns { items, totalItems }.
+// `totalItems` counts the roots this viewer sees.
 export async function listForTarget(type, targetId, { sort, page }, viewerId = null) {
   await assertTargetReadable(type, targetId);
   const [rows, totalItems] = await Promise.all([
     commentRepo.listPageWithReplies(type, targetId, { viewerId, sort, limit: page.limit, offset: page.offset }),
-    commentRepo.countRoots(type, targetId),
+    commentRepo.countRoots(type, targetId, viewerId),
   ]);
   return { items: buildCommentTree(rows, TREE_SORT[sort]), totalItems };
 }
@@ -55,6 +57,8 @@ export async function listForTarget(type, targetId, { sort, page }, viewerId = n
 export async function getWithReplies(commentId, viewerId = null) {
   const { type } = await findComment(commentId);
   const rows = await commentRepo.listSubtree(type, commentId, viewerId);
+  // No rows: the viewer blocked its author.
+  if (!rows.length) throw new NotFoundError('Comment not found');
   return { ...buildCommentTree(rows, 'best')[0], type };
 }
 

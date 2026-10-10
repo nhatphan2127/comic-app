@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { CalendarDays, ExternalLink, Pencil } from 'lucide-react';
+import { Ban, CalendarDays, ExternalLink, MoreHorizontal, Pencil } from 'lucide-react';
 import HeaderLayout from '../layout/HeaderLayout/HeaderLayout';
-import { publicUserApi } from '../services/api';
+import { publicUserApi, userApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import type { PublicProfile as Profile, UserComment } from '../types/types';
 import { resolveUploadUrl } from '../helpers/getImage';
 import { formatCount } from '../helpers/utils';
 import { parseServerDate } from '../helpers/formatDate';
 import Avatar from '../components/Avatar/Avatar';
+import Dropdown, { DropdownItem } from '../components/Dropdown/Dropdown';
 import Pagination from '../components/Pagination/Pagination';
 import UserCommentList from '../components/UserCommentList/UserCommentList';
 import NotFound from './NotFound';
@@ -29,12 +31,14 @@ const parseLinks = (text?: string | null) =>
 export default function PublicProfile() {
   const { userId = '' } = useParams<{ userId: string }>();
   const { user: me } = useAuth();
+  const toast = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [missing, setMissing] = useState(false);
   const [comments, setComments] = useState<UserComment[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [blockBusy, setBlockBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +52,7 @@ export default function PublicProfile() {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, me?.id]); // `me?.id`: logging in or out changes `isBlocked`
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +72,23 @@ export default function PublicProfile() {
   }, [userId, page]);
 
   if (missing) return <NotFound />;
+
+  // Blocking only hides this user's comments from me; the profile stays visible.
+  const setBlocked = async (blocked: boolean) => {
+    if (!profile) return;
+    const who = profile.displayName || profile.username;
+    if (blocked && !window.confirm(`Block ${who}? Their comments and the replies under them will be hidden from you.`)) return;
+    setBlockBusy(true);
+    try {
+      await (blocked ? userApi.blockUser(userId) : userApi.unblockUser(userId));
+      setProfile({ ...profile, isBlocked: blocked });
+      toast.success(blocked ? `${who} is blocked.` : `${who} is unblocked.`);
+    } catch (err) {
+      toast.error(err, blocked ? 'Could not block this user.' : 'Could not unblock this user.');
+    } finally {
+      setBlockBusy(false);
+    }
+  };
 
   const name = profile?.displayName || profile?.username || '…';
   const background = resolveUploadUrl(profile?.background);
@@ -94,8 +115,41 @@ export default function PublicProfile() {
                 <Pencil size={14} />
                 Edit profile
               </Link>
+            ) : me && profile ? (
+              profile.isBlocked ? (
+                <button type="button" className="btn btn--ghost btn--sm" disabled={blockBusy} onClick={() => setBlocked(false)}>
+                  Unblock
+                </button>
+              ) : (
+                <Dropdown
+                  align="right"
+                  ariaLabel="More actions"
+                  trigger={<MoreHorizontal size={16} />}
+                  triggerClassName="btn btn--ghost btn--sm btn--icon"
+                >
+                  {(close) => (
+                    <DropdownItem
+                      danger
+                      icon={<Ban size={14} />}
+                      onClick={() => {
+                        close();
+                        void setBlocked(true);
+                      }}
+                    >
+                      Block user
+                    </DropdownItem>
+                  )}
+                </Dropdown>
+              )
             ) : null}
           </div>
+
+          {profile?.isBlocked ? (
+            <p className={styles.blockedNote}>
+              <Ban size={14} />
+              You blocked this user. Their comments are hidden from you in discussions.
+            </p>
+          ) : null}
 
           {profile?.bio ? <p className={styles.bio}>{profile.bio}</p> : null}
 

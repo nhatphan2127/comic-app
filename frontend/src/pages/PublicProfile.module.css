@@ -53,6 +53,18 @@
   font-size: var(--fs-sm);
 }
 
+.blockedNote {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-4) var(--sp-6) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--surface-3);
+  color: var(--fg-soft);
+  font-size: var(--fs-sm);
+}
+
 .bio {
   margin: var(--sp-4) var(--sp-6) 0;
   color: var(--fg-soft);

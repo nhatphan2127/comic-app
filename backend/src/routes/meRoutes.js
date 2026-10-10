@@ -55,6 +55,10 @@ router.get('/comments', me.listMyComments);
 router.get('/contributions/comics', me.listMyComicContributions);
 router.get('/contributions/chapters', me.listMyChapterContributions);
 
+router.get('/blocks', me.listBlocks);
+router.put('/blocks/:userId', me.putBlock);
+router.delete('/blocks/:userId', me.deleteBlock);
+
 router.get('/role-request', me.getRoleRequest);
 router.post('/role-request', me.createRoleRequest);
 router.delete('/role-request', me.cancelRoleRequest);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MessageSquare } from 'lucide-react';
-import { chapterApi, comicApi, commentApi } from '../../services/api';
+import { chapterApi, comicApi, commentApi, userApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import type { Comment } from '../../types/types';
 import AuthModalLayout from '../../layout/AuthModalLayout/AuthModalLayout';
@@ -82,14 +82,22 @@ export default function CommentsSection({ id = '', targetId, type = 'comic' }: C
   }, [reload]);
 
   // Load the linked comment (e.g. from a notification) and scroll it into view.
-  useEffect(() => {
-    setTargetComment(null);
-    if (!targetId) return;
+  // A 404 includes a comment whose author the viewer blocked.
+  const loadTarget = useCallback(() => {
+    if (!targetId) return setTargetComment(null);
     commentApi
       .getDetail(targetId)
-      .then((res) => res?.comment && setTargetComment(res.comment))
-      .catch((err) => console.warn('Unable to load linked comment:', err));
+      .then((res) => setTargetComment(res?.comment ?? null))
+      .catch((err) => {
+        setTargetComment(null);
+        console.warn('Unable to load linked comment:', err);
+      });
   }, [targetId]);
+
+  useEffect(() => {
+    setTargetComment(null);
+    loadTarget();
+  }, [loadTarget]);
 
   useEffect(() => {
     if (!targetComment) return;
@@ -117,9 +125,15 @@ export default function CommentsSection({ id = '', targetId, type = 'comic' }: C
         await api.deleteComment(commentId);
         await reload();
       },
+      // The server leaves the blocked user's comments out from now on, so reloading hides them.
+      block: async (userId) => {
+        await userApi.blockUser(userId);
+        loadTarget();
+        await reload();
+      },
       requireAuth,
     }),
-    [api, id, reload, requireAuth],
+    [api, id, reload, loadTarget, requireAuth],
   );
 
   const visibleComments = useMemo(

@@ -8,6 +8,7 @@ import FollowingTitlesPanel from './components/FollowingTitlesPanel/FollowingTit
 import ReadHistoryPanel from './components/HistoryReadingPanel/HistoryReadingPanel';
 import NotificationsPanel from './components/NotificationsPanel/NotificationsPanel';
 import CommentsPanel from './components/CommentsPanel/CommentsPanel';
+import BlockedUsersPanel from './components/BlockedUsersPanel/BlockedUsersPanel';
 import BecomeContributorPanel from './components/BecomeContributorPanel/BecomeContributorPanel';
 import style from './UserProfileLayout.module.css';
 
@@ -18,6 +19,7 @@ const PANELS: Record<string, ComponentType> = {
   'read-history': ReadHistoryPanel,
   notifications: NotificationsPanel,
   comments: CommentsPanel,
+  'blocked-users': BlockedUsersPanel,
   'become-contributor': BecomeContributorPanel,
 };
 

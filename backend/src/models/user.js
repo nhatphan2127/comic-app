@@ -41,3 +41,11 @@ export const Session = sequelize.define('Session', {
   createdAt: timestamp(),
   expiresAt: TEXT,
 }, { tableName: 'sessions' });
+
+// blockerId hides blockedId's comments (and the replies under them) from themselves and gets no
+// reply notifications from them. Nothing changes for anyone else.
+export const UserBlock = sequelize.define('UserBlock', {
+  blockerId: ref('users', { primaryKey: true }),
+  blockedId: ref('users', { primaryKey: true }),
+  createdAt: timestamp(),
+}, { tableName: 'user_blocks' });

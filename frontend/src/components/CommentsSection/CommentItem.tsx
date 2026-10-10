@@ -19,6 +19,8 @@ export interface CommentActions {
   react: (commentId: string, reaction: Reaction) => Promise<void>;
   edit: (commentId: string, text: string) => Promise<void>;
   remove: (commentId: string) => Promise<void>;
+  /** Hides the author's comments from the current user (see BlockedUsersPanel to undo). */
+  block: (userId: string) => Promise<void>;
   requireAuth: () => void;
 }
 
@@ -92,6 +94,19 @@ export default function CommentItem(props: CommentItemProps) {
       await actions.remove(comment.id);
     } catch (err) {
       toast.error(err, 'Could not delete the comment.');
+    }
+  };
+
+  const block = async () => {
+    setMenuOpen(false);
+    if (!isLoggedIn) return actions.requireAuth();
+    if (!authorId) return;
+    if (!window.confirm(`Block ${authorName}? Their comments and the replies under them will be hidden from you.`)) return;
+    try {
+      await actions.block(authorId);
+      toast.success(`${authorName} is blocked. You can unblock them from your profile.`);
+    } catch (err) {
+      toast.error(err, 'Could not block this user.');
     }
   };
 
@@ -205,17 +220,22 @@ export default function CommentItem(props: CommentItemProps) {
                           </button>
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            if (isLoggedIn) setReporting(true);
-                            else actions.requireAuth();
-                          }}
-                        >
-                          Report
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setMenuOpen(false);
+                              if (isLoggedIn) setReporting(true);
+                              else actions.requireAuth();
+                            }}
+                          >
+                            Report
+                          </button>
+                          <button type="button" role="menuitem" className={styles.menuDanger} onClick={block}>
+                            Block user
+                          </button>
+                        </>
                       )}
                     </div>
                   ) : null}

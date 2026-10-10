@@ -7,6 +7,7 @@ import * as comicRepo from '../repositories/comicRepository.js';
 import * as followRepo from '../repositories/followRepository.js';
 import * as historyRepo from '../repositories/historyRepository.js';
 import * as categoryRepo from '../repositories/categoryRepository.js';
+import * as blockRepo from '../repositories/blockRepository.js';
 import { assertChapterReadable } from './interactionService.js';
 import { forgetUser as forgetRecommendations } from './recommendationService.js';
 import { assertValidPassword, hashPassword, verifyPassword } from './authService.js';
@@ -26,11 +27,15 @@ async function findUserOrThrow(userId) {
 // ---------- Profile ----------
 
 // Someone else's profile (GET /users/:userId): public fields and counters, never email or settings.
-export async function getPublicProfile(userId) {
+// `isBlocked`: whether the viewer (null = guest) blocked this user. Blocked users keep their public profile.
+export async function getPublicProfile(userId, viewerId = null) {
   const user = await userRepo.findPublicById(userId);
   if (!user) throw new NotFoundError('User not found');
-  const { following, comments, likes } = await userRepo.stats(userId);
-  return { ...user, stats: { following, comments, likes } };
+  const [{ following, comments, likes }, isBlocked] = await Promise.all([
+    userRepo.stats(userId),
+    viewerId ? blockRepo.exists(viewerId, userId) : false,
+  ]);
+  return { ...user, stats: { following, comments, likes }, isBlocked };
 }
 
 export async function getProfile(userId) {

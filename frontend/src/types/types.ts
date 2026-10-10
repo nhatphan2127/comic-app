@@ -51,6 +51,17 @@ export interface PublicProfile {
     role?: UserRole;
     createdAt?: string;
     stats: { following: number; comments: number; likes: number };
+    /** Whether the logged-in viewer blocked this user (false for guests). */
+    isBlocked?: boolean;
+}
+
+/** Someone the current user blocked (GET /me/blocks). */
+export interface BlockedUser {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatar: string | null;
+    blockedAt: string;
 }
 
 /** A comment as listed on a profile (with the comic it belongs to). */

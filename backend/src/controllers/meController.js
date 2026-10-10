@@ -11,6 +11,7 @@ import * as contributorService from '../services/contributorService.js';
 import * as comicService from '../services/comicService.js';
 import * as roleRequestService from '../services/roleRequestService.js';
 import * as recommendationService from '../services/recommendationService.js';
+import * as blockService from '../services/blockService.js';
 import { USER_SORTABLE_FIELDS as COMMENT_SORT_FIELDS } from '../repositories/commentRepository.js';
 import { BadRequestError } from '../errors.js';
 
@@ -166,6 +167,27 @@ export const listMyComicContributions = asyncHandler(async (req, res) => {
 
 export const listMyChapterContributions = asyncHandler(async (req, res) => {
   ok(res, await contributorService.listMyChapterContributions(req.user.id));
+});
+
+// ---------- Blocked users ----------
+
+// GET /me/blocks?page=&pageSize= → the users I blocked, most recent first
+export const listBlocks = asyncHandler(async (req, res) => {
+  const page = parsePagination(req.query);
+  const { items, totalItems } = await blockService.list(req.user.id, { page });
+  ok(res, items, pageMeta(page, totalItems));
+});
+
+// PUT /me/blocks/:userId → 204 (blocking again changes nothing)
+export const putBlock = asyncHandler(async (req, res) => {
+  await blockService.block(req.user.id, req.params.userId);
+  noContent(res);
+});
+
+// DELETE /me/blocks/:userId → 204
+export const deleteBlock = asyncHandler(async (req, res) => {
+  await blockService.unblock(req.user.id, req.params.userId);
+  noContent(res);
 });
 
 // ---------- Contributor request ----------

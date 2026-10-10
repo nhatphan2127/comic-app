@@ -6,8 +6,9 @@ import * as userService from '../services/userService.js';
 import * as commentService from '../services/commentService.js';
 import { USER_SORTABLE_FIELDS } from '../repositories/commentRepository.js';
 
+// GET /users/:userId (login optional: a logged-in viewer also learns whether they blocked this user)
 export const getUser = asyncHandler(async (req, res) => {
-  ok(res, await userService.getPublicProfile(req.params.userId));
+  ok(res, await userService.getPublicProfile(req.params.userId, req.user?.id));
 });
 
 // GET /users/:userId/comments?sort=-createdAt&page=&pageSize=

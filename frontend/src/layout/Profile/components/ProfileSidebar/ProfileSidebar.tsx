@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Ban,
   Bell,
   Bookmark,
   ChevronDown,
@@ -43,6 +44,7 @@ export default function ProfileSidebar({ activeTab, setActiveTab }: Props) {
       { id: 'edit-profile', label: 'Edit profile', icon: User, group: 'Account' },
       { id: 'notifications', label: 'Notifications', icon: Bell, group: 'Account' },
       { id: 'comments', label: 'Comments', icon: MessageSquare, group: 'Account' },
+      { id: 'blocked-users', label: 'Blocked users', icon: Ban, group: 'Account' },
       { id: 'following-titles', label: 'Following', icon: Bookmark, group: 'Library' },
       { id: 'read-history', label: 'Reading history', icon: Clock3, group: 'Library' },
       // Readers can ask for contributor access; everyone above that gets shortcuts to their workspaces.

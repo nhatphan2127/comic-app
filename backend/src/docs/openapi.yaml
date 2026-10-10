@@ -657,6 +657,53 @@ paths:
         '200': { $ref: '#/components/responses/ContributionList' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /me/blocks:
+    get:
+      tags: [Me]
+      summary: Users I blocked, most recently blocked first
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+      responses:
+        '200':
+          description: A page of blocked users.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/BlockedUser' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /me/blocks/{userId}:
+    parameters:
+      - { $ref: '#/components/parameters/userId' }
+    put:
+      tags: [Me]
+      summary: Block a user (idempotent)
+      description: |
+        Blocking hides someone from me only. Their comments, and every reply under them, leave the comment
+        lists and comment pages I am shown (`GET /comments/{commentId}` on one of them is a 404 for me), and
+        their replies to my comments no longer notify me. Their public profile stays reachable. Nothing
+        changes for other users, and the moderation tools ignore blocks.
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Me]
+      summary: Unblock a user (idempotent)
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /me/role-request:
     get:
       tags: [Me]
@@ -846,7 +893,8 @@ paths:
     get:
       tags: [Users]
       summary: Someone's public profile (404 for banned users)
-      security: []
+      description: Login is optional. `isBlocked` says whether the logged-in viewer blocked this user (false for guests).
+      security: [{}, { sessionCookie: [] }]
       parameters:
         - { $ref: '#/components/parameters/userId' }
       responses:
@@ -1233,6 +1281,7 @@ paths:
     get:
       tags: [Comments]
       summary: Comments on a comic
+      description: For a logged-in viewer, comments by users they blocked (and the replies under them) are left out, and `totalItems` counts only the root comments they see.
       security: [{}, { sessionCookie: [] }]
       parameters:
         - { $ref: '#/components/parameters/page' }
@@ -1309,6 +1358,7 @@ paths:
     get:
       tags: [Comments]
       summary: Comments on a chapter
+      description: For a logged-in viewer, comments by users they blocked (and the replies under them) are left out, and `totalItems` counts only the root comments they see.
       security: [{}, { sessionCookie: [] }]
       parameters:
         - { $ref: '#/components/parameters/page' }
@@ -1362,6 +1412,7 @@ paths:
     get:
       tags: [Comments]
       summary: A comment with all of its replies
+      description: Replies by users the viewer blocked (with the replies under them) are left out; a comment written by one of them is a 404.
       security: [{}, { sessionCookie: [] }]
       responses:
         '200':
@@ -2626,6 +2677,15 @@ components:
             following: { type: integer }
             comments: { type: integer }
             likes: { type: integer }
+        isBlocked: { type: boolean }
+    BlockedUser:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        displayName: { type: [string, 'null'] }
+        avatar: { type: [string, 'null'] }
+        blockedAt: { type: string }
     ReportTargetType:
       type: string
       enum: [comic, comment]

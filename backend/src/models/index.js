@@ -2,7 +2,7 @@
 // tables (existing tables and their data are left as they are).
 import { QueryTypes } from 'sequelize';
 import { sequelize } from '../config/database.js';
-import { User, UserPreference, PasswordReset, Session } from './user.js';
+import { User, UserPreference, PasswordReset, Session, UserBlock } from './user.js';
 import { Author, Artist, Genre, Format, Comic, ComicGenre, ComicFormat, ComicOtherName, ComicContributor } from './comic.js';
 import { Chapter, ChapterImage, ChapterContributor } from './chapter.js';
 import { ReadHistory, RatingHistory, FollowingCategory, Following, ComicDailyView, UserReadDay } from './interaction.js';
@@ -50,7 +50,7 @@ await installSearchText();
 
 export {
   sequelize,
-  User, UserPreference, PasswordReset, Session,
+  User, UserPreference, PasswordReset, Session, UserBlock,
   Author, Artist, Genre, Format, Comic, ComicGenre, ComicFormat, ComicOtherName, ComicContributor,
   Chapter, ChapterImage, ChapterContributor,
   ReadHistory, RatingHistory, FollowingCategory, Following, ComicDailyView, UserReadDay,

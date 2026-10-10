@@ -9,6 +9,7 @@ import { now, select } from '../config/database.js';
 import { ChapterComment, ChapterCommentReaction, ComicComment, ComicCommentReaction } from '../models/index.js';
 import { BadRequestError } from '../errors.js';
 import { readableSql } from './visibility.js';
+import { notBlockedBy } from './blockRepository.js';
 
 const TARGETS = {
   comic: {
@@ -60,6 +61,9 @@ export const ROOT_ORDERS = {
   createdAt: 'cc.createdAt ASC',
 };
 
+// Comments by someone the viewer blocked are left out of every tree, and so are the replies under
+// them (the recursion never walks into a left-out comment). `viewerId` null = a guest, who blocked no one.
+
 // A page of root comments (ordered by `sort`, a key of ROOT_ORDERS) plus all of their
 // descendants, as a flat list.
 export function listPageWithReplies(type, targetId, { viewerId, sort, limit, offset }) {
@@ -70,7 +74,7 @@ export function listPageWithReplies(type, targetId, { viewerId, sort, limit, off
     `WITH RECURSIVE
        roots AS (
          SELECT cc.id FROM ${t.table} cc
-         WHERE cc.${t.fk} = ? AND cc.parentCommentId IS NULL
+         WHERE cc.${t.fk} = ? AND cc.parentCommentId IS NULL AND ${notBlockedBy('cc.userId')}
          ORDER BY ${orderBy}, cc.id
          LIMIT ? OFFSET ?
        ),
@@ -78,36 +82,44 @@ export function listPageWithReplies(type, targetId, { viewerId, sort, limit, off
          SELECT id FROM roots
          UNION ALL
          SELECT cc.id FROM ${t.table} cc JOIN tree ON cc.parentCommentId = tree.id
+         WHERE ${notBlockedBy('cc.userId')}
        )
      SELECT ${treeColumns(t)}
      ${treeJoins(t)}
      WHERE cc.id IN (SELECT id FROM tree)`,
-    [targetId, limit, offset, viewerId]
+    [targetId, viewerId, limit, offset, viewerId, viewerId]
   );
 }
 
-// One comment and all of its descendants, as a flat list.
+// One comment and all of its descendants, as a flat list (empty when its author is blocked).
 export function listSubtree(type, commentId, viewerId) {
   const t = target(type);
   return select(
     `WITH RECURSIVE tree(id) AS (
-       SELECT id FROM ${t.table} WHERE id = ?
+       SELECT id FROM ${t.table} WHERE id = ? AND ${notBlockedBy('userId')}
        UNION ALL
        SELECT cc.id FROM ${t.table} cc JOIN tree ON cc.parentCommentId = tree.id
+       WHERE ${notBlockedBy('cc.userId')}
      )
      SELECT ${treeColumns(t)}
      ${treeJoins(t)}
      WHERE cc.id IN (SELECT id FROM tree)`,
-    [commentId, viewerId]
+    [commentId, viewerId, viewerId, viewerId]
   );
 }
 
 // ---------- Single comments ----------
 
-export const countRoots = (type, targetId) => {
+// Root comments the viewer sees, so the total matches the pages of listPageWithReplies.
+export async function countRoots(type, targetId, viewerId = null) {
   const t = target(type);
-  return t.Comment.count({ where: { [t.fk]: targetId, parentCommentId: null } });
-};
+  const [row] = await select(
+    `SELECT COUNT(*) AS total FROM ${t.table} cc
+     WHERE cc.${t.fk} = ? AND cc.parentCommentId IS NULL AND ${notBlockedBy('cc.userId')}`,
+    [targetId, viewerId]
+  );
+  return row.total;
+}
 
 export const findById = (type, id) => target(type).Comment.findByPk(id, { attributes: ['id', 'userId'], raw: true });
 

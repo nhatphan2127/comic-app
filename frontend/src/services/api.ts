@@ -1,5 +1,5 @@
 // src/services/api.ts
-import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, ApiKey, ApiKeyScope, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, UserComment, RankingPeriod } from '../types/types';
+import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, ApiKey, ApiKeyScope, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, BlockedUser, UserComment, RankingPeriod } from '../types/types';
 
 export const API_ORIGIN = 'http://localhost:5000';
 // Versioned REST API (see backend/docs/api-conventions.md). Interactive docs: http://localhost:5000/api/docs
@@ -399,6 +399,13 @@ export const userApi = {
   deleteHistoryItem: (chapterId: string) => request<void>(`/me/history/${chapterId}`, { method: 'DELETE' }),
 
   clearReadingHistory: () => request<void>('/me/history', { method: 'DELETE' }),
+
+  // BlockedUsersPanel.tsx: blocking hides the user's comments (and replies under them) from me only.
+  getBlockedUsers: (page = 1, pageSize = 20) => requestPage<BlockedUser>(`/me/blocks${query({ page, pageSize })}`),
+
+  blockUser: (userId: string) => request<void>(`/me/blocks/${userId}`, { method: 'PUT' }),
+
+  unblockUser: (userId: string) => request<void>(`/me/blocks/${userId}`, { method: 'DELETE' }),
 };
 
 // Public profiles (no login needed)
