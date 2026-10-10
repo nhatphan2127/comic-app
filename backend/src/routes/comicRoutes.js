@@ -12,6 +12,7 @@ export const comicRouter = express.Router();
 
 comicRouter.get('/', comics.listComics);
 comicRouter.post('/', authenticateToken, uploaders, upload.single('coverImage'), comics.createComic);
+comicRouter.get('/rankings', comics.listRankings); // before /:comicId, which would match "rankings"
 // Reading routes accept the comic's id or its url slug in :comicId; writing routes need the id.
 comicRouter.get('/:comicId', authenticateTokenOptional, comics.getComic);
 comicRouter.patch('/:comicId', authenticateToken, uploaders, upload.single('coverImage'), comics.updateComic);

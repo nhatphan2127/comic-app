@@ -134,12 +134,15 @@ function publicOrder(sort, q) {
   return [...order, ['id', 'ASC']];
 }
 
+// The columns of a catalogue item (also used by the rankings, see viewRepository).
+export const LIST_COLUMNS = [
+  'id', 'name', 'url', 'coverUrl', 'description', 'types', 'demographic', 'contentRating', 'releaseStatus',
+  'rating', 'view', 'follow', 'createdAt', 'updatedAt',
+];
+
 export const listPublic = ({ filters, sort = [], limit, offset }) =>
   Comic.findAll({
-    attributes: [
-      'id', 'name', 'url', 'coverUrl', 'description', 'types', 'demographic', 'contentRating', 'releaseStatus',
-      'rating', 'view', 'follow', 'createdAt', 'updatedAt',
-    ],
+    attributes: LIST_COLUMNS,
     where: publicWhere(filters),
     order: publicOrder(sort, filters?.q),
     limit,

@@ -22,7 +22,7 @@ export const findIdByUrl = (url) => Chapter.findOne({ attributes: ['id'], where:
 // A chapter readers may open or act on: readable itself and in a readable comic, whatever the user's role.
 export const findReadable = (id) =>
   Chapter.findOne({
-    attributes: ['id', 'chapterNumber', 'title'],
+    attributes: ['id', 'comicId', 'chapterNumber', 'title'],
     where: { id, ...READABLE },
     include: [{ model: Comic, as: 'comic', attributes: [], required: true, where: READABLE }],
     raw: true,

@@ -1,5 +1,5 @@
 // src/services/api.ts
-import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, ApiKey, ApiKeyScope, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, UserComment } from '../types/types';
+import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, ApiKey, ApiKeyScope, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, UserComment, RankingPeriod } from '../types/types';
 
 export const API_ORIGIN = 'http://localhost:5000';
 // Versioned REST API (see backend/docs/api-conventions.md). Interactive docs: http://localhost:5000/api/docs
@@ -199,9 +199,9 @@ export const comicApi = {
     return { comics: data, metadata: { page: meta.page, totalPages: meta.totalPages } };
   },
 
-  // use Main.tsx
-  getPopular: async (contentFilter?: ContentFilter | string) =>
-    (await requestPage<Comic>(`/comics${query({ sort: '-view', pageSize: 10, contentRating: contentRatingParam(contentFilter) })}`)).data,
+  // use MainLayout.tsx: most active comics of the period (views + new follows + new ratings)
+  getRankings: async (period: RankingPeriod, limit = 10, contentFilter?: ContentFilter | string) =>
+    (await requestPage<Comic>(`/comics/rankings${query({ period, pageSize: limit, contentRating: contentRatingParam(contentFilter) })}`)).data,
 
   // use HeroCarousel in MainLayout.tsx
   getTopRated: async (limit = 8, contentFilter?: ContentFilter | string) =>

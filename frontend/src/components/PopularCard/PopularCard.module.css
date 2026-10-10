@@ -21,6 +21,22 @@
   color: var(--brand);
 }
 
+.periods {
+  margin-bottom: var(--sp-3);
+}
+
+.state {
+  margin: 0;
+  padding: var(--sp-4) var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.listLoading {
+  opacity: 0.6;
+  transition: opacity var(--t-fast);
+}
+
 .list {
   display: flex;
   flex-direction: column;

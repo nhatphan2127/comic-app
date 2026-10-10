@@ -5,7 +5,7 @@ import { sequelize } from '../config/database.js';
 import { User, UserPreference, PasswordReset, Session } from './user.js';
 import { Author, Artist, Genre, Format, Comic, ComicGenre, ComicFormat, ComicOtherName, ComicContributor } from './comic.js';
 import { Chapter, ChapterImage, ChapterContributor } from './chapter.js';
-import { ReadHistory, RatingHistory, FollowingCategory, Following } from './interaction.js';
+import { ReadHistory, RatingHistory, FollowingCategory, Following, ComicDailyView, UserReadDay } from './interaction.js';
 import { ComicComment, ComicCommentReaction, ChapterComment, ChapterCommentReaction } from './comment.js';
 import { Notification, AdminSetting, Report, RoleRequest, ApiKey, EditRequest, ModerationLog } from './system.js';
 
@@ -48,7 +48,7 @@ export {
   User, UserPreference, PasswordReset, Session,
   Author, Artist, Genre, Format, Comic, ComicGenre, ComicFormat, ComicOtherName, ComicContributor,
   Chapter, ChapterImage, ChapterContributor,
-  ReadHistory, RatingHistory, FollowingCategory, Following,
+  ReadHistory, RatingHistory, FollowingCategory, Following, ComicDailyView, UserReadDay,
   ComicComment, ComicCommentReaction, ChapterComment, ChapterCommentReaction,
   Notification, AdminSetting, Report, RoleRequest, ApiKey, EditRequest, ModerationLog,
 };

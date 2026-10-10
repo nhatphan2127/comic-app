@@ -4,6 +4,7 @@ import * as comicRepo from '../repositories/comicRepository.js';
 import * as chapterRepo from '../repositories/chapterRepository.js';
 import * as ratingRepo from '../repositories/ratingRepository.js';
 import * as historyRepo from '../repositories/historyRepository.js';
+import * as viewRepo from '../repositories/viewRepository.js';
 import * as lookupRepo from '../repositories/lookupRepository.js';
 import * as contributorRepo from '../repositories/contributorRepository.js';
 import { canManageComic } from './permissions.js';
@@ -23,7 +24,21 @@ export async function list({ filters, sort, page }) {
     comicRepo.listPublic({ filters, sort, limit: page.limit, offset: page.offset }),
     comicRepo.countPublic(filters),
   ]);
+  return { items: await withGenresAndLatestChapters(comics), totalItems };
+}
 
+// Most active comics of the period (see viewRepository.listRanked), as catalogue items plus `rank` and `score`.
+export async function rankings({ period, contentRatings, page }) {
+  const [comics, totalItems] = await Promise.all([
+    viewRepo.listRanked({ period, contentRatings, limit: page.limit, offset: page.offset }),
+    viewRepo.countRanked({ period, contentRatings }),
+  ]);
+  const items = (await withGenresAndLatestChapters(comics))
+    .map((comic, index) => ({ ...comic, rank: page.offset + index + 1, score: Number(comic.score) }));
+  return { items, totalItems };
+}
+
+async function withGenresAndLatestChapters(comics) {
   const ids = comics.map((c) => c.id);
   const [genres, chapters] = ids.length
     ? await Promise.all([comicRepo.listGenresForComics(ids), chapterRepo.listPublicForComics(ids)])
@@ -38,13 +53,12 @@ export async function list({ filters, sort, page }) {
     }
   });
 
-  const items = comics.map((comic) => ({
+  return comics.map((comic) => ({
     ...comic,
     rating: Number(comic.rating || 0),
     genres: genres.filter((g) => g.comicId === comic.id).map((g) => g.name),
     latestChapters: latest[comic.id] || [],
   }));
-  return { items, totalItems };
 }
 
 // Shared by the public detail page and the moderation detail page.

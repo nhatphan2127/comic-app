@@ -153,6 +153,9 @@ export interface ComicDetail extends Comic {
     chapters?: Chapter[];
 }
 
+/** GET /comics/rankings: today, the last 7 days, the last 30 days, or all time. */
+export type RankingPeriod = 'day' | 'week' | 'month' | 'all';
+
 export interface Comic {
     // Basic information
     id: string;
@@ -195,6 +198,10 @@ export interface Comic {
     pendingEdit?: boolean | number;
 
     latestChapters?: Chapter[] | [];
+
+    /** Rankings only: position (1-based) and activity score within the requested period. */
+    rank?: number;
+    score?: number;
 
     /** Where the logged-in viewer left off (public detail only); null = never opened. */
     progress?: {

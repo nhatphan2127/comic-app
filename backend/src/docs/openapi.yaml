@@ -952,6 +952,44 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
 
+  /comics/rankings:
+    get:
+      tags: [Comics]
+      summary: Most active public comics of a period
+      description: |
+        `score = views + 5 × new follows + 3 × new ratings` within the period (UTC days):
+        `day` = today, `week` = the last 7 days, `month` = the last 30 days. `all` uses the running totals
+        (`view + 5 × follow + 3 × ratings`). Comics with a score of 0 are not ranked. Ties: most followed first.
+
+        Views are counted when a chapter is opened (GET /chapters/{chapterId}): every open for guests, at most
+        once per 30 minutes per chapter for a logged-in reader. Per-day views exist only since view counting
+        was introduced, so `day` / `week` / `month` start empty on older databases.
+      security: []
+      parameters:
+        - name: period
+          in: query
+          schema: { type: string, enum: [day, week, month, all], default: week }
+        - name: contentRating
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { $ref: '#/components/schemas/ContentRating' } }
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+      responses:
+        '200':
+          description: A page of ranked comics, best first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/RankedComic' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
   /comics/{comicId}:
     get:
       tags: [Comics]
@@ -1143,7 +1181,8 @@ paths:
       description: >-
         Only approved, public chapters of approved, public comics, whatever the caller's role (staff preview
         other chapters through GET /moderation/chapters/{chapterId}). With a token the chapter is also recorded
-        in the reader's history.
+        in the reader's history. Each open counts as a view of the comic (see GET /comics/rankings); a
+        logged-in reader opening the same chapter again within 30 minutes is not counted again.
       security: [{}, { sessionCookie: [] }]
       parameters:
         - { $ref: '#/components/parameters/chapterId' }
@@ -2679,6 +2718,13 @@ components:
           type: array
           maxItems: 3
           items: { $ref: '#/components/schemas/LatestChapter' }
+    RankedComic:
+      allOf:
+        - $ref: '#/components/schemas/ComicSummary'
+        - type: object
+          properties:
+            rank: { type: integer, minimum: 1 }
+            score: { type: integer, description: Activity score within the requested period. }
     ComicDetail:
       type: object
       properties:

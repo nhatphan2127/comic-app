@@ -33,3 +33,17 @@ export const Following = sequelize.define('Following', {
   createdAt: timestamp(),
   updatedAt: timestamp(),
 }, { tableName: 'following', indexes: [{ name: 'idx_following_category', fields: ['followingCategoryId'] }] });
+
+// Views per comic per UTC day ('YYYY-MM-DD'): the rankings sum them over a period.
+export const ComicDailyView = sequelize.define('ComicDailyView', {
+  comicId: ref('comics', { primaryKey: true }),
+  day: { type: TEXT, primaryKey: true },
+  views: withDefault(INTEGER, 0),
+}, { tableName: 'comic_daily_views', indexes: [{ name: 'idx_comic_daily_views_day', fields: ['day'] }] });
+
+// Distinct chapters a user opened per UTC day (reading streaks and stats).
+export const UserReadDay = sequelize.define('UserReadDay', {
+  userId: ref('users', { primaryKey: true }),
+  day: { type: TEXT, primaryKey: true },
+  chapters: withDefault(INTEGER, 0),
+}, { tableName: 'user_read_days' });

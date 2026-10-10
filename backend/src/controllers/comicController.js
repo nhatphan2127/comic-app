@@ -7,6 +7,8 @@ import * as chapterService from '../services/chapterService.js';
 import * as contributorService from '../services/contributorService.js';
 import { SORTABLE_FIELDS as COMIC_SORT_FIELDS } from '../repositories/comicRepository.js';
 import { SORTABLE_FIELDS as CHAPTER_SORT_FIELDS } from '../repositories/chapterRepository.js';
+import { RANKING_PERIODS } from '../repositories/viewRepository.js';
+import { BadRequestError } from '../errors.js';
 
 export const CONTENT_RATINGS = ['safe', 'suggestive', 'erotica', 'pornographic'];
 export const COMIC_TYPES = ['manga', 'manhwa', 'manhua', 'other'];
@@ -36,6 +38,19 @@ export const listComics = asyncHandler(async (req, res) => {
   };
   const sort = parseSort(query.sort, COMIC_SORT_FIELDS);
   const { items, totalItems } = await comicService.list({ filters, sort, page });
+  ok(res, items, pageMeta(page, totalItems));
+});
+
+// GET /comics/rankings?period=day|week|month|all&contentRating=&page=&pageSize=
+export const listRankings = asyncHandler(async (req, res) => {
+  const { query } = req;
+  const page = parsePagination(query);
+  const period = query.period === undefined || query.period === '' ? 'week' : query.period;
+  if (!RANKING_PERIODS.includes(period)) {
+    throw new BadRequestError(`Invalid "period". Allowed: ${RANKING_PERIODS.join(', ')}`);
+  }
+  const contentRatings = parseEnumList(query.contentRating, 'contentRating', CONTENT_RATINGS);
+  const { items, totalItems } = await comicService.rankings({ period, contentRatings, page });
   ok(res, items, pageMeta(page, totalItems));
 });
 

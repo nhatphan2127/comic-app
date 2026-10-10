@@ -3,6 +3,7 @@ import { withTransaction } from '../config/database.js';
 import * as comicRepo from '../repositories/comicRepository.js';
 import * as chapterRepo from '../repositories/chapterRepository.js';
 import * as historyRepo from '../repositories/historyRepository.js';
+import * as viewRepo from '../repositories/viewRepository.js';
 import * as contributorRepo from '../repositories/contributorRepository.js';
 import { initialReviewStatus } from './settingsService.js';
 import { notifyNewChapter } from './notificationService.js';
@@ -25,12 +26,27 @@ export async function openForReading(chapterId, viewer = null) {
   const images = await chapterRepo.listImages(chapter.id);
   let metadata = {};
   if (viewer) {
-    await historyRepo.touch(viewer.id, chapter.id);
+    await recordVisit(viewer.id, chapter);
     metadata = (await historyRepo.findCurrentPage(viewer.id, chapter.id)) || {};
+  } else {
+    // Guests are not tracked, so every open counts.
+    await withTransaction(() => viewRepo.addComicView(chapter.comicId));
   }
   metadata.totalPages = images.length;
 
   return { id: chapter.id, chapterNumber: chapter.chapterNumber, title: chapter.title, images, metadata };
+}
+
+// A logged-in reader's open counts as a view only if they had not opened this chapter in the last
+// 30 minutes (refreshing the page is not a view), and as a chapter read today only once per day.
+// The previous visit is read before touch() overwrites it.
+function recordVisit(userId, chapter) {
+  return withTransaction(async () => {
+    const previous = await viewRepo.findPreviousVisit(userId, chapter.id);
+    await historyRepo.touch(userId, chapter.id);
+    if (!previous?.recent) await viewRepo.addComicView(chapter.comicId);
+    if (!previous?.today) await viewRepo.addUserReadChapter(userId);
+  });
 }
 
 // Moderation preview: any chapter with its pages, without touching anyone's reading history.

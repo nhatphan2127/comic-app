@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { LayoutGrid, List } from 'lucide-react';
-import type { Comic } from '../../types/types';
+import type { Comic, RankingPeriod } from '../../types/types';
 import ComicCardList from '../../components/ComicCard/ComicCard';
 import HeroCarousel from '../../components/HeroCarousel/HeroCarousel';
 import Pagination from '../../components/Pagination/Pagination';
@@ -23,7 +23,9 @@ export default function MainLayout() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [page, setPage] = useState(1);
   const [comics, setComics] = useState<Comic[]>([]);
-  const [popularComics, setPopularComics] = useState<Comic[]>([]);
+  const [rankingPeriod, setRankingPeriod] = useState<RankingPeriod>('week');
+  const [rankedComics, setRankedComics] = useState<Comic[]>([]);
+  const [isRankingLoading, setIsRankingLoading] = useState(true);
   const [topRated, setTopRated] = useState<Comic[]>([]);
   const [isTopRatedLoading, setIsTopRatedLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
@@ -58,18 +60,22 @@ export default function MainLayout() {
 
   useEffect(() => {
     let cancelled = false;
+    setIsRankingLoading(true);
 
     comicApi
-      .getPopular(contentFilter)
+      .getRankings(rankingPeriod, 10, contentFilter)
       .then((data) => {
-        if (!cancelled) setPopularComics(data || []);
+        if (!cancelled) setRankedComics(data || []);
       })
-      .catch((err) => console.error('Could not fetch popular comics:', err));
+      .catch((err) => console.error('Could not fetch rankings:', err))
+      .finally(() => {
+        if (!cancelled) setIsRankingLoading(false);
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [contentFilter]);
+  }, [rankingPeriod, contentFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,7 +151,12 @@ export default function MainLayout() {
         )}
       </section>
 
-      <PopularCard popularComics={popularComics} />
+      <PopularCard
+        comics={rankedComics}
+        period={rankingPeriod}
+        onPeriodChange={setRankingPeriod}
+        isLoading={isRankingLoading}
+      />
     </div>
   );
 }
