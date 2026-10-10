@@ -68,6 +68,17 @@ describe('recommendation algorithm (pure functions)', () => {
     expect(scores.has('romance')).toBe(false);
   });
 
+  it('content scores below 0.2 are dropped: a short list beats a list of weak matches', () => {
+    const vectors = new Map([
+      ['liked', vector({ a: 1 })],
+      ['close', vector({ a: 0.6, z: 0.8 })], // cos 0.6
+      ['faint', vector({ a: 0.1, z: Math.sqrt(0.99) })], // cos 0.1
+    ]);
+    const scores = contentScores(new Map([['liked', 3]]), [], vectors);
+    expect(scores.get('close')).toBeCloseTo(0.6);
+    expect(scores.has('faint')).toBe(false);
+  });
+
   it('user-based CF needs 2 comics in common and 2 supporting neighbours', () => {
     const likes = new Map([['x', 3], ['y', 3]]);
     const others = new Map([

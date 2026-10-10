@@ -532,7 +532,8 @@ paths:
 
         Each item says why it is there (`reason`): `similar_readers` (readers like me like it; `count` of
         them), `because_you_liked` (closest to `comic`, one I like) or `trending` (this week's rankings,
-        used when I have not liked anything yet and to fill up a short list).
+        only when I have not liked anything yet). Comics that barely resemble what I like (content
+        cosine below 0.2) are left out, so the list may be short or empty; it is not filled up.
 
         The list is cached for 15 minutes and recomputed as soon as I follow, rate, open a new chapter or
         change my content filter.

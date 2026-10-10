@@ -20,6 +20,8 @@ import { NotFoundError } from '../errors.js';
 const MAX_CHAPTERS_COUNTED = 10;
 const DISLIKE_RATING = 2; // a rating at or below this means "not for me"
 const DISLIKE_PENALTY = 0.5; // how much of a disliked comic's features is taken off the user's profile
+// Below this cosine a comic barely resembles what the user likes: better a short list than the whole catalogue.
+export const MIN_CONTENT_SCORE = 0.2;
 
 // How much user u likes comic i, from implicit signals (there are too few ratings to rely on them alone):
 // w = 3 × followed + 2 × min(distinct chapters read, 10) / 10 + (rating − 3 if rated), never below 0.
@@ -73,7 +75,7 @@ export function buildItemVectors(comics) {
   return { vectors, idf, mainGenre };
 }
 
-// p_u = Σ w(u,i)·x_i − 0.5·Σ x_j over disliked j; score_cb(u,i) = cos(p_u, x_i). Only positive scores.
+// p_u = Σ w(u,i)·x_i − 0.5·Σ x_j over disliked j; score_cb(u,i) = cos(p_u, x_i), kept when ≥ MIN_CONTENT_SCORE.
 export function contentScores(likes, disliked, vectors) {
   const profile = new Map();
   const add = (comicId, k) => vectors.get(comicId)?.forEach((x, f) => profile.set(f, (profile.get(f) || 0) + k * x));
@@ -83,7 +85,7 @@ export function contentScores(likes, disliked, vectors) {
   const scores = new Map();
   vectors.forEach((x, comicId) => {
     const score = cosine(profile, x);
-    if (score > 0) scores.set(comicId, score);
+    if (score >= MIN_CONTENT_SCORE) scores.set(comicId, score);
   });
   return scores;
 }
@@ -261,11 +263,7 @@ async function rank(userId) {
       : { type: 'because_you_liked', comicId: closestLiked(item.comicId, likes, model.vectors) },
   }));
 
-  // Not enough to fill the list: top it up with what is popular.
-  if (items.length < MAX_RECOMMENDATIONS) {
-    const taken = new Set([...known, ...items.map((item) => item.comicId)]);
-    items.push(...(await trending(allowed, taken, MAX_RECOMMENDATIONS - items.length)));
-  }
+  // Only what the algorithm thinks fits, even if that is a short list (no filling up with trending comics).
   return items;
 }
 
