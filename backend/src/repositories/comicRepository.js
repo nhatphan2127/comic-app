@@ -3,6 +3,7 @@ import { Op, col, fn, literal, where } from 'sequelize';
 import { now, sequelize } from '../config/database.js';
 import { Artist, Author, Comic, ComicFormat, ComicGenre, ComicOtherName, Format, Genre } from '../models/index.js';
 import { READABLE, readableSql } from './visibility.js';
+import { SEP_SQL, likeText } from '../models/searchText.js';
 
 export const findById = (id) =>
   Comic.findByPk(id, { attributes: ['id', 'url', 'coverUrl', 'status', 'pendingChanges'], raw: true });
@@ -111,26 +112,24 @@ function publicWhere({ q, contentRatings = [], types = [], demographics = [], re
   return { [Op.and]: conditions };
 }
 
-// Name, url, any alternative name, the author or the artist contains q (case-insensitive).
-function matchesText(q) {
-  const like = sequelize.escape(`%${q}%`);
-  return {
-    [Op.or]: [
-      literal(`lower(Comic.name) LIKE lower(${like})`),
-      literal(`lower(Comic.url) LIKE lower(${like})`),
-      literal(`EXISTS (SELECT 1 FROM comic_other_names con WHERE con.comicId = Comic.id AND lower(con.name) LIKE lower(${like}))`),
-      literal(`EXISTS (SELECT 1 FROM author au WHERE au.id = Comic.authorId AND lower(au.name) LIKE lower(${like}))`),
-      literal(`EXISTS (SELECT 1 FROM artist ar WHERE ar.id = Comic.artistId AND lower(ar.name) LIKE lower(${like}))`),
-    ],
-  };
-}
+// Name, url, any alternative name, the author or the artist contains q, ignoring case and accents
+// (comics.searchText holds those fields folded, see models/searchText.js).
+const matchesText = (q) => literal(`Comic.searchText LIKE ${sequelize.escape(`%${likeText(q)}%`)} ESCAPE '\\'`);
+
+// searchText starts with the folded name, followed by SEP: 0 = the name is q, 1 = it starts with q, 2 = other.
+const nameMatchRank = (q) => {
+  const text = sequelize.escape(likeText(q));
+  return literal(`CASE WHEN Comic.searchText LIKE ${text} || ${SEP_SQL} || '%' ESCAPE '\\' THEN 0
+                       WHEN Comic.searchText LIKE ${text} || '%' ESCAPE '\\' THEN 1
+                       ELSE 2 END`);
+};
 
 // Without an explicit sort: exact name matches first when searching, otherwise newest first.
 function publicOrder(sort, q) {
   const order = sort.length
     ? [...sort]
     : q
-      ? [[literal(`CASE WHEN lower(Comic.name) = lower(${sequelize.escape(q)}) THEN 0 ELSE 1 END`), 'ASC'], ['view', 'DESC']]
+      ? [[nameMatchRank(q), 'ASC'], ['view', 'DESC']]
       : [['createdAt', 'DESC']];
   // A unique last key keeps pages stable when many rows share the same sort value.
   return [...order, ['id', 'ASC']];
@@ -156,26 +155,17 @@ export const countPublic = (filters) => Comic.count({ where: publicWhere(filters
 
 // Search-as-you-type: few, light columns. The same matching as the catalogue search; exact name first,
 // then names starting with q, then the rest, most viewed first.
-export const suggest = ({ q, contentRatings = [], limit }) => {
-  const text = sequelize.escape(q);
-  return Comic.findAll({
+export const suggest = ({ q, contentRatings = [], limit }) =>
+  Comic.findAll({
     attributes: [
       'id', 'url', 'name', 'coverUrl', 'types', 'rating',
       [literal(`(SELECT MAX(ch.chapterNumber) FROM chapters ch WHERE ch.comicId = Comic.id AND ${readableSql('ch')})`), 'latestChapter'],
     ],
     where: publicWhere({ q, contentRatings }),
-    order: [
-      // substr() instead of LIKE 'q%' so that % and _ typed by the user are not wildcards.
-      [literal(`CASE WHEN lower(Comic.name) = lower(${text}) THEN 0
-                     WHEN substr(lower(Comic.name), 1, length(${text})) = lower(${text}) THEN 1
-                     ELSE 2 END`), 'ASC'],
-      ['view', 'DESC'],
-      ['id', 'ASC'],
-    ],
+    order: [[nameMatchRank(q), 'ASC'], ['view', 'DESC'], ['id', 'ASC']],
     limit,
     raw: true,
   });
-};
 
 export const insert = (comic) => Comic.create({ ...comic, visibility: 'public' });
 

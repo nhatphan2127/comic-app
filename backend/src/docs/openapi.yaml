@@ -872,7 +872,9 @@ paths:
           schema: { type: string, example: '-rating,-view' }
         - name: q
           in: query
-          description: Text contained in the name, the url slug, an alternative name, the author or the artist.
+          description: >-
+            Text contained in the name, the url slug, an alternative name, the author or the artist, ignoring
+            case and accents ("kiem than" finds "Kiếm Thần"). `%` and `_` are plain characters.
           schema: { type: string }
         - name: contentRating
           in: query
@@ -995,8 +997,8 @@ paths:
       tags: [Comics]
       summary: Search-as-you-type suggestions (at most 8 public comics)
       description: |
-        Same matching as `GET /comics?q=` (name, url slug, alternative names, author, artist; case-insensitive
-        for ASCII letters only, and accents must match: "kiem" does not find "kiếm"). Order: exact name, then
+        Same matching as `GET /comics?q=` (name, url slug, alternative names, author, artist; ignoring case
+        and accents: "kiem than" finds "Kiếm Thần"). Order: exact name, then
         names starting with `q`, then the rest by views. A `q` shorter than 2 characters (after trimming)
         answers `[]`. Limited to 60 requests per minute per IP.
       security: []

@@ -56,6 +56,42 @@ describe('GET /comics/suggest', () => {
     expect((await api().get('/comics/suggest?q=zz&contentRating=nope')).status).toBe(400);
   });
 
+  it('ignores accents and case, in names, other names, authors and artists', async () => {
+    const owner = await createUser('contributor');
+    const sword = await liveComic(owner, 'Kiếm Thần Vô Song');
+    const decomposed = await liveComic(owner, 'Đường Về Nhà'.normalize('NFD'));
+
+    for (const q of ['kiem than', 'KIẾM THẦN', 'Kiếm', 'Kiếm'.normalize('NFD'), 'vô song']) {
+      expect(names(await api().get(`/comics/suggest?q=${encodeURIComponent(q)}`)), q).toEqual(['Kiếm Thần Vô Song']);
+    }
+    expect((await api().get('/comics/suggest?q=duong ve')).body.data.map((c) => c.id)).toEqual([decomposed.id]);
+
+    // Other names, authors and artists are folded too, and kept up to date when they change.
+    await models.ComicOtherName.create({ id: 'on-1', comicId: sword.id, name: 'Thanh Gươm Huyền Thoại', country: 'vi' });
+    expect(names(await api().get('/comics/suggest?q=thanh guom'))).toEqual(['Kiếm Thần Vô Song']);
+    await models.ComicOtherName.destroy({ where: { id: 'on-1' } });
+    expect(names(await api().get('/comics/suggest?q=thanh guom'))).toEqual([]);
+
+    const author = await models.Author.create({ id: 'au-1', name: 'Nguyễn Văn Ánh' });
+    await models.Comic.update({ authorId: author.id }, { where: { id: sword.id } });
+    expect(names(await api().get('/comics/suggest?q=nguyen van anh'))).toEqual(['Kiếm Thần Vô Song']);
+    await models.Author.update({ name: 'Trần Thị Bích' }, { where: { id: author.id } });
+    expect(names(await api().get('/comics/suggest?q=tran thi bich'))).toEqual(['Kiếm Thần Vô Song']);
+
+    // Renaming the comic itself, and the catalogue search uses the same matching.
+    await models.Comic.update({ name: 'Ánh Trăng' }, { where: { id: sword.id } });
+    expect(names(await api().get('/comics/suggest?q=anh trang'))).toEqual(['Ánh Trăng']);
+    expect(names(await api().get('/comics?q=ANH TRANG'))).toEqual(['Ánh Trăng']);
+  });
+
+  it('treats % and _ as plain characters', async () => {
+    const owner = await createUser('contributor');
+    await liveComic(owner, '100% Romance');
+    await liveComic(owner, '1000 Romance');
+    expect(names(await api().get('/comics/suggest?q=100%25'))).toEqual(['100% Romance']);
+    expect(names(await api().get('/comics/suggest?q=10_0'))).toEqual([]);
+  });
+
   // Last in the file: it uses up this IP's budget for the minute.
   it('is rate limited per IP', async () => {
     let status = 200;

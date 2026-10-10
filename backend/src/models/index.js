@@ -8,6 +8,7 @@ import { Chapter, ChapterImage, ChapterContributor } from './chapter.js';
 import { ReadHistory, RatingHistory, FollowingCategory, Following, ComicDailyView, UserReadDay } from './interaction.js';
 import { ComicComment, ComicCommentReaction, ChapterComment, ChapterCommentReaction } from './comment.js';
 import { Notification, AdminSetting, Report, RoleRequest, ApiKey, EditRequest, ModerationLog } from './system.js';
+import { installSearchText } from './searchText.js';
 
 // Foreign keys are already declared on the columns (see ref() in columns.js), so the
 // associations only describe joins and must not add constraints of their own.
@@ -42,6 +43,10 @@ await addColumnIfMissing('user_preferences', 'reader', 'TEXT', () =>
   sequelize.query("UPDATE user_preferences SET theme = 'main'"));
 
 await addColumnIfMissing('comics', 'pendingChanges', 'TEXT');
+
+// Folded copy of the searchable fields, kept up to date by triggers (see searchText.js).
+await addColumnIfMissing('comics', 'searchText', 'TEXT');
+await installSearchText();
 
 export {
   sequelize,
