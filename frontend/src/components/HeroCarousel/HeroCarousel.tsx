@@ -60,7 +60,7 @@ export default function HeroCarousel({ comics, isLoading = false }: HeroCarousel
     <section
       className={styles.hero}
       aria-roledescription="carousel"
-      aria-label="Top rated comics"
+      aria-label="Popular comics"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
@@ -93,7 +93,7 @@ export default function HeroCarousel({ comics, isLoading = false }: HeroCarousel
               <div className={styles.info}>
                 <span className={styles.eyebrow}>
                   <Trophy size={14} />
-                  <span className="mono">#{i + 1}</span> Top rated
+                  <span className="mono">#{i + 1}</span> Popular
                 </span>
 
                 <h2 className={styles.title}>

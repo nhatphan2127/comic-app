@@ -26,8 +26,8 @@ export default function MainLayout() {
   const [rankingPeriod, setRankingPeriod] = useState<RankingPeriod>('week');
   const [rankedComics, setRankedComics] = useState<Comic[]>([]);
   const [isRankingLoading, setIsRankingLoading] = useState(true);
-  const [topRated, setTopRated] = useState<Comic[]>([]);
-  const [isTopRatedLoading, setIsTopRatedLoading] = useState(true);
+  const [popular, setPopular] = useState<Comic[]>([]);
+  const [isPopularLoading, setIsPopularLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,16 +79,16 @@ export default function MainLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    setIsTopRatedLoading(true);
+    setIsPopularLoading(true);
 
     comicApi
-      .getTopRated(8, contentFilter)
+      .getPopular(8, contentFilter)
       .then((data) => {
-        if (!cancelled) setTopRated(data || []);
+        if (!cancelled) setPopular(data || []);
       })
-      .catch((err) => console.error('Could not fetch top rated comics:', err))
+      .catch((err) => console.error('Could not fetch popular comics:', err))
       .finally(() => {
-        if (!cancelled) setIsTopRatedLoading(false);
+        if (!cancelled) setIsPopularLoading(false);
       });
 
     return () => {
@@ -106,7 +106,7 @@ export default function MainLayout() {
   return (
     <div className={styles.page}>
       <div className={styles.hero}>
-        <HeroCarousel comics={topRated} isLoading={isTopRatedLoading} />
+        <HeroCarousel comics={popular} isLoading={isPopularLoading} />
       </div>
 
       <ContinueReading />

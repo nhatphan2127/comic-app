@@ -203,9 +203,9 @@ export const comicApi = {
   getRankings: async (period: RankingPeriod, limit = 10, contentFilter?: ContentFilter | string) =>
     (await requestPage<Comic>(`/comics/rankings${query({ period, pageSize: limit, contentRating: contentRatingParam(contentFilter) })}`)).data,
 
-  // use HeroCarousel in MainLayout.tsx
-  getTopRated: async (limit = 8, contentFilter?: ContentFilter | string) =>
-    (await requestPage<Comic>(`/comics${query({ sort: '-rating,-view', pageSize: limit, contentRating: contentRatingParam(contentFilter) })}`)).data,
+  // use HeroCarousel in MainLayout.tsx: most viewed of all time
+  getPopular: async (limit = 8, contentFilter?: ContentFilter | string) =>
+    (await requestPage<Comic>(`/comics${query({ sort: '-view', pageSize: limit, contentRating: contentRatingParam(contentFilter) })}`)).data,
 
   // use BrowseLayout.tsx: every filter the catalogue supports, one page at a time
   browse: async (filters: BrowseFilters, contentFilter?: ContentFilter | string) => {
