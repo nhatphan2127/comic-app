@@ -413,7 +413,6 @@ export default function MangaDetailLayout() {
           headingId="similar-heading"
           title="Similar comics"
           comics={similar}
-          caption={(item) => item.genres?.join(' · ') || null}
           className={styles.similar}
         />
       ) : null}

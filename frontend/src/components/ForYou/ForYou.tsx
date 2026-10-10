@@ -7,25 +7,7 @@ import ComicShelf from '../ComicShelf/ComicShelf';
 
 const MAX_ITEMS = 20;
 
-function reasonText(comic: Comic) {
-  const reason = comic.reason;
-  switch (reason?.type) {
-    case 'similar_readers':
-      return `Liked by ${reason.count} readers like you`;
-    case 'because_you_liked':
-      return (
-        <>
-          Because you liked <strong>{reason.comic.name}</strong>
-        </>
-      );
-    case 'trending':
-      return 'Trending this week';
-    default:
-      return null;
-  }
-}
-
-/** "For you": recommendations for logged-in readers on the home page, each with why it is there. */
+/** "For you": recommendations for logged-in readers on the home page. */
 export default function ForYou({ className }: { className?: string }) {
   const { isLoggedIn } = useAuth();
   const contentFilter = useContentFilter();
@@ -62,7 +44,6 @@ export default function ForYou({ className }: { className?: string }) {
       title="For you"
       subtitle="Picked from what you read, follow and rate"
       comics={comics}
-      caption={reasonText}
       isLoading={isLoading}
       className={className}
     />

@@ -17,7 +17,8 @@ interface ComicCardProps {
 const chapterTime = (ch: { updatedAt?: string | null; createdAt?: string | null }) =>
   formatTimeAgo(ch.updatedAt || ch.createdAt);
 
-const ComicCard = memo(function ComicCard({ comic, viewMode }: ComicCardProps) {
+/** One catalogue card (also used by ComicShelf). */
+export const ComicCard = memo(function ComicCard({ comic, viewMode }: ComicCardProps) {
   const title = getComicTitle(comic);
   const comicPath = `/comics/${comic.url}`;
   const chapters = comic.latestChapters ?? [];
