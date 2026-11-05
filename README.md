@@ -1,114 +1,151 @@
-# Inkverse — nền tảng đọc truyện tranh
+# Inkverse — A Comic Reading Platform
 
-Web đọc manga / manhwa / manhua: đọc truyện, theo dõi, chấm điểm, bình luận, bảng xếp hạng, gợi ý truyện;
-contributor đăng truyện qua **Studio** hoặc **Publishing API**; moderator/admin duyệt nội dung trong **Admin console**.
+Inkverse is a website for discovering and reading manga, manhwa, and manhua. Readers can browse titles, read chapters, follow series, rate and discuss comics, and manage their reading history. Contributors publish through Studio or the Publishing API, while moderators and admins manage content through dedicated consoles.
 
-| Thư mục | Nội dung | Công nghệ chính |
+## Web interface
+
+<p align="center">
+  <img src="docs/screenshots/home.png" alt="Inkverse home page with featured comics and latest updates" width="49%" />
+  <img src="docs/screenshots/browse.png" alt="Inkverse browse page with search and comic filters" width="49%" />
+</p>
+
+## System overview
+
+```mermaid
+flowchart LR
+    Reader["Reader / Contributor / Admin"] --> Web["Frontend<br/>React + TypeScript"]
+    Web -->|"REST API /api/v1<br/>session cookie"| API["Backend<br/>Express"]
+    API --> DB[("SQLite")]
+    API --> Files["Comic covers and chapter pages<br/>backend/storage/"]
+    Script["Publishing script"] -->|"Publishing API"| API
+```
+
+| Area | Responsibility | Main technologies |
 |---|---|---|
-| [`backend/`](backend/) | REST API `/api/v1`, lưu ảnh trong `backend/storage/` | Node.js (ESM), Express 4, Sequelize 6, SQLite |
-| [`frontend/`](frontend/) | Ứng dụng web (SPA, cài được như app) | React 19, TypeScript, Vite, React Router 7, CSS Modules |
-| [`comic-translation/`](comic-translation/) | Pipeline dịch trang truyện Anh → Việt (đang phát triển, chưa nối vào app) | Python, LangGraph, PyTorch, EasyOCR |
+| [`frontend/`](frontend/) | Single-page web app for readers and the Studio/Admin consoles | React 19, TypeScript, Vite, React Router 7, CSS Modules |
+| [`backend/`](backend/) | REST API, authentication, application logic, database, and uploaded image delivery | Node.js (ES modules), Express 4, Sequelize 6, SQLite |
 
-Tổng kết kỹ thuật, kiến trúc, tiêu chuẩn đã dùng: **[TECHNIQUES.md](TECHNIQUES.md)**.
+## Features
 
-## Mục lục
+- **Discover and read comics:** home page, search and filters, comic details, chapter reader, rankings, and recommendations.
+- **Reader accounts:** profiles, follows, ratings, comments, reading history, and appearance preferences.
+- **Studio:** contributors manage comics and chapters; moderators review submissions and reports; contributors can publish through the Publishing API.
+- **Admin console:** manage users, content, role requests, comments, and application settings.
+- **PWA support:** the frontend includes a web app manifest and service worker. API responses are not cached.
 
-1. [Chạy dự án](#1-chạy-dự-án)
-2. [Tài khoản mẫu](#2-tài-khoản-mẫu)
-3. [Kiểm thử](#3-kiểm-thử)
-4. [Biến môi trường](#4-biến-môi-trường)
-5. [Tài liệu](#5-tài-liệu)
-6. [Vai trò người dùng](#6-vai-trò-người-dùng)
+## Request flow
 
----
+- The frontend uses the versioned REST API at `/api/v1`; interactive API documentation is available at `http://localhost:5000/api/docs`.
+- Browser sessions use an HttpOnly cookie, which the frontend sends with API requests.
+- The backend stores application data in SQLite and serves uploaded images from `/storage/`.
+- The frontend API origin is currently set to `http://localhost:5000` in `frontend/src/services/api.ts`.
 
-## 1. Chạy dự án
+## Project structure
 
-Yêu cầu: Node.js 20+ (đang dùng 24).
+### Backend
+
+```text
+backend/
+├── src/
+│   ├── config/        # Database connection configuration
+│   ├── controllers/   # HTTP request and response handling
+│   ├── docs/          # OpenAPI specification and Swagger UI
+│   ├── helpers/       # Shared application helpers
+│   ├── middlewares/   # Authentication, validation, errors, and uploads
+│   ├── models/        # Sequelize models and table initialization
+│   ├── repositories/  # Data access
+│   ├── routes/        # API endpoint definitions
+│   ├── services/      # Application logic
+│   └── utils/         # Shared utilities
+├── data/              # Default SQLite database
+├── storage/           # Uploaded covers and chapter pages
+├── scripts/           # Sample data and recommendation evaluation
+└── tests/             # API and application tests
+```
+
+Requests are organized across the route → controller → service → repository layers. `src/server.js` starts the server, and `src/app.js` configures the Express application and middleware.
+
+### Frontend
+
+```text
+frontend/
+├── src/
+│   ├── pages/         # Home, Browse, MangaDetail, MangaReader, Profile, Studio, Admin, and more
+│   ├── components/    # Reusable UI components
+│   ├── layout/        # Application and console layouts
+│   ├── features/      # Studio and Admin feature modules
+│   ├── console/       # Shared console UI and utilities
+│   ├── services/      # Backend API client
+│   ├── context/       # Authentication, theme, and toast state
+│   ├── hooks/         # Shared React hooks
+│   ├── helpers/       # Utility functions
+│   ├── types/         # Shared TypeScript types
+│   └── assets/        # UI assets
+└── public/            # Manifest, service worker, icons, and static assets
+```
+
+## Run locally
+
+Requirements: Node.js **20.19+** or **22.12+**, and npm.
+
+Start the backend and frontend in separate terminals:
 
 ```bash
-# Backend: http://localhost:5000 (Swagger UI: http://localhost:5000/api/docs)
+# Terminal 1 — backend at http://localhost:5000
 cd backend
 npm install
 npm run dev
+```
 
-# Frontend: http://localhost:5173 (terminal khác)
+```bash
+# Terminal 2 — frontend at http://localhost:5173
 cd frontend
 npm install
 npm run dev
 ```
 
-Lần chạy đầu, backend tự tạo `backend/data/comic-platform.sqlite` và các bảng còn thiếu.
-Dữ liệu mẫu: `cd backend && node scripts/seed.js`. **Lệnh này xoá toàn bộ dữ liệu cũ** trước khi tạo dữ liệu mới.
-
-Truyện và chapter mẫu được tạo ở trạng thái đã duyệt (`accept`). Truyện đăng mới sau đó sẽ ở trạng thái
-`pending` chờ moderator duyệt, trừ khi bật *auto-accept* trong Admin → Settings.
-
-Frontend gọi thẳng `http://localhost:5000` (hằng `API_ORIGIN` trong `frontend/src/services/api.ts`).
-
-## 2. Tài khoản mẫu
-
-Sau khi chạy `seed.js`:
-
-| Username | Mật khẩu | Role |
-|---|---|---|
-| `admin` | `hashed_password_admin_123` | admin |
-| `creator1` | `hashed_password_creator_1` | user |
-| `creator2` | `hashed_password_creator_2` | user |
-| `user1` | `hashed_password_user_1` | user |
-| `user2` | `hashed_password_user_2` | user |
-
-(Chuỗi `hashed_password_...` chỉ là tên mật khẩu mẫu; trong DB chúng được hash bằng bcrypt.)
-
-## 3. Kiểm thử
+On first startup, the backend creates or updates the application tables in `backend/data/comic-platform.sqlite`. To load sample data:
 
 ```bash
-cd backend && npm test                 # Vitest + supertest, DB in-memory, không đụng dữ liệu thật
-cd frontend && npx tsc -b && npm run lint
-cd comic-translation && python -m pytest
-node backend/scripts/evalRecommendations.js   # đánh giá offline thuật toán gợi ý (Precision@10 / Recall@10)
+cd backend
+node scripts/seed.js
 ```
 
-## 4. Biến môi trường
+> **Warning:** The seed script deletes existing data before creating the sample dataset. Do not run it if you need to preserve the current database contents.
 
-Backend đọc trực tiếp từ môi trường (chưa có file `.env`). Không đặt gì thì dùng mặc định cho máy dev.
+## Tests and build
 
-| Biến | Mặc định | Ý nghĩa |
+```bash
+# Backend tests
+cd backend
+npm test
+```
+
+```bash
+# Type-check, lint, and build the frontend
+cd frontend
+npm run build
+npm run lint
+```
+
+## Backend configuration
+
+The backend reads configuration from environment variables. Development defaults are used when variables are not set.
+
+| Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | `5000` | cổng backend |
-| `CLIENT_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | origin frontend được phép (CORS + chống CSRF), cách nhau bởi dấu phẩy |
-| `NODE_ENV` | — | `production` → cookie phiên có `Secure` |
-| `COOKIE_SECURE` / `COOKIE_SAMESITE` | theo `NODE_ENV` / `lax` | ghi đè thuộc tính cookie `sid` |
-| `DB_PATH` | `backend/data/comic-platform.sqlite` | file SQLite (`:memory:` khi test) |
-| `STORAGE_ROOT` | `backend/storage` | thư mục ảnh upload |
-| `APP_URL` | `http://localhost:5173` | dùng trong link email đặt lại mật khẩu |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | — | gửi email; không đặt thì email in ra console |
-| `AUTH_RATE_LIMIT` | `20` | đăng nhập/đăng ký/đặt lại mật khẩu mỗi 15 phút / IP |
-| `SUGGEST_RATE_LIMIT` | `60` | gợi ý tìm kiếm mỗi phút / IP |
-| `COMIC_CREATE_RATE_LIMIT` | `10` | truyện mới mỗi giờ / tài khoản |
-| `PUBLISH_*`, `BULK_*`, `REQUEST_TIMEOUT_MS` | | xem [publishing-api.md](backend/docs/publishing-api.md#4-biến-môi-trường) |
+| `PORT` | `5000` | Backend HTTP port |
+| `CLIENT_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed frontend origins, separated by commas |
+| `DB_PATH` | `backend/data/comic-platform.sqlite` | SQLite database path; use `:memory:` for an in-memory database |
+| `STORAGE_ROOT` | `backend/storage` | Uploaded image directory |
+| `APP_URL` | `http://localhost:5173` | Frontend URL used in password reset emails |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | — | Email configuration; messages are logged to the console when SMTP is not configured |
 
-## 5. Tài liệu
+## Related documentation
 
-| Tài liệu | Nội dung |
-|---|---|
-| [backend/instruction.md](backend/instruction.md) | kiến trúc backend: tầng Route → Controller → Service → Repository, xử lý lỗi, transaction, test, checklist thêm tính năng |
-| [backend/docs/api-conventions.md](backend/docs/api-conventions.md) | quy ước REST: xác thực, versioning, URL, status code, lỗi RFC 9457, phân trang, OpenAPI |
-| [backend/docs/orm-sequelize.md](backend/docs/orm-sequelize.md) | Sequelize: model, truy vấn, transaction, thêm bảng/cột |
-| [backend/docs/security-and-bugfix-changes.md](backend/docs/security-and-bugfix-changes.md) | các lớp bảo mật và 20 lỗi đã sửa |
-| [backend/docs/publishing-api.md](backend/docs/publishing-api.md) | API đăng truyện bằng script, nhập hàng loạt |
-| [frontend/README.md](frontend/README.md) | cấu trúc và quy ước frontend |
-| [FEATURES-PLAN.md](FEATURES-PLAN.md) | lộ trình tính năng cho người đọc (xếp hạng, gợi ý, chặn, bookmark...) |
-| [comic-translation/README.md](comic-translation/README.md) | pipeline dịch truyện |
-| [TECHNIQUES.md](TECHNIQUES.md) | tổng kết kỹ thuật, kiến trúc, tiêu chuẩn |
-| `http://localhost:5000/api/docs` | tài liệu API tương tác (Swagger UI) |
-
-## 6. Vai trò người dùng
-
-| Role | Được làm |
-|---|---|
-| khách | đọc truyện, xem bình luận, bảng xếp hạng, tìm kiếm |
-| `user` | + theo dõi, chấm điểm, bình luận, lịch sử đọc, gợi ý cá nhân, chặn người dùng, báo cáo vi phạm, xin làm contributor |
-| `contributor` | + Studio: tạo truyện, đăng chapter, API key cho Publishing API |
-| `moderator` | + duyệt truyện/chapter, xử lý báo cáo, xoá bình luận |
-| `admin` | + quản lý người dùng (role, ban), ẩn nội dung, cài đặt (auto-accept), nhập hàng loạt |
+- [Frontend README](frontend/README.md) — routes, PWA behavior, and frontend conventions.
+- [API conventions](backend/docs/api-conventions.md) — authentication, versioning, HTTP status codes, and REST conventions.
+- [Sequelize guide](backend/docs/orm-sequelize.md) — models, queries, and transactions.
+- [Publishing API](backend/docs/publishing-api.md) — publish comics and chapters with scripts or bulk import.
+- [OpenAPI source](backend/src/docs/openapi.yaml) — API specification.
+- Swagger UI when the backend is running: <http://localhost:5000/api/docs>.

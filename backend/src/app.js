@@ -8,6 +8,8 @@ import errorHandler, { notFoundHandler } from './middlewares/errorMiddleware.js'
 import { requireTrustedOrigin } from './middlewares/csrfMiddleware.js';
 import { TooManyRequestsError } from './errors.js';
 import { API_PREFIX } from './utils/http.js';
+import * as client from '@prometheus-io/client';
+import { metricsMiddleware } from './middlewares/metricMiddleware.js';
 import v1Routes from './routes/index.js';
 import docsRoutes from './docs/docsRoutes.js';
 
@@ -29,6 +31,15 @@ const authLimiter = rateLimit({
 });
 
 const app = express();
+
+// Collect metric before application routes
+app.use(metricsMiddleware);
+
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
 app.disable('x-powered-by');
 // Images in /storage are loaded by the frontend from another origin, so allow cross-origin resource loading.
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
