@@ -1,6 +1,5 @@
 node_modules/
 backend/data
-backend/docs
 backend/scripts
 backend/instruction.md
 backend/storage
