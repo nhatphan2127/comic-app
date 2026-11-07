@@ -1,8 +1,10 @@
 node_modules/
 backend/data
-backend/scripts
+backend/scripts/*
+!backend/scripts/setupDatabase.js
 backend/instruction.md
 backend/storage
+backend/logs
 
 
 frontend/dist

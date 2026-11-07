@@ -1,7 +1,8 @@
 // Outgoing email. With SMTP_HOST set, mail goes through that server (SMTP_PORT, SMTP_USER, SMTP_PASS,
-// MAIL_FROM). Without it (local development, tests) nothing is sent: the message is printed to the
-// console and kept in `outbox`, so the reset link can still be used.
+// MAIL_FROM). Without it (local development, tests) nothing is sent: the message is kept in `outbox`,
+// so the reset link can still be used without printing sensitive email contents to the console.
 import nodemailer from 'nodemailer';
+import { logger } from '../config/logger.js';
 
 export const outbox = [];
 
@@ -19,6 +20,6 @@ export async function sendMail({ to, subject, text }) {
   if (transport) return transport.sendMail(message);
 
   outbox.push(message);
-  if (process.env.NODE_ENV !== 'test') console.log(`[mail] to ${to}: ${subject}\n${text}`);
+  if (process.env.NODE_ENV !== 'test') logger.info('Mail queued in local outbox');
   return null;
 }

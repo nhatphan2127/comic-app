@@ -16,6 +16,7 @@ Tài liệu này ghi lại **chiến lược đã chọn**, **vì sao chọn**, 
 5. [Tài liệu API: OpenAPI 3.1](#5-tài-liệu-api-openapi-31-design-first)
 6. [Bảng đổi URL (v0 → v1)](#6-bảng-đổi-url-v0--v1)
 7. [Checklist khi thêm endpoint](#7-checklist-khi-thêm-endpoint)
+8. [Logging](#8-logging)
 
 ---
 
@@ -218,3 +219,32 @@ Frontend đã chuyển xong: mọi thay đổi nằm trong [frontend/src/service
 4. Lỗi → `throw new XxxError(...)` trong service.
 5. Thêm operation vào `src/docs/openapi.yaml`.
 6. `npm test`: test "documents exactly the routes the server implements" sẽ đỏ nếu bước 5 bị quên.
+
+---
+
+## 8. Logging
+
+Backend ghi mỗi sự kiện thành một JSON object trên một dòng trong `backend/logs/`:
+
+| File | Nội dung |
+|---|---|
+| `app.log` | Vòng đời ứng dụng và log lỗi nội bộ |
+| `errors.log` | Bản lọc chỉ gồm lỗi cấp `error` từ application logger |
+| `access.log` | Một record cho mỗi HTTP request: request ID, method, path (không gồm query), route template, status, thời lượng và IP |
+| `audit.log` | Sự kiện bảo mật/xác thực và thay đổi dữ liệu quan trọng, gồm actor, action, outcome, resource và các trường thay đổi an toàn |
+
+Record tuân theo cấu trúc JSON có `timestamp`, `log.level`, `process.pid`, `labels.app`, `thread.name`, `logger`, `message`, `service.name` và `event.dataset`. Dataset lần lượt là `application`, `access` và `audit`.
+
+Không ghi request body, mật khẩu, cookie/session token hay API key. Audit log là file JSON Lines cho các sự kiện nghiệp vụ được chọn, không phải bản ghi mọi câu SQL. Các sự kiện bảo mật có thể kèm IP nguồn; audit thay đổi dữ liệu chỉ ghi actor và thông tin tài nguyên cần thiết.
+
+### Quan sát bằng Grafana
+
+`docker compose up --build -d` build frontend vào image Nginx, sau đó chạy Nginx cùng backend, Prometheus, Grafana Alloy, Loki và Grafana. Tạo `.env` từ `.env.example` và thay `GRAFANA_ADMIN_PASSWORD` trước khi khởi động. Ứng dụng được phục vụ tại `http://localhost:8083`, Grafana tại `http://localhost:3017`; cả hai chỉ bind vào `127.0.0.1`. Nginx reverse-proxy `/api/` và `/storage/` tới backend nội bộ, backend không publish port trên host. Prometheus và Loki chỉ truy cập được trên mạng Docker nội bộ.
+
+Dashboard **Comic App Overview** được provision tự động. Prometheus scrape `/metrics` qua tên service nội bộ `backend`; metric labels dùng Express route template, không dùng URL có ID. Runtime panels mô tả process Node.js (CPU, RSS, heap và event loop), không phải toàn bộ host. Loki nhận `app*.log`, `access*.log` và `audit*.log` qua Alloy; `errors.log` không ingest riêng vì lỗi đã có trong `app.log`. Chỉ `job`, `service_name` và `log_type` là labels cố định để tránh tạo cardinality cao. Không đưa user ID, request ID, IP hoặc resource ID thành labels.
+
+Prometheus đánh giá các alert target-down, 5xx, p95 latency và process RSS; trạng thái firing xuất hiện trên dashboard. Chưa cấu hình email/Slack/webhook contact point vì chưa có đích nhận cảnh báo; cần thiết lập riêng trước khi dựa vào cảnh báo chủ động.
+
+SQLite và uploads tiếp tục nằm trong `backend/data/` và `backend/storage/` trên host để giữ dữ liệu hiện có; logs của backend nằm trong named volume dùng chung read-only với Alloy, và Winston giữ tối đa 5 file × 10 MiB cho mỗi file transport. Nginx ghi access log JSON ra Docker logs với giới hạn 10 MiB × 5 file. Metrics được lưu 15 ngày (tối đa 2 GiB), Loki 7 ngày; Grafana, Loki, Prometheus và Alloy có volumes riêng. Backup `backend/data/`, `backend/storage/` và các monitoring volumes theo chính sách triển khai. `docker compose down` không xoá dữ liệu; tránh `docker compose down -v` nếu chưa muốn xoá monitoring history.
+
+Trên Linux, đảm bảo `APP_UID`/`APP_GID` trong `.env` khớp chủ sở hữu `backend/data/` và `backend/storage/`. Backend và Grafana chỉ publish lên localhost theo mặc định; cấu hình reverse proxy/network theo môi trường nếu cần public API.

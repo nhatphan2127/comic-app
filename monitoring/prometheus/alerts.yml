@@ -1,0 +1,47 @@
+groups:
+  - name: comic-app
+    rules:
+      - alert: BackendMetricsTargetDown
+        expr: up{job="comic-app-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Comic app backend is not being scraped
+          description: Prometheus has been unable to scrape the backend for over one minute.
+
+      - alert: BackendHighServerErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="comic-app-backend", status_code=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total{job="comic-app-backend"}[5m])), 0.001)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Comic app backend 5xx rate is above 5%
+          description: More than 5% of backend requests have returned 5xx responses for five minutes.
+
+      - alert: BackendHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{job="comic-app-backend"}[5m]))
+          ) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Comic app backend p95 latency is above 1.5 seconds
+          description: The backend p95 request latency has remained above 1.5 seconds for ten minutes.
+
+      - alert: BackendHighMemoryUsage
+        expr: process_resident_memory_bytes{job="comic-app-backend"} > 1073741824
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Comic app backend process is using over 1 GiB of resident memory
+          description: Check backend memory usage and recent application logs.

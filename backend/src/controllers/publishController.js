@@ -7,6 +7,7 @@ import * as publishService from '../services/publishService.js';
 import * as apiKeyService from '../services/apiKeyService.js';
 import * as bulkImportService from '../services/bulkImportService.js';
 import { BadRequestError } from '../errors.js';
+import { recordAuditEvent } from '../utils/auditLog.js';
 
 // ---------- Publishing (Authorization: Bearer ink_...) ----------
 
@@ -18,12 +19,22 @@ export const whoami = asyncHandler(async (req, res) => {
 // POST /publish/comics (multipart: fields + "cover") → 201, Location: /comics/:id
 export const createComic = asyncHandler(async (req, res) => {
   const data = await publishService.createComic(req.user, req.body, req.file);
+  recordAuditEvent(req, {
+    action: 'comic.created',
+    category: 'database',
+    resource: { type: 'comic', id: data.id },
+  });
   created(res, `/comics/${data.id}`, data);
 });
 
 // POST /publish/comics/:comic/chapters (multipart: fields + "pages", in reading order) → 201, Location: /chapters/:id
 export const createChapter = asyncHandler(async (req, res) => {
   const data = await publishService.createChapter(req.user, req.params.comic, req.body, req.files || []);
+  recordAuditEvent(req, {
+    action: 'chapter.created',
+    category: 'database',
+    resource: { type: 'chapter', id: data.id },
+  });
   created(res, `/chapters/${data.id}`, data);
 });
 
@@ -32,7 +43,13 @@ export const createChapter = asyncHandler(async (req, res) => {
 export const bulkImport = asyncHandler(async (req, res) => {
   if (!req.file) throw new BadRequestError('"archive" (a .zip of comic folders) is required');
   try {
-    ok(res, await bulkImportService.importArchive(req.user, req.file.path));
+    const result = await bulkImportService.importArchive(req.user, req.file.path);
+    recordAuditEvent(req, {
+      action: 'publishing.bulk_import.completed',
+      category: 'database',
+      resource: { type: 'bulk_import' },
+    });
+    ok(res, result);
   } finally {
     // The zip is only a carrier: what was imported now lives in /storage.
     await fs.rm(req.file.path, { force: true });
@@ -56,10 +73,21 @@ export const listKeys = asyncHandler(async (req, res) => {
 // POST /me/api-keys { name, scopes?, expiresInDays? } → the key, including `token` this one time only
 export const createKey = asyncHandler(async (req, res) => {
   const key = await apiKeyService.create(req.user, req.body || {});
+  recordAuditEvent(req, {
+    action: 'api_key.created',
+    category: 'security',
+    resource: { type: 'api_key', id: key.id },
+    changes: { name: key.name, scopes: key.scopes, expiresAt: key.expiresAt },
+  });
   created(res, `/me/api-keys/${key.id}`, key);
 });
 
 export const revokeKey = asyncHandler(async (req, res) => {
   await apiKeyService.revoke(req.user.id, req.params.keyId);
+  recordAuditEvent(req, {
+    action: 'api_key.revoked',
+    category: 'security',
+    resource: { type: 'api_key', id: req.params.keyId },
+  });
   noContent(res);
 });

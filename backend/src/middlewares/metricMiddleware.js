@@ -5,6 +5,8 @@ import {
 } from '../monitoring/metrics.js';
 
 export const metricsMiddleware = (req, res, next) => {
+    if (req.path === '/metrics') return next();
+
     const endTimer = httpRequestDuration.startTimer();
 
     httpActiveRequests.inc();
@@ -13,11 +15,15 @@ export const metricsMiddleware = (req, res, next) => {
     const requestLength = Number(req.headers['content-length'] || 0);
     httpRequestSize.observe(requestLength);
 
-    res.on('finish', () => {
-        const route =
-            req.route?.path ? `${req.baseUrl}${req.route.path}` : req.path;
+    let completed = false;
+    const finishRequest = (statusCode, responseLength = 0) => {
+        if (completed) return;
+        completed = true;
 
-        const labels = { method: req.method, route, status_code: String(res.statusCode) };
+        const route =
+            req.route?.path ? `${req.baseUrl}${req.route.path}` : 'unmatched';
+
+        const labels = { method: req.method, route, status_code: String(statusCode) };
 
         // Count requests
         httpRequestsTotal.inc(labels);
@@ -26,15 +32,25 @@ export const metricsMiddleware = (req, res, next) => {
         endTimer(labels);
 
         // Count HTTP errors
-        if (res.statusCode >= 400) {
+        if (statusCode >= 400) {
             httpErrorsTotal.inc(labels);
         }
 
         // Outgoing response size
-        const responseLength = Number(res.getHeader('content-length') || 0);
         httpResponseSize.observe(responseLength);
 
         httpActiveRequests.dec();
+    };
+
+    res.once('finish', () => {
+        finishRequest(
+            res.statusCode,
+            Number(res.getHeader('content-length') || 0),
+        );
+    });
+
+    res.once('close', () => {
+        if (!res.writableFinished) finishRequest(499);
     });
 
     next();

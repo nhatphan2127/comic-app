@@ -14,6 +14,10 @@ npm run preview    # chạy thử bản build (service worker chỉ bật ở b�
 npm run lint       # oxlint
 ```
 
+API origin mặc định là `http://localhost:5000` cho phát triển local. Khi build bằng Docker,
+`VITE_API_ORIGIN=/` để frontend gọi API và ảnh qua Nginx cùng origin; đặt biến này thành URL backend
+trong `frontend/.env` khi triển khai frontend ở host khác.
+
 ## Cấu trúc `src/`
 
 ```
@@ -77,6 +81,4 @@ src/
 
 ## Còn lại
 
-- `API_ORIGIN` đang cố định là `http://localhost:5000` trong `services/api.ts`; khi triển khai nên đọc từ
-  biến môi trường của Vite (`import.meta.env.VITE_API_ORIGIN`).
 - Proxy `/api` trong `vite.config.ts` không còn được dùng (frontend gọi thẳng backend), có thể xoá.

@@ -1,0 +1,8 @@
+node_modules
+data
+storage
+logs
+tests
+scripts
+docs
+vitest.config.js

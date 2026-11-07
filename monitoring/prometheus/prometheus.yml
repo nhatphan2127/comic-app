@@ -2,17 +2,15 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
-  # Monitor Prometheus itself
   - job_name: prometheus
     static_configs:
-      - targets:
-          - prometheus:9090
+      - targets: ["prometheus:9090"]
 
-  # Monitor Node.js backend
-  - job_name: nodejs-backend
+  - job_name: comic-app-backend
     metrics_path: /metrics
-    scrape_interval: 5s
     static_configs:
-      - targets:
-          - 'host.docker.internal:5000'
+      - targets: ["backend:5000"]

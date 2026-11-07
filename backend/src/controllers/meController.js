@@ -14,6 +14,7 @@ import * as recommendationService from '../services/recommendationService.js';
 import * as blockService from '../services/blockService.js';
 import { USER_SORTABLE_FIELDS as COMMENT_SORT_FIELDS } from '../repositories/commentRepository.js';
 import { BadRequestError } from '../errors.js';
+import { recordAuditEvent } from '../utils/auditLog.js';
 
 // ---------- Profile ----------
 
@@ -24,18 +25,40 @@ export const getMe = asyncHandler(async (req, res) => {
 // PATCH /me: only the fields that are sent change.
 export const updateMe = asyncHandler(async (req, res) => {
   const { avatar, background, displayName, username, email, bio, socialLinks } = req.body || {};
-  ok(res, await userService.updateProfile(req.user.id, { avatar, background, displayName, username, email, bio, socialLinks }));
+  const profile = await userService.updateProfile(req.user.id, { avatar, background, displayName, username, email, bio, socialLinks });
+  recordAuditEvent(req, {
+    action: 'user.profile.updated',
+    category: 'database',
+    resource: { type: 'user', id: req.user.id },
+    changes: {
+      fields: Object.keys(req.body || {}).filter((field) =>
+        ['avatar', 'background', 'displayName', 'username', 'email', 'bio', 'socialLinks'].includes(field)),
+    },
+  });
+  ok(res, profile);
 });
 
 // PUT /me/avatar, PUT /me/background (multipart): replaces the image.
 export const putProfileImage = (kind) =>
   asyncHandler(async (req, res) => {
-    ok(res, await userService.setProfileImage(req.user.id, kind, req.file?.filename));
+    const profile = await userService.setProfileImage(req.user.id, kind, req.file?.filename);
+    recordAuditEvent(req, {
+      action: 'user.profile_image.updated',
+      category: 'database',
+      resource: { type: 'user', id: req.user.id },
+      changes: { field: kind },
+    });
+    ok(res, profile);
   });
 
 // PUT /me/password → 204. Other sessions of this user are logged out.
 export const changePassword = asyncHandler(async (req, res) => {
   await userService.changePassword(req.user.id, req.session.token, req.body || {});
+  recordAuditEvent(req, {
+    action: 'auth.password.changed',
+    category: 'security',
+    resource: { type: 'user', id: req.user.id },
+  });
   noContent(res);
 });
 
@@ -199,11 +222,18 @@ export const getRoleRequest = asyncHandler(async (req, res) => {
 
 // POST /me/role-request { reason, portfolio? }
 export const createRoleRequest = asyncHandler(async (req, res) => {
-  created(res, '/me/role-request', await roleRequestService.create(req.user, req.body || {}));
+  const request = await roleRequestService.create(req.user, req.body || {});
+  recordAuditEvent(req, {
+    action: 'role_request.created',
+    category: 'database',
+    resource: { type: 'role_request', id: request.id },
+  });
+  created(res, '/me/role-request', request);
 });
 
 // DELETE /me/role-request → withdraws the pending request
 export const cancelRoleRequest = asyncHandler(async (req, res) => {
   await roleRequestService.cancel(req.user.id);
+  recordAuditEvent(req, { action: 'role_request.cancelled', category: 'database' });
   noContent(res);
 });

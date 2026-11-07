@@ -85,7 +85,7 @@ Mức độ: 🔴 nghiêm trọng · 🟠 trung bình · 🟡 lỗi logic.
 | # | Mức | Lỗi | Cách sửa | Code hiện tại | Test |
 |---|---|---|---|---|---|
 | 1 | 🔴 | **Tự duyệt truyện của mình**: route đổi trạng thái contributor chỉ cần đăng nhập, ai cũng duyệt được bài của mình | Thêm `requireRole('admin','moderator')` | `routes/comicRoutes.js` (`staff`) | `authorization.test.js` |
-| 2 | 🔴 | **Mật khẩu lưu dạng thô** (file `.sqlite` từng nằm trong git) | bcrypt, tự nâng cấp dòng cũ khi đăng nhập; `seed.js` cũng hash | `services/authService.js` | `auth.test.js` |
+| 2 | 🔴 | **Mật khẩu lưu dạng thô** (file `.sqlite` từng nằm trong git) | bcrypt, tự nâng cấp dòng cũ khi đăng nhập; `setupDatabase.js` cũng hash | `services/authService.js` | `auth.test.js` |
 | 3 | 🔴 | **Contributor sửa được truyện bất kỳ** | Chỉ contributor của truyện đó hoặc staff | `services/permissions.js`, `comicService.update` | `authorization.test.js` |
 | 4 | 🔴 | **Đổi mật khẩu không cần mật khẩu cũ**; phiên cũ vẫn sống | Bắt buộc mật khẩu hiện tại; đăng xuất các phiên khác; giới hạn 6–72 ký tự. Frontend thêm ô "Current password" | `services/userService.js` | `authorization.test.js` |
 | 5 | 🔴 | **Ban không có tác dụng**: không chỗ nào đọc `isBanned` | Chặn khi đăng nhập (`403`) và khi đọc phiên | `authService.login`, `sessionRepository.js` | `auth.test.js` |
@@ -99,7 +99,7 @@ Mức độ: 🔴 nghiêm trọng · 🟠 trung bình · 🟡 lỗi logic.
 | 13 | 🟡 | `GET /comics` và `/comics/popular` **lỗi 500 khi không có filter** (SQL thành `FROM comics AND ...`); `totalPages` đếm cả truyện ẩn; `?page=abc` → `OFFSET NaN` | Viết lại truy vấn; tham số sai trả `400` | `utils/listQuery.js`, `repositories/comicRepository.js` | `comics.test.js` (400 cho query sai) |
 | 14 | 🟡 | Chi tiết truyện: gõ nhầm `contry`, thiếu cột `status` → luôn `undefined` | Sửa tên cột, thêm cột | `services/comicService.js` | — |
 | 15 | 🟡 | Cột `read_history.scrollPosition` **thiếu trong schema** → DB mới lỗi 500 khi đọc chapter | Khai báo trong model | `models/interaction.js` | — |
-| 16 | 🟡 | **Khoá ngoại không có hiệu lực** (SQLite cần `PRAGMA foreign_keys = ON`). Bật lên thì lộ ra 3 chỗ hỏng: xoá cứng comment có reply, xoá category còn được tham chiếu, `seed.js` xoá sai thứ tự | Bật pragma; xoá comment thành xoá mềm; sửa thứ tự xoá trong seed | `config/database.js` (Sequelize), `repositories/commentRepository.js` | `comments.test.js` (force-delete) |
+| 16 | 🟡 | **Khoá ngoại không có hiệu lực** (SQLite cần `PRAGMA foreign_keys = ON`). Bật lên thì lộ ra 3 chỗ hỏng: xoá cứng comment có reply, xoá category còn được tham chiếu, script seed xoá sai thứ tự | Bật pragma; xoá comment thành xoá mềm; sửa thứ tự xoá trong seed | `config/database.js` (Sequelize), `repositories/commentRepository.js` | `comments.test.js` (force-delete) |
 | 17 | 🟡 | **Không có transaction** cho thao tác nhiều bước (tạo truyện 5+ câu lệnh, duyệt bài sửa 2 bảng) | `withTransaction` xếp hàng, `BEGIN IMMEDIATE`; nay chạy trên Sequelize + `AsyncLocalStorage` | `config/database.js` | `services.test.js` (rollback) |
 | 18 | 🟡 | **File upload bị từ chối vẫn nằm lại** trong `storage/` | Xoá file khi response ≥ 400 | `uploadMiddleware.cleanupUploadsOnFailure` | `comics.test.js` (failed edit), `bulkImport.test.js` |
 | 19 | 🟡 | Endpoint contributor của `/chapters/...` **không được mount**, frontend nhận 404 | Mount router `/chapters` | `routes/comicRoutes.js` (`chapterRouter`) | `comics.test.js` (contributor review routes) |

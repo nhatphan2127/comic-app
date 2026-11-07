@@ -10,6 +10,7 @@ import { TooManyRequestsError } from './errors.js';
 import { API_PREFIX } from './utils/http.js';
 import * as client from '@prometheus-io/client';
 import { metricsMiddleware } from './middlewares/metricMiddleware.js';
+import requestLoggerMiddleware from './middlewares/requestLoggerMiddleware.js';
 import v1Routes from './routes/index.js';
 import docsRoutes from './docs/docsRoutes.js';
 
@@ -31,9 +32,11 @@ const authLimiter = rateLimit({
 });
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Collect metric before application routes
 app.use(metricsMiddleware);
+app.use(requestLoggerMiddleware);
 
 app.get('/metrics', async (req, res) => {
   res.set('Content-Type', client.register.contentType);

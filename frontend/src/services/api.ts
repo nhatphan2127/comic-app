@@ -1,7 +1,7 @@
 // src/services/api.ts
 import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, ApiKey, ApiKeyScope, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, BlockedUser, UserComment, RankingPeriod } from '../types/types';
 
-export const API_ORIGIN = 'http://localhost:5000';
+export const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN || 'http://localhost:5000').replace(/\/+$/, '');
 // Versioned REST API (see backend/docs/api-conventions.md). Interactive docs: http://localhost:5000/api/docs
 export const API_BASE_URL = `${API_ORIGIN}/api/v1`;
 export const API_UPLOADS = `${API_ORIGIN}/storage/`;

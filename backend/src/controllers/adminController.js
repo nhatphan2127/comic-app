@@ -12,6 +12,7 @@ import * as roleRequestService from '../services/roleRequestService.js';
 import { STAFF_SORTABLE_FIELDS as COMIC_SORT_FIELDS } from '../repositories/comicRepository.js';
 import { STAFF_SORTABLE_FIELDS as CHAPTER_SORT_FIELDS } from '../repositories/chapterRepository.js';
 import { BadRequestError } from '../errors.js';
+import { recordAuditEvent } from '../utils/auditLog.js';
 
 const SORT_FIELDS = { comic: COMIC_SORT_FIELDS, chapter: CHAPTER_SORT_FIELDS };
 const idOf = (type, req) => (type === 'comic' ? req.params.comicId : req.params.chapterId);
@@ -50,20 +51,41 @@ export const listUsers = asyncHandler(async (req, res) => {
 // PATCH /admin/users/:userId { role?, isBanned? }
 export const updateUser = asyncHandler(async (req, res) => {
   const { role, isBanned } = req.body || {};
-  ok(res, await adminService.updateUser(req.user.id, req.params.userId, { role, isBanned }));
+  const user = await adminService.updateUser(req.user.id, req.params.userId, { role, isBanned });
+  recordAuditEvent(req, {
+    action: 'admin.user.updated',
+    category: 'database',
+    resource: { type: 'user', id: user.id },
+    changes: { ...(role !== undefined ? { role } : {}), ...(isBanned !== undefined ? { isBanned } : {}) },
+  });
+  ok(res, user);
 });
 
 // PATCH /admin/comics/:comicId, /admin/chapters/:chapterId { visibility: public | hidden }
 export const updateVisibility = (type) =>
   asyncHandler(async (req, res) => {
-    ok(res, await adminService.setVisibility(type, idOf(type, req), req.body?.visibility));
+    const result = await adminService.setVisibility(type, idOf(type, req), req.body?.visibility);
+    recordAuditEvent(req, {
+      action: `admin.${type}.visibility_updated`,
+      category: 'database',
+      resource: { type, id: result.id },
+      changes: { visibility: result.visibility },
+    });
+    ok(res, result);
   });
 
 // PATCH /admin/comments/:commentId { isBanned }
 export const updateComment = asyncHandler(async (req, res) => {
   const { isBanned } = req.body || {};
   if (typeof isBanned !== 'boolean') throw new BadRequestError('"isBanned" must be a boolean');
-  ok(res, await commentService.setBanned(req.params.commentId, isBanned));
+  const result = await commentService.setBanned(req.params.commentId, isBanned);
+  recordAuditEvent(req, {
+    action: 'admin.comment.moderation_updated',
+    category: 'database',
+    resource: { type: 'comment', id: req.params.commentId },
+    changes: { isBanned },
+  });
+  ok(res, result);
 });
 
 export const getSettings = asyncHandler(async (req, res) => {
@@ -72,7 +94,14 @@ export const getSettings = asyncHandler(async (req, res) => {
 
 // PATCH /admin/settings { autoAccept }
 export const updateSettings = asyncHandler(async (req, res) => {
-  ok(res, await settingsService.updateSettings(req.body || {}));
+  const result = await settingsService.updateSettings(req.body || {});
+  recordAuditEvent(req, {
+    action: 'admin.settings.updated',
+    category: 'database',
+    resource: { type: 'settings' },
+    changes: { autoAccept: result.autoAccept },
+  });
+  ok(res, result);
 });
 
 // GET /admin/role-requests?status=pending&page=&pageSize=
@@ -85,7 +114,14 @@ export const listRoleRequests = asyncHandler(async (req, res) => {
 
 // PATCH /admin/role-requests/:requestId { status: approved | rejected, note? }
 export const decideRoleRequest = asyncHandler(async (req, res) => {
-  ok(res, await roleRequestService.decide(req.user.id, req.params.requestId, req.body || {}));
+  const result = await roleRequestService.decide(req.user.id, req.params.requestId, req.body || {});
+  recordAuditEvent(req, {
+    action: 'admin.role_request.decided',
+    category: 'database',
+    resource: { type: 'role_request', id: req.params.requestId },
+    changes: { status: result.status },
+  });
+  ok(res, result);
 });
 
 // ---------- Moderation ----------
@@ -111,11 +147,23 @@ export const getChapterForReview = asyncHandler(async (req, res) => {
 // PATCH /moderation/comics/:comicId, /moderation/chapters/:chapterId { status: accept | reject }
 export const review = (type) =>
   asyncHandler(async (req, res) => {
-    ok(res, await moderationService.review(type, idOf(type, req), req.body?.status));
+    const result = await moderationService.review(type, idOf(type, req), req.body?.status);
+    recordAuditEvent(req, {
+      action: `moderation.${type}.reviewed`,
+      category: 'database',
+      resource: { type, id: result.id },
+      changes: { status: result.status },
+    });
+    ok(res, result);
   });
 
 // DELETE /moderation/comments/:commentId → 204
 export const forceDeleteComment = asyncHandler(async (req, res) => {
   await commentService.forceDelete(req.params.commentId);
+  recordAuditEvent(req, {
+    action: 'moderation.comment.deleted',
+    category: 'database',
+    resource: { type: 'comment', id: req.params.commentId },
+  });
   noContent(res);
 });

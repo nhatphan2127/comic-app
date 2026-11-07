@@ -4,6 +4,8 @@
 import { STATUS_CODES } from 'node:http';
 import multer from 'multer';
 import { NotFoundError } from '../errors.js';
+import { logger } from '../config/logger.js';
+import { recordAuditEvent } from '../utils/auditLog.js';
 
 // Multer error codes that mean "too big" rather than "malformed".
 const MULTER_TOO_LARGE = ['LIMIT_FILE_SIZE', 'LIMIT_FILE_COUNT', 'LIMIT_FIELD_VALUE', 'LIMIT_PART_COUNT'];
@@ -32,8 +34,26 @@ export default function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
 
   const status = statusOf(err);
+  if ([401, 403, 429].includes(status)) {
+    const action = status === 401
+      ? req.path.endsWith('/login') ? 'auth.login.failed' : 'security.authentication_rejected'
+      : status === 403 ? 'security.authorization_denied' : 'security.request_rate_limited';
+    recordAuditEvent(req, {
+      action,
+      category: 'security',
+      outcome: 'failure',
+      status,
+    });
+  }
   // 4xx are expected business errors; only unexpected failures are worth logging.
-  if (status >= 500) console.error(err);
+  if (status >= 500) {
+    logger.error('Unhandled request error', {
+      method: req.method,
+      path: req.path,
+      status,
+      error: err.stack || err.message,
+    });
+  }
   // Never leak internal details (SQL errors, stack messages) to clients on server errors.
   const detail = status >= 500 ? 'Internal server error' : err.message || STATUS_CODES[status];
   sendProblem(res, req, status, detail);

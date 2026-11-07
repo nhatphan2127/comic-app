@@ -5,6 +5,7 @@ import * as commentRepo from '../repositories/commentRepository.js';
 import * as blockRepo from '../repositories/blockRepository.js';
 import * as contributorRepo from '../repositories/contributorRepository.js';
 import { NotFoundError } from '../errors.js';
+import { logger } from '../config/logger.js';
 
 export async function listForUser(userId, { isRead, page }) {
   const { rows, count } = await notificationRepo.listForUser(userId, { isRead, limit: page.limit, offset: page.offset });
@@ -26,7 +27,7 @@ async function send(rows) {
   try {
     await notificationRepo.insertMany(rows);
   } catch (err) {
-    console.error('Unable to create notifications:', err);
+    logger.error('Unable to create notifications', { error: err.stack || err.message });
   }
 }
 
