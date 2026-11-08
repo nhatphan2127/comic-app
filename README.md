@@ -11,14 +11,9 @@ Inkverse is a website for discovering and reading manga, manhwa, and manhua. Rea
 
 ## System overview
 
-```mermaid
-flowchart LR
-    Reader["Reader / Contributor / Admin"] --> Web["Frontend<br/>React + TypeScript"]
-    Web -->|"REST API /api/v1<br/>session cookie"| API["Backend<br/>Express"]
-    API --> DB[("SQLite")]
-    API --> SeaweedFS["SeaweedFS<br/>S3-compatible object storage"]
-    SeaweedFS --> Disk["/var/lib/seaweedfs"]
-```
+<p align="center">
+  <img src="mermaid-diagram(2).png" alt="Production deployment architecture for the app server and monitoring server" width="100%" />
+</p>
 
 | Area | Responsibility | Main technologies |
 |---|---|---|
@@ -151,9 +146,7 @@ comic-app-deploy.zip
 └── monitoring/       → monitoring server (agent/ goes to the app server)
 ```
 
-<p align="center">
-  <img src="mermaid-diagram(2).png" alt="Production deployment architecture for the app server and monitoring server" width="100%" />
-</p>
+
 
 | Path | Server | Contents |
 |---|---|---|
