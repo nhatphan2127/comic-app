@@ -15,10 +15,6 @@ Inkverse is a website for discovering and reading manga, manhwa, and manhua. Rea
   <img src="mermaid-diagram(2).png" alt="Production deployment architecture for the app server and monitoring server" width="100%" />
 </p>
 
-| Area | Responsibility | Main technologies |
-|---|---|---|
-| [`frontend/`](frontend/) | Single-page web app for readers and the Studio/Admin consoles | React 19, TypeScript, Vite, React Router 7, CSS Modules |
-| [`backend/`](backend/) | REST API, authentication, application logic, database, and uploaded image delivery | Node.js (ES modules), Express 4, Sequelize 6, SQLite |
 
 ## Features
 
