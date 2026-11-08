@@ -17,7 +17,7 @@ export const Chapter = sequelize.define('Chapter', {
 export const ChapterImage = sequelize.define('ChapterImage', {
   id: primaryId,
   chapterId: ref('chapters'),
-  urlPath: required(TEXT),
+  urlPath: required(TEXT), // Relative storage object key, e.g. chapter-images/<uuid>.webp
   pageNumber: required(INTEGER),
 }, { tableName: 'chapter_images' });
 

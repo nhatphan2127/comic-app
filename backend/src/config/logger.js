@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import winston from 'winston';
 
 const configDirectory = path.dirname(fileURLToPath(import.meta.url));
-const logsDirectory = path.resolve(configDirectory, '../../logs');
+// LOG_DIR lets production write logs outside the code directory (e.g. /var/log/comic-app).
+const logsDirectory = path.resolve(process.env.LOG_DIR || path.join(configDirectory, '../../logs'));
 fs.mkdirSync(logsDirectory, { recursive: true });
 
 export function createLogFormat(dataset, loggerName) {

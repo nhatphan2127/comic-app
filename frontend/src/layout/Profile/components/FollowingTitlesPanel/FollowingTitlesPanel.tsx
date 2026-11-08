@@ -11,7 +11,6 @@ import Segmented from '../../../../components/Segmented/Segmented';
 import PanelShell, { PanelState } from '../PanelShell/PanelShell';
 import cx from '../../../../helpers/cx';
 import {
-  DEMOGRAPHIC_OPTIONS,
   EMPTY_FILTERS,
   FORMAT_OPTIONS,
   GENRE_OPTIONS,
@@ -25,7 +24,7 @@ import {
 import style from './FollowingTitlesPanel.module.css';
 
 const PAGE_SIZE = 20;
-type ListKey = 'types' | 'demographics' | 'statuses' | 'genres' | 'formats';
+type ListKey = 'types' | 'statuses' | 'genres' | 'formats';
 
 export default function FollowingTitlesPanel() {
   const [items, setItems] = useState<FollowingComic[]>([]);
@@ -257,7 +256,6 @@ export default function FollowingTitlesPanel() {
             )}
           </Dropdown>
 
-          <MultiSelect label="Demographic" options={DEMOGRAPHIC_OPTIONS} selected={filters.demographics} summary={summarize(filters.demographics)} onToggle={(v) => toggle('demographics', v)} />
           <MultiSelect label="Status" options={STATUS_OPTIONS} selected={filters.statuses} summary={summarize(filters.statuses)} onToggle={(v) => toggle('statuses', v)} />
         </div>
       </div>

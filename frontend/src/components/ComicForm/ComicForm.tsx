@@ -2,7 +2,6 @@ import { useRef, type ChangeEvent, type ReactNode } from 'react';
 import { ImagePlus, X } from 'lucide-react';
 import {
   CONTENT_RATING_OPTIONS,
-  DEMOGRAPHIC_OPTIONS,
   FORMAT_OPTIONS,
   GENRE_OPTIONS,
   STATUS_OPTIONS,
@@ -48,7 +47,7 @@ export default function ComicForm({ values, onChange, readOnly = false }: ComicF
     onChange?.({ ...values, cover: file, coverPreview: URL.createObjectURL(file) });
   };
 
-  const select = (key: 'type' | 'demographic' | 'contentRating' | 'releaseStatus', options: readonly string[], placeholder: string) =>
+  const select = (key: 'type' | 'contentRating' | 'releaseStatus', options: readonly string[], placeholder: string) =>
     readOnly ? (
       <div className={styles.static}>{values[key] || '—'}</div>
     ) : (
@@ -161,9 +160,6 @@ export default function ComicForm({ values, onChange, readOnly = false }: ComicF
         <div className={styles.triple}>
           <Field label="Type" required={!readOnly}>
             {select('type', TYPE_OPTIONS, 'Choose type')}
-          </Field>
-          <Field label="Demographic" required={!readOnly}>
-            {select('demographic', DEMOGRAPHIC_OPTIONS, 'Choose')}
           </Field>
           <Field label="Content rating" required={!readOnly}>
             {select('contentRating', CONTENT_RATING_OPTIONS, 'Choose')}

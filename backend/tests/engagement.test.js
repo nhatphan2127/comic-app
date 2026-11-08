@@ -90,7 +90,6 @@ describe('catalogue search', () => {
       .set(auth(owner))
       .field('name', comic.url)
       .field('types', 'manga')
-      .field('demographic', 'shounen')
       .field('url', comic.url)
       .field('author', 'Zyx Unique Author')
       .field('formats', 'Long Strip');

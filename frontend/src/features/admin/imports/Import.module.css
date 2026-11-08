@@ -1,0 +1,585 @@
+/* Backup ZIP and Import queue side by side, same width. */
+.top {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: var(--sp-4);
+}
+
+@media (max-width: 960px) {
+  .top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.uploadCard,
+.queueCard {
+  min-width: 0;
+}
+
+.uploadCard {
+  overflow-y: auto;
+}
+
+/* Fixed row height on wide screens: the cards keep their size whatever they show, and the queue
+   scrolls inside its card. */
+@media (min-width: 961px) {
+  .uploadCard,
+  .queueCard {
+    height: 560px;
+  }
+
+  .queueCard .queue {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+.queueEmpty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 160px;
+  padding: var(--sp-6) var(--sp-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-lg);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+/* ---------- Dropzone ---------- */
+.dropzone {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 160px;
+  padding: var(--sp-6) var(--sp-4);
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg-alt);
+  color: var(--fg-mute);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
+}
+
+.dropzone strong {
+  color: var(--fg-strong);
+  font-size: var(--fs-md);
+}
+
+.dropzone:hover,
+.dropzoneActive {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.dropzone:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.dropIcon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: var(--sp-1);
+  border-radius: 50%;
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+/* ---------- Selected file ---------- */
+/* Same slot as the dropzone, so choosing a file does not change the card's size. */
+.fileRow {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  min-height: 160px;
+  padding: var(--sp-5) var(--sp-4);
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-alt);
+}
+
+.fileIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--r-md);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+
+.fileText {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+
+.fileText strong {
+  overflow: hidden;
+  color: var(--fg-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileText small {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.fileActions {
+  display: flex;
+  flex: none;
+  gap: var(--sp-1);
+}
+
+/* ---------- Progress ---------- */
+.progressBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.stepDot {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.stepActive {
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.stepActive .stepDot {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.stepDone {
+  color: var(--ok);
+}
+
+.stepDone .stepDot {
+  border-color: var(--ok);
+  background: var(--ok-tint);
+}
+
+.bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-alt);
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width 0.3s ease;
+}
+
+.barPulse {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { opacity: 0.55; }
+}
+
+.progressMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--fg-mute);
+  font-size: var(--fs-sm);
+}
+
+.progressMeta span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Auto-approve toggle (one line) ---------- */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: flex-start;
+  color: var(--fg-strong);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle small {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+.toggleDisabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.toggleSwitch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  transition: background var(--t-fast);
+}
+
+.toggleSwitch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--t-fast);
+}
+
+.toggleOn {
+  background: var(--ok);
+}
+
+.toggleOn::after {
+  transform: translateX(12px);
+}
+
+.toggle:has(input:focus-visible) .toggleSwitch {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  gap: var(--sp-2);
+}
+
+/* ---------- Import queue ---------- */
+.queueCount {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.queue {
+  position: relative; /* items' offsetTop is measured from the list, for auto-scrolling */
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.queue[hidden] {
+  display: none;
+}
+
+.queueItem {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-md, 8px);
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+
+.queueIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--fg-mute);
+}
+
+.queueText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.queueText strong {
+  overflow: hidden;
+  color: var(--fg-strong);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queueText small {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.queueIndex {
+  color: var(--fg-mute);
+  font-weight: 400;
+}
+
+.queueMeta {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.queueBar {
+  display: block;
+  height: 4px;
+  margin-top: var(--sp-1);
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-alt);
+}
+
+.queueBar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width 0.3s ease;
+}
+
+.queue_queued .queueText strong {
+  color: var(--fg-mute);
+  font-weight: 500;
+}
+
+.queue_active {
+  border-color: color-mix(in oklab, var(--brand) 40%, transparent);
+  background: var(--brand-tint);
+}
+
+.queue_active .queueIcon,
+.queue_active .queueMeta {
+  color: var(--brand);
+}
+
+.queue_done .queueIcon {
+  color: var(--ok);
+}
+
+.queue_failed {
+  border-color: color-mix(in oklab, var(--err) 40%, transparent);
+  background: var(--err-tint);
+}
+
+.queue_failed .queueIcon,
+.queue_failed .queueText small {
+  color: var(--err);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+/* ---------- Results ---------- */
+.results {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.results li:last-child {
+  border-bottom: 0;
+}
+
+.resultIcon {
+  flex: none;
+  color: var(--ok);
+}
+
+.resultText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.resultText strong,
+.resultText code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resultText code {
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+.resultMeta {
+  flex: none;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+}
+
+/* ---------- ZIP summary (one line inside the import queue) ---------- */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  margin: 0;
+  padding: 0;
+  color: var(--fg-mute);
+  font-size: var(--fs-xs);
+  list-style: none;
+}
+
+.summary li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.summary strong {
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.required {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--err-tint);
+  color: var(--err);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+/* ---------- Guide (docs-style article) ---------- */
+.docs {
+  max-width: 760px;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  line-height: 1.65;
+}
+
+.docs > :first-child {
+  margin-top: 0;
+}
+
+.docs > * + * {
+  margin-top: var(--sp-3);
+}
+
+.docs p,
+.docs ul {
+  margin-bottom: 0;
+}
+
+.docs h3 {
+  margin: var(--sp-6, 24px) 0 0;
+  color: var(--fg-strong);
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
+.docs ul {
+  padding-left: 1.25rem;
+}
+
+.docs li + li {
+  margin-top: var(--sp-1);
+}
+
+.docs code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-alt);
+  font-size: 0.9em;
+}
+
+.docs .required {
+  margin-left: var(--sp-1);
+}

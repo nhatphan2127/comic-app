@@ -35,14 +35,13 @@ export const listForUser = (userId) =>
        c.updatedAt AS comicUpdatedAt,
        c.types AS comicTypes,
        c.contentRating AS comicContentRating,
-       c.demographic AS comicDemographic,
        c.releaseStatus AS comicReleaseStatus,
        c.releasingYear AS comicReleasingYear,
        c.rating AS comicRating,
        c.view AS comicView,
        c.follow AS comicFollow,
-       au.name AS authorName,
-       ar.name AS artistName,
+       c.author AS authorName,
+       c.artist AS artistName,
        (SELECT rating FROM rating_history WHERE userId = f.userId AND comicId = c.id) AS userRating,
        -- Number of chapters that are not soft-deleted
        (SELECT COUNT(*) FROM chapters WHERE comicId = c.id AND deletedAt IS NULL AND status = 'accept' AND visibility = 'public') AS totalChapters,
@@ -66,8 +65,6 @@ export const listForUser = (userId) =>
      FROM following f
      JOIN comics c ON f.comicId = c.id
      LEFT JOIN following_categories fc ON f.followingCategoryId = fc.id
-     LEFT JOIN author au ON c.authorId = au.id
-     LEFT JOIN artist ar ON c.artistId = ar.id
      WHERE f.userId = ? AND ${readableSql('c')}
      ORDER BY c.name`,
     [userId]

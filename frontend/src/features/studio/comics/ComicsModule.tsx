@@ -107,7 +107,6 @@ function validate(v: ComicFormValues, isEdit: boolean): string | null {
   if (!v.name.trim()) return 'Comic title is required.';
   if (!v.url.trim()) return 'URL slug is required.';
   if (!v.type) return 'Please choose a type.';
-  if (!v.demographic) return 'Please choose a demographic.';
   if (!v.contentRating) return 'Please choose a content rating.';
   if (!isEdit && !v.cover && !v.coverPreview) return 'A cover image is required.';
   return null;
@@ -121,7 +120,6 @@ function toFormData(v: ComicFormValues): FormData {
   body.append('description', v.description.trim());
   body.append('types', v.type);
   body.append('contentRating', v.contentRating.toLowerCase());
-  body.append('demographic', v.demographic);
   body.append('releaseStatus', v.releaseStatus || 'releasing');
   body.append('releasingYear', String(v.releasingYear));
   if (v.author.trim()) body.append('author', v.author.trim());

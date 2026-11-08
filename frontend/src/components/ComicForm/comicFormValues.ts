@@ -1,6 +1,5 @@
 import {
   CONTENT_RATING_OPTIONS,
-  DEMOGRAPHIC_OPTIONS,
   STATUS_OPTIONS,
   TYPE_OPTIONS,
 } from '../../constants/comicOptions';
@@ -14,7 +13,6 @@ export interface ComicFormValues {
   source: string;
   description: string;
   type: string;
-  demographic: string;
   contentRating: string;
   releaseStatus: string;
   releasingYear: number;
@@ -32,7 +30,6 @@ export const emptyComicForm = (): ComicFormValues => ({
   source: '',
   description: '',
   type: '',
-  demographic: '',
   contentRating: '',
   releaseStatus: '',
   releasingYear: new Date().getFullYear(),
@@ -51,7 +48,6 @@ export const comicToForm = (comic: ComicDetail): ComicFormValues => ({
   source: comic.source || '',
   description: comic.description || '',
   type: formatDisplayValue(comic.types, [...TYPE_OPTIONS]),
-  demographic: formatDisplayValue(comic.demographic, [...DEMOGRAPHIC_OPTIONS]),
   contentRating: formatDisplayValue(comic.contentRating, [...CONTENT_RATING_OPTIONS]),
   releaseStatus: formatDisplayValue(comic.releaseStatus, [...STATUS_OPTIONS]),
   releasingYear: Number(comic.releasingYear) || new Date().getFullYear(),

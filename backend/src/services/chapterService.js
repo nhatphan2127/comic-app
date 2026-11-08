@@ -62,7 +62,14 @@ export async function getForReview(chapterId) {
 }
 
 // Any contributor may upload chapters to any comic (by design); chapters still go through moderation.
-export async function create(user, comicId, { title, chapterNumber, url }, imageFilenames = []) {
+// `status` overrides the site's review default (the admin ZIP import chooses it per import).
+export async function createInTransaction(
+  user,
+  comicId,
+  { title, chapterNumber, url },
+  imageFilenames = [],
+  { status: statusOverride } = {},
+) {
   if (!title || chapterNumber === undefined || chapterNumber === '' || !url || !imageFilenames.length) {
     throw new BadRequestError('Missing required chapter fields or images');
   }
@@ -72,22 +79,26 @@ export async function create(user, comicId, { title, chapterNumber, url }, image
   }
 
   const chapterId = uuidv4();
-  const status = await withTransaction(async () => {
-    if (!(await comicRepo.findActiveById(comicId))) throw new NotFoundError('Comic not found');
-    if (await chapterRepo.findIdByUrl(url)) throw new ConflictError('Chapter URL already exists');
+  if (!(await comicRepo.findActiveById(comicId))) throw new NotFoundError('Comic not found');
+  if (await chapterRepo.findIdByUrl(url)) throw new ConflictError('Chapter URL already exists');
 
-    const initialStatus = await initialReviewStatus();
-    await chapterRepo.insert({ id: chapterId, comicId, title, chapterNumber: number, url, status: initialStatus });
+  const status = statusOverride ?? (await initialReviewStatus());
+  await chapterRepo.insert({ id: chapterId, comicId, title, chapterNumber: number, url, status });
 
-    await chapterRepo.insertImages(
-      imageFilenames.map((filename, index) => ({ id: uuidv4(), chapterId, urlPath: `chapter-images/${filename}`, pageNumber: index + 1 }))
-    );
+  await chapterRepo.insertImages(
+    imageFilenames.map((filename, index) => ({ id: uuidv4(), chapterId, urlPath: `chapter-images/${filename}`, pageNumber: index + 1 }))
+  );
 
-    await contributorRepo.insertIgnore('chapter', { targetId: chapterId, userId: user.id, status: initialStatus });
-    return initialStatus;
-  });
-
-  // With auto-accept on, the chapter is live right away.
-  if (status === 'accept') await notifyNewChapter(chapterId, user.id);
+  await contributorRepo.insertIgnore('chapter', { targetId: chapterId, userId: user.id, status });
   return { chapterId, chapterNumber: number, title, imagesCount: imageFilenames.length, status };
+}
+
+export async function notifyCreated(user, chapter) {
+  if (chapter.status === 'accept') await notifyNewChapter(chapter.chapterId, user.id);
+}
+
+export async function create(user, comicId, fields, imageFilenames = []) {
+  const chapter = await withTransaction(() => createInTransaction(user, comicId, fields, imageFilenames));
+  await notifyCreated(user, chapter);
+  return chapter;
 }

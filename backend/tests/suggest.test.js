@@ -72,11 +72,11 @@ describe('GET /comics/suggest', () => {
     await models.ComicOtherName.destroy({ where: { id: 'on-1' } });
     expect(names(await api().get('/comics/suggest?q=thanh guom'))).toEqual([]);
 
-    const author = await models.Author.create({ id: 'au-1', name: 'Nguyễn Văn Ánh' });
-    await models.Comic.update({ authorId: author.id }, { where: { id: sword.id } });
+    await models.Comic.update({ author: 'Nguyễn Văn Ánh', artist: 'Họa Sĩ Một' }, { where: { id: sword.id } });
     expect(names(await api().get('/comics/suggest?q=nguyen van anh'))).toEqual(['Kiếm Thần Vô Song']);
-    await models.Author.update({ name: 'Trần Thị Bích' }, { where: { id: author.id } });
+    await models.Comic.update({ author: 'Trần Thị Bích', artist: 'Họa Sĩ Hai' }, { where: { id: sword.id } });
     expect(names(await api().get('/comics/suggest?q=tran thi bich'))).toEqual(['Kiếm Thần Vô Song']);
+    expect(names(await api().get('/comics/suggest?q=hoa si hai'))).toEqual(['Kiếm Thần Vô Song']);
 
     // Renaming the comic itself, and the catalogue search uses the same matching.
     await models.Comic.update({ name: 'Ánh Trăng' }, { where: { id: sword.id } });

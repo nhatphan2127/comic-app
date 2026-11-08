@@ -12,7 +12,7 @@ const stored = (relative) => fs.existsSync(path.join(storageRoot, relative));
 async function insertComic(fields = {}) {
   const id = randomUUID();
   await models.Comic.create({
-    id, name: `c-${id}`, types: 'manga', contentRating: 'safe', demographic: 'shounen', releaseStatus: 'releasing',
+    id, name: `c-${id}`, types: 'manga', contentRating: 'safe', releaseStatus: 'releasing',
     url: `c-${id}`, visibility: 'public', status: 'accept', ...fields,
   });
   return id;
@@ -84,6 +84,43 @@ describe('GET /comics (pagination, filtering, sorting)', () => {
 describe('comics', () => {
   it('returns 404 for an unknown comic', async () => {
     expect((await api().get('/comics/does-not-exist')).status).toBe(404);
+  });
+
+  it('accepts only supported types and content ratings on create and edit', async () => {
+    const owner = await createUser('contributor');
+    const create = (type, contentRating) => api()
+      .post('/comics')
+      .set(auth(owner))
+      .field('name', 'Enum validation')
+      .field('types', type)
+      .field('contentRating', contentRating)
+      .field('url', `enum-${type}-${contentRating}`.toLowerCase())
+      .attach('coverImage', PNG, { filename: 'cover.png', contentType: 'image/png' });
+
+    expect((await create('novel', 'safe')).status).toBe(400);
+    expect((await create('manga', 'nsfw')).status).toBe(400);
+
+    const created = await create('Manhwa', 'Suggestive');
+    expect(created.status).toBe(201);
+    const comicId = created.body.data.id;
+    const comic = await models.Comic.findByPk(comicId, { raw: true });
+    expect(comic).toMatchObject({ types: 'manhwa', contentRating: 'suggestive' });
+
+    const invalidType = await api().patch(`/comics/${comicId}`)
+      .set(auth(owner))
+      .field('name', 'Enum validation')
+      .field('types', 'webtoon')
+      .field('contentRating', 'safe')
+      .field('url', comic.url);
+    expect(invalidType.status).toBe(400);
+
+    const invalidRating = await api().patch(`/comics/${comicId}`)
+      .set(auth(owner))
+      .field('name', 'Enum validation')
+      .field('types', 'manga')
+      .field('contentRating', 'sfw')
+      .field('url', comic.url);
+    expect(invalidRating.status).toBe(400);
   });
 
   it('creating a comic answers 201 with Location; detail works by id and by url slug', async () => {
@@ -205,7 +242,6 @@ describe('comics', () => {
       .set(auth(owner))
       .field('name', name)
       .field('types', 'manhwa')
-      .field('demographic', 'seinen')
       .field('url', comic.url)
       .field('genres', 'Action');
     const res = await edit('New Name');
@@ -234,14 +270,14 @@ describe('comics', () => {
     await edit('Newer Name');
     await api().patch(`/moderation/comics/${comic.id}`).set(auth(moderator)).send({ status: 'accept' });
     const after = await api().get(`/comics/${comic.url}`);
-    expect(after.body.data).toMatchObject({ name: 'Newer Name', types: 'manhwa', demographic: 'seinen', genres: ['Action'], status: 'accept' });
+    expect(after.body.data).toMatchObject({ name: 'Newer Name', types: 'manhwa', genres: ['Action'], status: 'accept' });
   });
 
   it('editing a comic that is not approved yet changes it in place', async () => {
     const owner = await createUser('contributor');
     const comic = await createComic(owner, { name: 'Draft' });
     await api().patch(`/comics/${comic.id}`).set(auth(owner))
-      .field('name', 'Draft 2').field('types', 'manga').field('demographic', 'shounen').field('url', comic.url);
+      .field('name', 'Draft 2').field('types', 'manga').field('url', comic.url);
     const draft = await api().get(`/me/editable-comics/${comic.id}`).set(auth(owner));
     expect(draft.body.data).toMatchObject({ name: 'Draft 2', status: 'pending', pendingEdit: false });
   });
@@ -258,7 +294,6 @@ describe('comics', () => {
       .set(auth(owner))
       .field('name', 'Cover Test')
       .field('types', 'manga')
-      .field('demographic', 'shounen')
       .field('url', comic.url)
       .attach('coverImage', PNG, { filename: 'c.png', contentType: 'image/png' });
     const parkedCover = async () => JSON.parse((await models.Comic.findByPk(comic.id, { raw: true })).pendingChanges).columns.coverUrl;
@@ -302,13 +337,13 @@ describe('comics', () => {
     // Called like the controller does after multer saved the upload (a known name, so we can look for it).
     const upload = `failed-${comic.id}.png`;
     fs.writeFileSync(path.join(storageRoot, 'comics', upload), PNG);
-    const input = { name: 'x', types: 'manga', demographic: 'shounen', url: taken.url };
+    const input = { name: 'x', types: 'manga', url: taken.url };
     await expect(comicService.update({ id: owner.id, role: 'contributor' }, comic.id, input, upload)).rejects.toThrow(/already exists/);
     expect(stored(`comics/${upload}`)).toBe(false);
 
     const oldCover = await coverOf(comic.id);
     await api().patch(`/comics/${comic.id}`).set(auth(owner))
-      .field('name', 'x').field('types', 'manga').field('demographic', 'shounen').field('url', comic.url)
+      .field('name', 'x').field('types', 'manga').field('url', comic.url)
       .attach('coverImage', PNG, { filename: 'c.png', contentType: 'image/png' });
     expect(stored(oldCover)).toBe(false);
     expect(stored(await coverOf(comic.id))).toBe(true);

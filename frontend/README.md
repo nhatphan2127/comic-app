@@ -14,9 +14,10 @@ npm run preview    # chạy thử bản build (service worker chỉ bật ở b�
 npm run lint       # oxlint
 ```
 
-API origin mặc định là `http://localhost:5000` cho phát triển local. Khi build bằng Docker,
-`VITE_API_ORIGIN=/` để frontend gọi API và ảnh qua Nginx cùng origin; đặt biến này thành URL backend
-trong `frontend/.env` khi triển khai frontend ở host khác.
+API origin mặc định là `http://localhost:5000` cho phát triển local. Khi build bản production chạy sau
+Nginx trên host (`nginx/default.conf`), đặt `VITE_API_ORIGIN=/` trong `frontend/.env` để frontend gọi API
+và ảnh qua Nginx cùng origin, rồi copy `dist/` vào `/var/www/comic-app`. Đặt biến này thành URL backend
+khi triển khai frontend ở host khác.
 
 ## Cấu trúc `src/`
 

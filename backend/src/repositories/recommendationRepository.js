@@ -49,17 +49,17 @@ export const usersWhoInteractedWith = async (comicIds, excludeUserId, limit) =>
     : [];
 
 // Every readable comic with what the content model looks at: [{ id, contentRating, view, features }],
-// features = 'genre:…', 'format:…', 'demographic:…', 'type:…' (lower case).
+// features = 'genre:…', 'format:…', 'type:…' (lower case).
 export async function comicFeatures() {
   const [comics, genres, formats] = await Promise.all([
-    select(`SELECT c.id, lower(c.contentRating) AS contentRating, c.view, lower(c.types) AS types, lower(c.demographic) AS demographic
+    select(`SELECT c.id, lower(c.contentRating) AS contentRating, c.view, lower(c.types) AS types
             FROM comics c WHERE ${readableSql('c')}`),
     select(`SELECT cg.comicId, lower(g.name) AS name FROM comic_genres cg
             JOIN genres g ON g.id = cg.genreId JOIN comics c ON c.id = cg.comicId WHERE ${readableSql('c')}`),
     select(`SELECT cf.comicId, lower(f.name) AS name FROM comic_formats cf
             JOIN formats f ON f.id = cf.formatId JOIN comics c ON c.id = cf.comicId WHERE ${readableSql('c')}`),
   ]);
-  const features = new Map(comics.map((c) => [c.id, [`type:${c.types}`, `demographic:${c.demographic}`]]));
+  const features = new Map(comics.map((c) => [c.id, [`type:${c.types}`]]));
   genres.forEach((row) => features.get(row.comicId)?.push(`genre:${row.name}`));
   formats.forEach((row) => features.get(row.comicId)?.push(`format:${row.name}`));
   return comics.map(({ id, contentRating, view }) => ({ id, contentRating, view, features: features.get(id) }));

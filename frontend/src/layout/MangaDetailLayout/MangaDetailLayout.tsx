@@ -106,7 +106,7 @@ export default function MangaDetailLayout() {
       .catch(() => setIsFollowing(false));
   }, [comic?.id, isLoggedIn]);
 
-  // "Similar comics": closest in genres, formats, demographic and type.
+  // "Similar comics": closest in genres, formats and type.
   const comicId = comic?.id;
   useEffect(() => {
     if (!comicId) return;

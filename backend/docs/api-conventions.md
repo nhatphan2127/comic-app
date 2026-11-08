@@ -24,12 +24,12 @@ Tài liệu này ghi lại **chiến lược đã chọn**, **vì sao chọn**, 
 
 | Ai gọi | Cách xác thực | Dùng ở đâu |
 |---|---|---|
-| Trình duyệt (frontend) | **Cookie phiên `sid`**: `HttpOnly`, `SameSite=Lax`, `Path=/api`, `Secure` khi production. `POST /auth/login` đặt cookie; token **không** nằm trong body | mọi route trừ `/publish` |
-| Script của contributor | **API key**: `Authorization: Bearer ink_...` | chỉ `/publish` (xem [publishing-api.md](publishing-api.md)) |
+| Trình duyệt (frontend) | **Cookie phiên `sid`**: `HttpOnly`, `SameSite=Lax`, `Path=/api`, `Secure` khi production. `POST /auth/login` đặt cookie; token **không** nằm trong body | mọi route |
 
-- Frontend gọi `fetch(..., { credentials: 'include' })`; CORS bật `credentials: true` và chỉ cho các origin trong `CLIENT_ORIGIN`.
-- **Chống CSRF**: request thay đổi dữ liệu (không phải GET/HEAD/OPTIONS) có cookie phải có `Origin` (hoặc `Referer`) nằm trong danh sách tin cậy, nếu không → `403` ([csrfMiddleware.js](../src/middlewares/csrfMiddleware.js)). `SameSite=Lax` là lớp bảo vệ thứ hai.
-- Phiên hết hạn sau 30 ngày; đổi mật khẩu đăng xuất mọi phiên khác; đặt lại mật khẩu đăng xuất tất cả và thu hồi mọi API key.
+- Frontend gọi `fetch(..., { credentials: 'include' })`; CORS chỉ cho các origin trong `CLIENT_ORIGIN`.
+- **Chống CSRF**: request ghi dữ liệu có cookie phải có `Origin` (hoặc `Referer`) tin cậy ([csrfMiddleware.js](../src/middlewares/csrfMiddleware.js)).
+- Phiên hết hạn sau 30 ngày; đổi mật khẩu đăng xuất các phiên khác; đặt lại mật khẩu đăng xuất mọi phiên.
+- Admin ZIP restore dùng cookie phiên và chỉ dành cho role `admin`. Trình duyệt đọc ZIP rồi gửi từng ảnh vào vùng staging riêng; nội dung chỉ được ghi sau khi toàn bộ batch hợp lệ.
 
 ---
 
@@ -80,13 +80,13 @@ Ví dụ: trước đây "react lại cùng loại" sẽ **bật/tắt** (toggle
 | `201 Created` | Tạo mới (POST, hoặc PUT tạo mới) | `{ data }` + header `Location: /api/v1/...` |
 | `204 No Content` | Thành công, không có gì để trả (DELETE, logout, đổi mật khẩu) | không có |
 | `400 Bad Request` | Input sai: body, path, **cả query string** (`pageSize=500`, `sort=password`) | problem |
-| `401 Unauthorized` | Thiếu/sai/hết hạn phiên (cookie `sid`) hoặc API key, sai mật khẩu. Có header `WWW-Authenticate: Bearer` | problem |
-| `403 Forbidden` | Đã đăng nhập nhưng không có quyền; tài khoản bị ban khi đăng nhập; API key thiếu scope; request bị chặn vì khác origin (CSRF) | problem |
+| `401 Unauthorized` | Thiếu/sai/hết hạn phiên (cookie `sid`) hoặc sai mật khẩu | problem |
+| `403 Forbidden` | Đã đăng nhập nhưng không có quyền; tài khoản bị ban; request bị chặn vì khác origin (CSRF) | problem |
 | `404 Not Found` | Không tồn tại **hoặc không được thấy** (thông báo của người khác → 404, không phải 403, để không lộ id) | problem |
 | `409 Conflict` | Trùng dữ liệu (username, slug, tên category) | problem |
-| `413 Payload Too Large` | File > 10 MB, quá số file cho phép, body JSON > 1 MB | problem |
+| `413 Payload Too Large` | File > 10 MB, quá số file cho phép, body JSON > 5 MB hoặc ZIP restore vượt giới hạn | problem |
 | `415 Unsupported Media Type` | Upload không phải JPEG/PNG/WEBP/GIF | problem |
-| `429 Too Many Requests` | Vượt rate limit: đăng nhập/đăng ký/đặt lại mật khẩu (20 / 15 phút / IP), gợi ý tìm kiếm (60 / phút), tạo truyện (10 / giờ / tài khoản), publishing API. Có header `RateLimit` (và `Retry-After` ở `/publish`) | problem |
+| `429 Too Many Requests` | Vượt rate limit đăng nhập/đăng ký/đặt lại mật khẩu, gợi ý tìm kiếm, hoặc tạo truyện. Có header `RateLimit` | problem |
 | `500` | Lỗi không lường trước. Chi tiết chỉ ghi log, client chỉ thấy "Internal server error" | problem |
 
 Route không tồn tại cũng trả **JSON 404**, không còn trang HTML mặc định của Express.
@@ -145,7 +145,7 @@ Hai quy tắc quan trọng:
 | `GET /comics/top-rated?limit=8` | `GET /api/v1/comics?sort=-rating,-view&pageSize=8` |
 | `GET /comics/search?q=x` | `GET /api/v1/comics?q=x&pageSize=6` (khớp đúng tên lên đầu khi không truyền `sort`) |
 
-Mỗi item đều có `genres` và `latestChapters`. Filter: `contentRating`, `type`, `demographic`, `releaseStatus`, `genre`, `format`, `q` (tìm không dấu, không phân biệt hoa thường: "kiem than" khớp "Kiếm Thần").
+Mỗi item đều có `genres` và `latestChapters`. Filter: `contentRating`, `type`, `releaseStatus`, `genre`, `format`, `q` (tìm không dấu, không phân biệt hoa thường: "kiem than" khớp "Kiếm Thần").
 
 Các danh sách khác của truyện: `GET /comics/rankings?period=day|week|month|all`, `GET /comics/suggest?q=` (gợi ý khi gõ, tối đa 8), `GET /comics/:comicId/similar?limit=`, `GET /me/recommendations?limit=` (dùng `limit` thay cho phân trang vì là danh sách ngắn).
 
@@ -235,16 +235,16 @@ Backend ghi mỗi sự kiện thành một JSON object trên một dòng trong `
 
 Record tuân theo cấu trúc JSON có `timestamp`, `log.level`, `process.pid`, `labels.app`, `thread.name`, `logger`, `message`, `service.name` và `event.dataset`. Dataset lần lượt là `application`, `access` và `audit`.
 
-Không ghi request body, mật khẩu, cookie/session token hay API key. Audit log là file JSON Lines cho các sự kiện nghiệp vụ được chọn, không phải bản ghi mọi câu SQL. Các sự kiện bảo mật có thể kèm IP nguồn; audit thay đổi dữ liệu chỉ ghi actor và thông tin tài nguyên cần thiết.
+Không ghi request body, mật khẩu, cookie/session token hay thông tin xác thực. Audit log là file JSON Lines cho các sự kiện nghiệp vụ được chọn, không phải bản ghi mọi câu SQL. Các sự kiện bảo mật có thể kèm IP nguồn; audit thay đổi dữ liệu chỉ ghi actor và thông tin tài nguyên cần thiết.
 
 ### Quan sát bằng Grafana
 
-`docker compose up --build -d` build frontend vào image Nginx, sau đó chạy Nginx cùng backend, Prometheus, Grafana Alloy, Loki và Grafana. Tạo `.env` từ `.env.example` và thay `GRAFANA_ADMIN_PASSWORD` trước khi khởi động. Ứng dụng được phục vụ tại `http://localhost:8083`, Grafana tại `http://localhost:3017`; cả hai chỉ bind vào `127.0.0.1`. Nginx reverse-proxy `/api/` và `/storage/` tới backend nội bộ, backend không publish port trên host. Prometheus và Loki chỉ truy cập được trên mạng Docker nội bộ.
+Monitoring chạy trên một server riêng bằng `monitoring/docker-compose.yml` (Prometheus, Loki, Grafana; khởi động bằng `sudo bash monitoring/init.sh`). Ứng dụng chạy trực tiếp trên app server: Nginx cài trên host (`nginx/default.conf`) phục vụ frontend từ `/var/www/comic-app`, reverse-proxy `/api/` tới backend `127.0.0.1:5000` (systemd) và chỉ proxy GET/HEAD trên `/storage/` tới bucket public-read của SeaweedFS `127.0.0.1:8333` (một container chạy bằng `storage/seaweedfs/init.sh`). Grafana mặc định ở cổng `3017`; Loki mở cổng `3100` cho agent và phải được firewall chỉ cho IP app server.
 
-Dashboard **Comic App Overview** được provision tự động. Prometheus scrape `/metrics` qua tên service nội bộ `backend`; metric labels dùng Express route template, không dùng URL có ID. Runtime panels mô tả process Node.js (CPU, RSS, heap và event loop), không phải toàn bộ host. Loki nhận `app*.log`, `access*.log` và `audit*.log` qua Alloy; `errors.log` không ingest riêng vì lỗi đã có trong `app.log`. Chỉ `job`, `service_name` và `log_type` là labels cố định để tránh tạo cardinality cao. Không đưa user ID, request ID, IP hoặc resource ID thành labels.
+Dashboard **Comic App Overview** được provision tự động. Prometheus scrape `/metrics` qua listener riêng của Nginx trên app server (`<APP_SERVER_IP>:9464`, có danh sách `allow` IP); metric labels dùng Express route template, không dùng URL có ID. Runtime panels mô tả process Node.js (CPU, RSS, heap và event loop), không phải toàn bộ host. Loki nhận `app*.log`, `access*.log` và `audit*.log` (cùng access log JSON của Nginx, `job=comic-app-nginx`) qua Alloy agent chạy trên app server (`monitoring/agent/`); `errors.log` không ingest riêng vì lỗi đã có trong `app.log`. Chỉ `job`, `service_name` và `log_type` là labels cố định để tránh tạo cardinality cao. Không đưa user ID, request ID, IP hoặc resource ID thành labels.
 
 Prometheus đánh giá các alert target-down, 5xx, p95 latency và process RSS; trạng thái firing xuất hiện trên dashboard. Chưa cấu hình email/Slack/webhook contact point vì chưa có đích nhận cảnh báo; cần thiết lập riêng trước khi dựa vào cảnh báo chủ động.
 
-SQLite và uploads tiếp tục nằm trong `backend/data/` và `backend/storage/` trên host để giữ dữ liệu hiện có; logs của backend nằm trong named volume dùng chung read-only với Alloy, và Winston giữ tối đa 5 file × 10 MiB cho mỗi file transport. Nginx ghi access log JSON ra Docker logs với giới hạn 10 MiB × 5 file. Metrics được lưu 15 ngày (tối đa 2 GiB), Loki 7 ngày; Grafana, Loki, Prometheus và Alloy có volumes riêng. Backup `backend/data/`, `backend/storage/` và các monitoring volumes theo chính sách triển khai. `docker compose down` không xoá dữ liệu; tránh `docker compose down -v` nếu chưa muốn xoá monitoring history.
+Trên production, SQLite nằm trong `/var/lib/comic-app/data/` (`DB_PATH`), ảnh local trong `/var/lib/comic-app/storage/` (`STORAGE_ROOT`) và SeaweedFS lưu object trong `/var/lib/seaweedfs` (bind mount). Database image fields lưu object keys tương đối (`comics/...`, `chapter-images/...`, `avatars/...`, `backgrounds/...`) để không phụ thuộc đường dẫn máy chủ hay domain nhà cung cấp. Logs của backend nằm trong `/var/log/comic-app/` (`LOG_DIR`) và được Alloy đọc read-only; Winston giữ tối đa 5 file × 10 MiB cho mỗi file transport. Nginx ghi access log JSON vào `/var/log/nginx/comic-app.access.log` (dùng logrotate của hệ thống). Metrics được lưu 15 ngày (tối đa 2 GiB), Loki 7 ngày; dữ liệu Prometheus, Loki và Grafana nằm trong `/var/lib/comic-monitoring/` trên server monitoring. Backup `/var/lib/comic-app/` cùng lúc với `/var/lib/seaweedfs/` và các thư mục monitoring theo chính sách triển khai.
 
-Trên Linux, đảm bảo `APP_UID`/`APP_GID` trong `.env` khớp chủ sở hữu `backend/data/` và `backend/storage/`. Backend và Grafana chỉ publish lên localhost theo mặc định; cấu hình reverse proxy/network theo môi trường nếu cần public API.
+Backend chạy dưới user hệ thống `comic`, chỉ có quyền ghi `/var/lib/comic-app` và `/var/log/comic-app` (xem `backend/comic-app-backend.service`), và bind vào `127.0.0.1` (`HOST`) để chỉ truy cập được qua Nginx.

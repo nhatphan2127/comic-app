@@ -57,7 +57,7 @@ export const listComicContributionsOfUser = (userId) =>
     attributes: [
       'comicId', ...CONTRIBUTION_COLUMNS,
       [col('comic.id'), 'id'], [col('comic.name'), 'name'], [col('comic.coverUrl'), 'coverUrl'],
-      [col('comic.url'), 'url'], [col('comic.types'), 'types'], [col('comic.demographic'), 'demographic'],
+      [col('comic.url'), 'url'], [col('comic.types'), 'types'],
       [literal('comic.pendingChanges IS NOT NULL'), 'pendingEdit'],
     ],
     include: [{ model: Comic, as: 'comic', attributes: [], required: true }],

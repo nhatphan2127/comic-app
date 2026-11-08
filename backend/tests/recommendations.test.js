@@ -141,7 +141,7 @@ describe('GET /me/recommendations', () => {
     const x = await liveComic(owner, { genres: ['Romance'] });
     const y = await liveComic(owner, { genres: ['Romance'] });
     // Nothing in common with x and y: only the other readers can bring it up.
-    const z = await liveComic(owner, { genres: ['Horror'], types: 'manhwa', demographic: 'josei' });
+    const z = await liveComic(owner, { genres: ['Horror'], types: 'manhwa' });
     const [a, b, c] = [await createUser(), await createUser(), await createUser()];
     for (const comic of [x, y]) for (const user of [a, b, c]) await follow(user, comic);
     for (const user of [b, c]) await follow(user, z);
@@ -204,7 +204,7 @@ describe('GET /me/recommendations', () => {
 describe('GET /comics/:comicId/similar', () => {
   it('ranks by content similarity, ties to the most viewed, never the comic itself', async () => {
     const owner = await createUser('contributor');
-    const mecha = (genres, overrides = {}) => liveComic(owner, { genres, types: 'manhua', demographic: 'seinen', ...overrides });
+    const mecha = (genres, overrides = {}) => liveComic(owner, { genres, types: 'manhua', ...overrides });
     const source = await mecha(['Mecha', 'Space']);
     const twin = await mecha(['Mecha', 'Space']);
     const popularTwin = await mecha(['Mecha', 'Space']);

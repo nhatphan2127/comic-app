@@ -3,8 +3,8 @@ import { TEXT, INTEGER, primaryId, ref, timestamp, withDefault, required } from 
 
 export const User = sequelize.define('User', {
   id: primaryId,
-  avatar: TEXT,
-  background: TEXT,
+  avatar: TEXT, // Relative storage object key, e.g. avatars/<uuid>.webp
+  background: TEXT, // Relative storage object key, e.g. backgrounds/<uuid>.webp
   displayName: TEXT,
   username: { type: TEXT, allowNull: false, unique: true },
   password: required(TEXT),

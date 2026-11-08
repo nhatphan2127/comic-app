@@ -28,7 +28,7 @@ describe('authorization (broken access control)', () => {
     const res = await api()
       .patch(`/comics/${comic.id}`)
       .set(auth(other))
-      .send({ name: 'hijacked', types: 'manga', demographic: 'shounen', url: comic.url });
+      .send({ name: 'hijacked', types: 'manga', url: comic.url });
     expect(res.status).toBe(403);
   });
 
@@ -39,7 +39,7 @@ describe('authorization (broken access control)', () => {
     const res = await api()
       .patch(`/comics/${comic.id}`)
       .set(auth(owner))
-      .send({ name: 'renamed', types: 'manga', demographic: 'shounen', url: comic.url, genres: ['Action', 'action'] });
+      .send({ name: 'renamed', types: 'manga', url: comic.url, genres: ['Action', 'action'] });
     expect(res.status).toBe(200);
     expect(res.body.data.name).toBe('renamed');
   });

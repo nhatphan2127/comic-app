@@ -31,7 +31,6 @@ export function ComicRow({ contributor, onEdit }: ComicRowProps) {
         <div className={styles.meta}>
           {comic?.types ? <span className="badge badge--brand">{comic.types}</span> : null}
           {comic?.contentRating ? <span className="badge">{comic.contentRating}</span> : null}
-          {comic?.demographic ? <span className={styles.cap}>{comic.demographic}</span> : null}
           {comic?.releasingStatus ? <span className={styles.cap}>{comic.releasingStatus}</span> : null}
           <span>{formatTimeAgo(contributor.updatedAt)}</span>
         </div>

@@ -1,9 +1,9 @@
-// Name-only lookup tables (author, artist, genres, formats).
+// Name-only lookup tables (genres and formats).
 import { v4 as uuidv4 } from 'uuid';
 import { col, fn, where } from 'sequelize';
-import { Artist, Author, Format, Genre } from '../models/index.js';
+import { Format, Genre } from '../models/index.js';
 
-const LOOKUP_MODELS = { author: Author, artist: Artist, genres: Genre, formats: Format };
+const LOOKUP_MODELS = { genres: Genre, formats: Format };
 
 function modelFor(table) {
   const model = LOOKUP_MODELS[table];

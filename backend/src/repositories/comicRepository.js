@@ -1,7 +1,7 @@
 // The `comics` table and its many-to-many links (genres, formats, other names).
 import { Op, col, fn, literal, where } from 'sequelize';
 import { now, sequelize } from '../config/database.js';
-import { Artist, Author, Comic, ComicFormat, ComicGenre, ComicOtherName, Format, Genre } from '../models/index.js';
+import { Comic, ComicFormat, ComicGenre, ComicOtherName, Format, Genre } from '../models/index.js';
 import { READABLE, readableSql } from './visibility.js';
 import { SEP_SQL, likeText } from '../models/searchText.js';
 
@@ -14,7 +14,7 @@ export const findStatusById = async (id) => (await Comic.findByPk(id, { attribut
 
 export const findSummaryById = (id) => Comic.findByPk(id, { attributes: ['id', 'name'], raw: true });
 
-// A non-deleted comic by id or url slug, whatever its review state (publishing API).
+// A non-deleted comic by id or url slug, whatever its review state.
 export const findForPublishing = (key) =>
   Comic.findOne({ attributes: ['id', 'name', 'url', 'status'], where: { ...idOrUrl(key), deletedAt: null }, raw: true });
 
@@ -27,14 +27,9 @@ export const findOtherWithUrl = (url, excludeId) =>
 const findDetail = (whereClause) =>
   Comic.findOne({
     attributes: [
-      'id', 'name', 'description', 'types', 'contentRating', 'demographic', 'rating', 'coverUrl', 'view', 'follow',
+      'id', 'name', 'description', 'types', 'contentRating', 'rating', 'coverUrl', 'view', 'follow',
       'releaseStatus', 'visibility', 'url', 'releasingYear', 'source', 'status', 'pendingChanges',
-      [col('author.name'), 'authorName'],
-      [col('artist.name'), 'artistName'],
-    ],
-    include: [
-      { model: Author, as: 'author', attributes: [] },
-      { model: Artist, as: 'artist', attributes: [] },
+      'author', 'artist',
     ],
     where: whereClause,
     raw: true,
@@ -89,12 +84,11 @@ export const SORTABLE_FIELDS = ['createdAt', 'updatedAt', 'name', 'view', 'follo
 const lowerIn = (column, values) => where(fn('lower', col(column)), { [Op.in]: values });
 
 // `filters` comes from the controller, already validated: q (string), and lower-case lists
-// contentRatings, types, demographics, releaseStatuses, genres, formats. Empty list = no filter.
-function publicWhere({ q, contentRatings = [], types = [], demographics = [], releaseStatuses = [], genres = [], formats = [] } = {}) {
+// contentRatings, types, releaseStatuses, genres, formats. Empty list = no filter.
+function publicWhere({ q, contentRatings = [], types = [], releaseStatuses = [], genres = [], formats = [] } = {}) {
   const conditions = [READABLE];
   if (contentRatings.length) conditions.push(lowerIn('contentRating', contentRatings));
   if (types.length) conditions.push(lowerIn('types', types));
-  if (demographics.length) conditions.push(lowerIn('demographic', demographics));
   if (releaseStatuses.length) conditions.push(lowerIn('releaseStatus', releaseStatuses));
   if (genres.length) {
     const names = genres.map((name) => sequelize.escape(name)).join(', ');
@@ -137,7 +131,7 @@ function publicOrder(sort, q) {
 
 // The columns of a catalogue item (also used by the rankings, see viewRepository).
 export const LIST_COLUMNS = [
-  'id', 'name', 'url', 'coverUrl', 'description', 'types', 'demographic', 'contentRating', 'releaseStatus',
+  'id', 'name', 'url', 'coverUrl', 'description', 'types', 'contentRating', 'releaseStatus',
   'rating', 'view', 'follow', 'createdAt', 'updatedAt',
 ];
 

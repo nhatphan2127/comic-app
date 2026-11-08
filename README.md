@@ -1,6 +1,6 @@
 # Inkverse — A Comic Reading Platform
 
-Inkverse is a website for discovering and reading manga, manhwa, and manhua. Readers can browse titles, read chapters, follow series, rate and discuss comics, and manage their reading history. Contributors publish through Studio or the Publishing API, while moderators and admins manage content through dedicated consoles.
+Inkverse is a website for discovering and reading manga, manhwa, and manhua. Readers can browse titles, read chapters, follow series, rate and discuss comics, and manage their reading history. Contributors publish through Studio, while moderators and admins manage content through dedicated consoles.
 
 ## Web interface
 
@@ -16,8 +16,8 @@ flowchart LR
     Reader["Reader / Contributor / Admin"] --> Web["Frontend<br/>React + TypeScript"]
     Web -->|"REST API /api/v1<br/>session cookie"| API["Backend<br/>Express"]
     API --> DB[("SQLite")]
-    API --> Files["Comic covers and chapter pages<br/>backend/storage/"]
-    Script["Publishing script"] -->|"Publishing API"| API
+    API --> SeaweedFS["SeaweedFS<br/>S3-compatible object storage"]
+    SeaweedFS --> Disk["/var/lib/seaweedfs"]
 ```
 
 | Area | Responsibility | Main technologies |
@@ -29,16 +29,17 @@ flowchart LR
 
 - **Discover and read comics:** home page, search and filters, comic details, chapter reader, rankings, and recommendations.
 - **Reader accounts:** profiles, follows, ratings, comments, reading history, and appearance preferences.
-- **Studio:** contributors manage comics and chapters; moderators review submissions and reports; contributors can publish through the Publishing API.
-- **Admin console:** manage users, content, role requests, comments, and application settings.
+- **Studio:** contributors manage comics and chapters; moderators review submissions and reports.
+- **Admin console:** manage users, content, role requests, comments, application settings, and restore new comics from ZIP backups.
 - **PWA support:** the frontend includes a web app manifest and service worker. API responses are not cached.
 
 ## Request flow
 
-- The frontend uses the versioned REST API at `/api/v1`; interactive API documentation is available at `http://localhost:8083/api/docs` in Docker or `http://localhost:5000/api/docs` during local backend development.
+- The frontend uses the versioned REST API at `/api/v1`; interactive API documentation is available at `http://<your-domain>/api/docs` behind Nginx or `http://localhost:5000/api/docs` during local backend development.
 - Browser sessions use an HttpOnly cookie, which the frontend sends with API requests.
-- The backend stores application data in SQLite and serves uploaded images from `/storage/`.
-- In Docker, Nginx serves the frontend and proxies `/api/` and `/storage/` to the backend on the private Compose network. The frontend uses same-origin requests; local Vite development defaults to `http://localhost:5000`.
+- The backend stores application data in SQLite. Local development uses `backend/storage/`; production uses self-hosted SeaweedFS (a single Docker container) for S3-compatible object storage.
+- Image columns store relative object keys such as `comics/<uuid>.webp` and `chapter-images/<uuid>.jpg`, not host filesystem paths or provider-specific URLs. The frontend resolves those keys through `VITE_STORAGE_URL`; without it, `/storage/` is used.
+- In production, a host-installed Nginx ([`nginx/default.conf`](nginx/default.conf)) serves the frontend build, proxies `/api/` to the backend on `127.0.0.1:5000`, and proxies read-only `/storage/` requests to the public-read SeaweedFS bucket on `127.0.0.1:8333`. SeaweedFS ports are bound to `127.0.0.1` only.
 
 ## Project structure
 
@@ -58,7 +59,7 @@ backend/
 │   ├── services/      # Application logic
 │   └── utils/         # Shared utilities
 ├── data/              # Default SQLite database
-├── storage/           # Uploaded covers and chapter pages
+├── storage/           # Local uploads and migration source/rollback copy
 ├── scripts/           # Sample data and recommendation evaluation
 └── tests/             # API and application tests
 ```
@@ -104,7 +105,7 @@ npm install
 npm run dev
 ```
 
-On first startup, the backend creates or updates the application tables in `backend/data/comic-platform.sqlite`. To recreate the database with empty tables and one admin account, stop the backend, set the admin credentials, and run the setup script in PowerShell:
+On first startup, the backend creates or updates the application tables in `backend/data/comic-platform.sqlite`, but it does not create an admin account automatically. To create one, stop the backend, set the admin credentials (the `ADMIN_*` entries in `backend/.env.example` are the reference), and run the setup script in PowerShell:
 
 ```powershell
 cd backend
@@ -113,7 +114,7 @@ $env:ADMIN_PASSWORD = "choose-a-strong-password"
 node scripts/setupDatabase.js
 ```
 
-The script asks you to type `RESET` before deleting the existing database. Pass `--yes` to confirm non-interactively. It creates all application tables but adds no sample comics or users; only the admin account is created. `ADMIN_USERNAME` defaults to `admin`; `ADMIN_DISPLAY_NAME` defaults to `Administrator`.
+The script asks you to type `RESET` before deleting the existing database. Pass `--yes` to confirm non-interactively. This is a destructive database reset: it creates all application tables and only the admin account, with no sample comics or users. `ADMIN_USERNAME` defaults to `admin`; `ADMIN_DISPLAY_NAME` defaults to `Administrator`. The example environment file does not create the account by itself, and no default password is provided.
 
 ## Tests and build
 
@@ -130,50 +131,162 @@ npm run build
 npm run lint
 ```
 
-## Backend configuration
+## Deployment
 
-The backend reads configuration from environment variables. Development defaults are used when variables are not set.
+Production is split into three independently deployable parts. The frontend, backend, and Nginx run directly on the app server (no Docker); SeaweedFS runs as a single Docker container on the same host; monitoring runs with Docker Compose on a separate server. `scripts/package-deploy.py` builds `deploy-dist/comic-app-deploy.zip` with this layout:
 
-Copy `.env.example` to `.env` for Docker Compose deployments. It lists the backend settings Compose passes through as well as monitoring and host-port settings. Update `CLIENT_ORIGIN` and `APP_URL` to the public frontend origin for production; use `COOKIE_SECURE=true` when serving over HTTPS. Keep SMTP credentials private.
+```text
+comic-app-deploy.zip
+├── app/              → /opt/comic-app on the app server
+│   ├── backend/
+│   ├── frontend/
+│   └── default.conf  (Nginx site config)
+├── object-storage/   → SeaweedFS Dockerfile + init.sh (app server)
+└── monitoring/       → monitoring server (agent/ goes to the app server)
+```
 
-| Variable | Default | Purpose |
+```mermaid
+flowchart LR
+    subgraph App["App server"]
+        Nginx["Nginx :80<br/>default.conf"] -->|/api/| Node["Backend :5000<br/>systemd"]
+        Nginx -->|/storage/ GET| Seaweed["SeaweedFS :8333<br/>docker run"]
+        Node --> Seaweed
+        Alloy["Alloy agent"]
+    end
+    subgraph Mon["Monitoring server"]
+        Prom["Prometheus"] --> Grafana
+        Loki --> Grafana
+    end
+    Prom -->|":9464/metrics"| Nginx
+    Alloy -->|"logs :3100"| Loki
+```
+
+| Path | Server | Contents |
 |---|---|---|
-| `PORT` | `5000` | Backend HTTP port when running outside Compose; Compose keeps the container port at `5000` |
-| `CLIENT_ORIGIN` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed frontend origins, separated by commas |
-| `DB_PATH` | `backend/data/comic-platform.sqlite` locally; `/app/data/comic-platform.sqlite` in Compose | SQLite database path; use `:memory:` for an in-memory database |
-| `STORAGE_ROOT` | `backend/storage` locally; `/app/storage` in Compose | Uploaded image directory |
-| `APP_URL` | `http://localhost:5173` | Frontend URL used in password-reset emails |
-| `COOKIE_SECURE`, `COOKIE_SAMESITE` | `false` for the local HTTP Compose deployment; `lax` | Session-cookie settings; set `COOKIE_SECURE=true` behind HTTPS; use `none` only for a cross-site frontend and HTTPS |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | SMTP disabled; port `587` | Optional email delivery; without `SMTP_HOST`, messages stay in the local outbox |
+| `/opt/comic-app/{backend,frontend,default.conf}` | app | Source code and Nginx site config |
+| `/opt/comic-app/object-storage/seaweedfs` | app | SeaweedFS Dockerfile, `init.sh`, `.env` |
+| `/var/www/comic-app` | app | Frontend build (`frontend/dist`), Nginx document root |
+| `/var/lib/comic-app/data` | app | SQLite database and Admin ZIP restore staging |
+| `/var/lib/comic-app/storage` | app | Local image directory (`STORAGE_ROOT`) |
+| `/var/log/comic-app` | app | Backend logs (`LOG_DIR`), read by the Alloy agent |
+| `/var/log/nginx/comic-app.access.log` | app | Nginx JSON access log |
+| `/var/lib/seaweedfs` | app | SeaweedFS data (bind-mounted to `/data`) |
+| `/var/lib/comic-alloy` | app | Alloy agent position files |
+| `/opt/comic-monitoring` | monitoring | Monitoring configuration (`monitoring/`) |
+| `/var/lib/comic-monitoring/{prometheus,loki,grafana}` | monitoring | Monitoring data |
+
+Back up `/var/lib/comic-app` and `/var/lib/seaweedfs` together; a single SeaweedFS node has no hardware redundancy.
+
+### 1. Object storage (SeaweedFS)
+
+[`storage/seaweedfs/init.sh`](storage/seaweedfs/init.sh) builds the image from [`storage/seaweedfs/Dockerfile`](storage/seaweedfs/Dockerfile) and starts it with `docker run` (no Compose). It binds the master (`9333`), filer (`8888`), and S3 (`8333`) ports to `127.0.0.1`, stores data in `/var/lib/seaweedfs`, creates the `comic-images` bucket, and grants anonymous read-only access to it. Re-running the script rebuilds and recreates the container without touching the data.
+
+```bash
+cd /opt/comic-app/object-storage/seaweedfs
+cp .env.example .env          # strong AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+sudo bash init.sh             # override with e.g. DATA_DIR=/mnt/data/seaweedfs
+```
+
+### 2. Backend
+
+Requirements: Node.js **22.12+**.
+
+```bash
+sudo useradd --system --home /opt/comic-app --shell /usr/sbin/nologin comic
+sudo mkdir -p /var/lib/comic-app/data /var/lib/comic-app/storage /var/log/comic-app
+sudo chown -R comic:comic /var/lib/comic-app /var/log/comic-app
+
+cd /opt/comic-app/backend
+npm ci --omit=dev
+cp .env.example .env          # same S3 credentials as SeaweedFS; set CLIENT_ORIGIN, APP_URL, STORAGE_PUBLIC_URL
+sudo chown root:comic .env && sudo chmod 640 .env
+
+# One-time: create tables and the admin account (destructive reset; asks you to type RESET)
+sudo -u comic ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='choose-a-strong-password' \
+  node --env-file=.env scripts/setupDatabase.js
+
+sudo cp comic-app-backend.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now comic-app-backend
+```
+
+The backend listens on `HOST=127.0.0.1`, so it is reachable only through Nginx.
+
+### 3. Frontend and Nginx
+
+```bash
+cd /opt/comic-app/frontend
+echo "VITE_API_ORIGIN=/" > .env
+npm ci && npm run build
+sudo mkdir -p /var/www/comic-app && sudo rsync -a --delete dist/ /var/www/comic-app/
+
+sudo cp /opt/comic-app/default.conf /etc/nginx/conf.d/default.conf
+sudo rm -f /etc/nginx/sites-enabled/default      # Debian/Ubuntu
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Nginx also listens on `9464` for `/metrics`; add the monitoring server IP to the `allow` list in that server block and open the port in the firewall only for that IP. For HTTPS, add TLS to the main server block and set `COOKIE_SECURE=true`.
+
+### Backend configuration
+
+All backend settings live in `backend/.env` (loaded by systemd `EnvironmentFile`, or `node --env-file=.env` for scripts). Keep every `.env` private.
+
+| Variable | Production value | Purpose |
+|---|---|---|
+| `NODE_ENV` | `production` | Runtime mode |
+| `HOST`, `PORT` | `127.0.0.1`, `5000` | Listen address and port; unset `HOST` listens on all interfaces |
+| `CLIENT_ORIGIN` | `http://your-domain.example` | Allowed frontend origins, separated by commas |
+| `APP_URL` | `http://your-domain.example` | Frontend URL used in password-reset emails |
+| `DB_PATH` | `/var/lib/comic-app/data/comic-platform.sqlite` | SQLite database path (`backend/data/...` locally) |
+| `STORAGE_ROOT` | `/var/lib/comic-app/storage` | Local image directory (`backend/storage` locally) |
+| `ADMIN_IMPORT_STAGING_DIR` | `/var/lib/comic-app/data/admin-import-staging` | Private staging for Admin ZIP restore |
+| `LOG_DIR` | `/var/log/comic-app` | Backend log directory (`backend/logs` locally) |
+| `STORAGE_DRIVER` | `s3` | `local` or `s3` |
+| `STORAGE_ENDPOINT` | `http://127.0.0.1:8333` | SeaweedFS S3 API |
+| `STORAGE_REGION` | `us-east-1` | S3 signing region |
+| `STORAGE_BUCKET` | `comic-images` | Bucket name; keep in sync with the Nginx `/storage/` route and `init.sh` |
+| `STORAGE_PUBLIC_URL` | `http://your-domain.example/storage` | Public base URL for stored images |
+| `STORAGE_FORCE_PATH_STYLE` | `true` | Use path-style S3 requests |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | must match `storage/seaweedfs/.env` | S3 credentials |
+| `COOKIE_SECURE`, `COOKIE_SAMESITE` | `false` over HTTP, `true` over HTTPS; `lax` | Session-cookie settings |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | SMTP disabled; port `587` | Optional email delivery |
 | `LOG_LEVEL` | `info` | Minimum backend log level |
 | `REQUEST_TIMEOUT_MS` | `1800000` | Maximum request duration in milliseconds |
-| `AUTH_RATE_LIMIT`, `COMIC_CREATE_RATE_LIMIT`, `SUGGEST_RATE_LIMIT` | `20`, `10`, `60` | Limits for authentication attempts, comic creation per hour, and suggestions per minute |
-| `PUBLISH_BAD_KEY_LIMIT`, `PUBLISH_RATE_LIMIT`, `PUBLISH_BULK_RATE_LIMIT` | `20`, `60`, `10` | Publishing API limits for invalid keys, uploads, and bulk imports |
-| `BULK_MAX_ARCHIVE_MB`, `BULK_MAX_ENTRIES`, `BULK_MAX_UNCOMPRESSED_MB` | `2048`, `20000`, `4096` | Bulk-import archive size and expansion limits |
-| `NGINX_BIND_ADDRESS`, `NGINX_PORT` | `127.0.0.1`, `8083` | Host address and port for the Compose frontend/reverse proxy |
-| `VITE_API_ORIGIN` | `/` | Frontend API origin at build time; `/` uses same-origin Nginx proxying |
-| `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`, `GRAFANA_PORT` | `admin`, required, `3017` | Grafana login and host port; set a strong password |
-| `APP_UID`, `APP_GID` | `1000`, `1000` | Linux host ownership IDs for mounted backend data and storage |
+| `AUTH_RATE_LIMIT`, `COMIC_CREATE_RATE_LIMIT`, `SUGGEST_RATE_LIMIT` | `20`, `10`, `60` | Rate limits |
+| `ADMIN_IMPORT_MAX_ENTRIES`, `ADMIN_IMPORT_MAX_UNCOMPRESSED_MB`, `ADMIN_IMPORT_SESSION_TTL_HOURS` | `20000`, `4096`, `12` | Admin ZIP restore limits |
+| `VITE_API_ORIGIN`, `VITE_STORAGE_URL` | `/`, unset | Frontend build-time settings in `frontend/.env` |
 
-`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_USERNAME`, and `ADMIN_DISPLAY_NAME` are used only by `backend/scripts/setupDatabase.js` when creating the initial admin account. Set them in the shell before running that script; they are not Compose runtime settings.
+`ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_USERNAME`, and `ADMIN_DISPLAY_NAME` are used only by `backend/scripts/setupDatabase.js`.
 
 ## Monitoring stack
 
-The root Docker Compose file builds the frontend into an Nginx image and runs it with the backend, Prometheus, Grafana Alloy, Loki, and Grafana. Copy `.env.example` to `.env`, set a strong `GRAFANA_ADMIN_PASSWORD`, then start the stack:
+Monitoring runs on its own server with [`monitoring/docker-compose.yml`](monitoring/docker-compose.yml): Prometheus scrapes the backend through Nginx on `<app-server>:9464/metrics`, Loki stores logs, and Grafana provisions the **Comic App Overview** dashboard. Data is bind-mounted under `/var/lib/comic-monitoring`.
 
 ```bash
-docker compose up --build -d
+# Monitoring server
+cd /opt/comic-monitoring
+cp .env.example .env
+cp grafana/.env.example grafana/.env        # strong GF_SECURITY_ADMIN_PASSWORD
+sed -i 's/APP_SERVER_IP/10.0.0.10/' prometheus/prometheus.yml
+sudo bash init.sh                           # creates data dirs with the right owners, then compose up
 ```
 
-Open the application at `http://localhost:8083` and Grafana at `http://localhost:3017`; sign in with the configured Grafana admin credentials. Nginx serves the SPA and reverse-proxies API and uploaded-file requests to the backend, which is not published to the host. Its JSON access logs are available through `docker compose logs nginx` and Docker's rotating local log driver. The provisioned **Comic App Overview** dashboard combines Prometheus request/Node.js process metrics with backend application, access, and audit logs from Loki. The SQLite database and uploaded files run in Docker; `backend/data/` and `backend/storage/` remain bind-mounted so existing local data is preserved. Prometheus, Loki, Grafana, and Alloy data use named volumes.
+Logs are written on the app server, so the Grafana Alloy agent in [`monitoring/agent/`](monitoring/agent/) runs there and pushes backend and Nginx logs to Loki:
 
-Prometheus and Loki are private to the Compose network; Nginx and Grafana bind to localhost by default. The default host ports `8083` and `3017` avoid common existing services on ports `80` and `3000`; override `NGINX_PORT` or `GRAFANA_PORT` if needed. For remote access, put a TLS-enabled reverse proxy with authentication in front of Nginx and set `APP_URL`, `CLIENT_ORIGIN`, and `COOKIE_SECURE=true` for the public origin. See [backend logging and monitoring conventions](backend/docs/api-conventions.md#8-logging) for retention, labels, permissions, and backup notes.
+```bash
+# App server
+cd /opt/comic-app/monitoring-agent          # copy of monitoring/agent
+cp .env.example .env                        # LOKI_URL=http://<monitoring-server>:3100/loki/api/v1/push
+sudo mkdir -p /var/lib/comic-alloy
+docker compose up -d
+```
+
+Loki has no authentication: allow port `3100` on the monitoring server only from the app server IP. Grafana listens on `3017` behind its admin login. See [backend logging and monitoring conventions](backend/docs/api-conventions.md#8-logging) for retention, labels, and backup notes.
 
 ## Related documentation
 
 - [Frontend README](frontend/README.md) — routes, PWA behavior, and frontend conventions.
 - [API conventions](backend/docs/api-conventions.md) — authentication, versioning, HTTP status codes, and REST conventions.
 - [Sequelize guide](backend/docs/orm-sequelize.md) — models, queries, and transactions.
-- [Publishing API](backend/docs/publishing-api.md) — publish comics and chapters with scripts or bulk import.
+- [Admin ZIP restore](backend/docs/admin-zip-import.md) documents the backup format and all-or-nothing workflow. The browser uploads individual images to private server staging, not the ZIP through Nginx; final objects are written only at commit.
 - [OpenAPI source](backend/src/docs/openapi.yaml) — API specification.
 - Swagger UI when the backend is running: <http://localhost:5000/api/docs>.

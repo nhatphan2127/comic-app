@@ -12,6 +12,16 @@ const username = process.env.ADMIN_USERNAME || 'admin';
 const email = process.env.ADMIN_EMAIL;
 const password = process.env.ADMIN_PASSWORD;
 const displayName = process.env.ADMIN_DISPLAY_NAME || 'Administrator';
+const GENRES = [
+  'Action', 'Adult', 'Adventure', 'Boys Love', 'Comedy', 'Crime', 'Drama', 'Ecchi', 'Fantasy',
+  'Girls Love', 'Harem', 'Hentai', 'Historical', 'Horror', 'Isekai', 'Magical Girls', 'Mature',
+  'Mecha', 'Medical', 'Mystery', 'Philosophical', 'Psychological', 'Romance', 'Sci-Fi',
+  'Slice of Life', 'Smut', 'Sports', 'Superhero', 'Thriller', 'Tragedy', 'Wuxia',
+];
+const FORMATS = [
+  '4-Koma', 'Adaptation', 'Anthology', 'Award Winning', 'Doujinshi', 'Full Color', 'Long Strip',
+  'Oneshot', 'Web Comic',
+];
 
 function validateAdmin() {
   if (!/^[A-Za-z0-9_.-]{3,32}$/.test(username)) {
@@ -71,7 +81,7 @@ async function setupDatabase() {
   await removeDatabaseFile(`${databasePath}-shm`);
   await removeDatabaseFile(`${databasePath}-journal`);
 
-  const { sequelize, User, UserPreference } = await import('../src/models/index.js');
+  const { sequelize, User, UserPreference, Genre, Format } = await import('../src/models/index.js');
   try {
     const { hashPassword } = await import('../src/services/authService.js');
     const id = uuidv4();
@@ -87,8 +97,10 @@ async function setupDatabase() {
         isBanned: 0,
       });
       await UserPreference.create({ userId: id, theme: 'main', filter: 1 });
+      await Genre.bulkCreate(GENRES.map((name) => ({ id: uuidv4(), name })));
+      await Format.bulkCreate(FORMATS.map((name) => ({ id: uuidv4(), name })));
     });
-    console.log(`Database created with empty tables and admin account "${username}".`);
+    console.log(`Database created with base genres, formats, and admin account "${username}".`);
     await sequelize.close();
   } catch (error) {
     await sequelize.close();

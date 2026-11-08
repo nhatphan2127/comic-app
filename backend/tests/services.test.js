@@ -13,7 +13,7 @@ async function seedUserAndComic() {
   const comicId = randomUUID();
   await User.create({ id: userId, username: `u-${userId}`, password: 'x' });
   await Comic.create({
-    id: comicId, name: 'c', types: 'manga', contentRating: 'safe', demographic: 'shounen', releaseStatus: 'releasing', url: `c-${comicId}`,
+    id: comicId, name: 'c', types: 'manga', contentRating: 'safe', releaseStatus: 'releasing', url: `c-${comicId}`,
     status: 'accept',
   });
   return { userId, comicId };

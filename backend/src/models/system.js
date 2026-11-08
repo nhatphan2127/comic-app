@@ -58,27 +58,18 @@ export const RoleRequest = sequelize.define('RoleRequest', {
   ],
 });
 
-// Personal access keys for the publishing API (scripts uploading comics and chapters).
-// Only a SHA-256 hash of the key is stored; `prefix` is the public part used to find the row.
-export const ApiKey = sequelize.define('ApiKey', {
+export const AdminImportBatch = sequelize.define('AdminImportBatch', {
   id: primaryId,
-  userId: ref('users'),
-  name: required(TEXT),
-  prefix: { type: TEXT, allowNull: false, unique: true },
-  tokenHash: required(TEXT),
-  scopes: required(TEXT), // JSON array, e.g. ["comics:write","chapters:write"]
-  expiresAt: required(TEXT), // ISO date
-  lastUsedAt: TEXT,
-  lastUsedIp: TEXT,
-  revokedAt: TEXT,
+  adminId: ref('users'),
+  result: required(TEXT),
   createdAt: timestamp(),
-}, { tableName: 'api_keys', indexes: [{ name: 'idx_api_keys_user', fields: ['userId'] }] });
+}, { tableName: 'admin_import_batches' });
 
 // Not used by the API yet; kept so the schema stays complete.
 export const EditRequest = sequelize.define('EditRequest', {
   id: primaryId,
   userId: ref('users'),
-  targetType: required(TEXT), // comic, chapter, author, artist
+  targetType: required(TEXT), // comic, chapter
   targetId: required(TEXT),
   proposedChanges: required(TEXT), // JSON
   status: withDefault(TEXT, 'pending'), // pending, approved, rejected

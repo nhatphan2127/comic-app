@@ -1,7 +1,7 @@
 // CSRF protection for the cookie session: the browser attaches the cookie to requests from any site,
 // so a state-changing request must come from a page we trust (OWASP "verify origin with standard headers").
 // SameSite=Lax on the cookie is a second layer. Requests without a cookie and without an Origin
-// (curl, scripts, API keys) carry no ambient credentials and pass.
+// (for example, command-line clients) carry no ambient credentials and pass.
 import { readSessionCookie } from '../utils/sessionCookie.js';
 import { ForbiddenError } from '../errors.js';
 

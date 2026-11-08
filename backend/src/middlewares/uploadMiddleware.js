@@ -1,10 +1,11 @@
 import multer from 'multer';
-import path from 'node:path';
 import fs from 'node:fs';
-import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { UnsupportedMediaTypeError } from '../errors.js';
+import { avatarsFolder, backgroundsFolder, chapterImagesFolder, comicsFolder, storageRoot } from '../config/storage.js';
+import { logger } from '../config/logger.js';
+import { removeStoredFiles } from '../utils/storedFiles.js';
+import { STORAGE_DRIVER, uploadStorageFile } from '../services/objectStorageService.js';
 
 // SVG is intentionally excluded: it can carry scripts and is served from our own origin.
 export const ALLOWED_IMAGE_TYPES = {
@@ -14,29 +15,17 @@ export const ALLOWED_IMAGE_TYPES = {
   'image/gif': '.gif',
 };
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const storageRoot = process.env.STORAGE_ROOT || path.join(__dirname, '..', '..', 'storage');
-export const comicsFolder = path.join(storageRoot, 'comics');
-export const chapterImagesFolder = path.join(storageRoot, 'chapter-images');
-const userAvatarsFolder = path.join(storageRoot, 'avatars');
-const userBackgroundsFolder = path.join(storageRoot, 'backgrounds');
-
-[comicsFolder, chapterImagesFolder, userAvatarsFolder, userBackgroundsFolder].forEach((folder) => {
-  if (!fs.existsSync(folder)) {
-    fs.mkdirSync(folder, { recursive: true });
-  }
-});
+export { chapterImagesFolder, comicsFolder, storageRoot };
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
     let folder;
-    // 'coverImage' from the Studio form, 'cover' from the publishing API.
-    if (file.fieldname === 'coverImage' || file.fieldname === 'cover') {
+    if (file.fieldname === 'coverImage') {
       folder = comicsFolder;
     } else if (file.fieldname === 'avatar') {
-      folder = userAvatarsFolder;
+      folder = avatarsFolder;
     } else if (file.fieldname === 'background') {
-      folder = userBackgroundsFolder;
+      folder = backgroundsFolder;
     } else {
       folder = chapterImagesFolder;
     }
@@ -64,9 +53,44 @@ export function cleanupUploadsOnFailure(req, res, next) {
       ...(req.file ? [req.file] : []),
       ...(Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat()),
     ];
-    files.forEach((file) => fs.unlink(file.path, () => {}));
+    Promise.all([
+      removeStoredFiles(files.map((file) => file.storageKey).filter(Boolean)),
+      ...files.map((file) => fs.promises.unlink(file.path).catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+      })),
+    ]).catch((error) => logger.error('Failed to clean up rejected uploads', { error: error.message }));
   });
   next();
+}
+
+function objectFolder(fieldname) {
+  if (fieldname === 'coverImage') return 'comics';
+  if (fieldname === 'avatar') return 'avatars';
+  if (fieldname === 'background') return 'backgrounds';
+  return 'chapter-images';
+}
+
+export async function persistUploadedFiles(req, res, next) {
+  const files = [
+    ...(req.file ? [req.file] : []),
+    ...(Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat()),
+  ];
+  if (STORAGE_DRIVER === 'local' || files.length === 0) return next();
+
+  const uploadedKeys = [];
+  try {
+    for (const file of files) {
+      const key = `${objectFolder(file.fieldname)}/${file.filename}`;
+      await uploadStorageFile(key, file.path, file.mimetype);
+      file.storageKey = key;
+      uploadedKeys.push(key);
+      await fs.promises.unlink(file.path);
+    }
+    next();
+  } catch (error) {
+    await removeStoredFiles(uploadedKeys);
+    next(error);
+  }
 }
 
 const upload = multer({
@@ -78,25 +102,3 @@ const upload = multer({
   },
 });
 export default upload;
-
-// Zip archives for POST /publish/bulk. They go to the OS temp folder (never under /storage, so they
-// are never served) and the controller deletes them once the import is done, whatever the outcome.
-const archiveFolder = path.join(os.tmpdir(), 'comic-platform-bulk');
-fs.mkdirSync(archiveFolder, { recursive: true });
-const ZIP_TYPES = ['application/zip', 'application/x-zip-compressed', 'application/octet-stream'];
-
-export const BULK_MAX_ARCHIVE_MB = Number(process.env.BULK_MAX_ARCHIVE_MB) || 2048;
-
-export const archiveUpload = multer({
-  storage: multer.diskStorage({
-    destination: archiveFolder,
-    filename: (req, file, cb) => cb(null, `${randomUUID()}.zip`),
-  }),
-  fileFilter(req, file, cb) {
-    if (!ZIP_TYPES.includes(file.mimetype) && path.extname(file.originalname).toLowerCase() !== '.zip') {
-      return cb(new UnsupportedMediaTypeError('"archive" must be a .zip file'));
-    }
-    cb(null, true);
-  },
-  limits: { fileSize: BULK_MAX_ARCHIVE_MB * 1024 * 1024, files: 1 },
-});

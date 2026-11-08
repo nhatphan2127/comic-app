@@ -2,6 +2,7 @@ node_modules/
 backend/data
 backend/scripts/*
 !backend/scripts/setupDatabase.js
+!backend/scripts/migrateLocalStorageToObjectStorage.js
 backend/instruction.md
 backend/storage
 backend/logs
@@ -15,3 +16,6 @@ backend/node_modules
 FEATURES-PLAN.md
 plan.md
 TECHNIQUES.md
+
+# Deployment bundle produced by scripts/package-deploy.py
+deploy-dist/

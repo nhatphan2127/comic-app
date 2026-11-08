@@ -1,10 +1,11 @@
 // src/services/api.ts
-import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, ApiKey, ApiKeyScope, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, BlockedUser, UserComment, RankingPeriod } from '../types/types';
+import type { Comment, Comic, UserFollowingCategory, UserProfile, FollowingComic, HistoryItem, Notification, ComicContributor, ChapterContributor, Chapter, DashboardResponse, AdminUser, RoleRequest, RoleRequestState, RoleRequestListItem, RoleRequestStatus, Report, ReportStatus, ReportTargetType, UserRole, Preferences, PublicProfile, BlockedUser, UserComment, RankingPeriod } from '../types/types';
 
 export const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN || 'http://localhost:5000').replace(/\/+$/, '');
 // Versioned REST API (see backend/docs/api-conventions.md). Interactive docs: http://localhost:5000/api/docs
 export const API_BASE_URL = `${API_ORIGIN}/api/v1`;
-export const API_UPLOADS = `${API_ORIGIN}/storage/`;
+const storageOrigin = (import.meta.env.VITE_STORAGE_URL || `${API_ORIGIN}/storage`).replace(/\/+$/, '');
+export const API_UPLOADS = `${storageOrigin}/`;
 export type ContentFilter = 'Safe' | 'Suggestive' | 'Erotica' | 'Pornographic';
 export const CONTENT_FILTER_STORAGE_KEY = 'comic-content-filter';
 export const DEFAULT_CONTENT_FILTER: ContentFilter = 'Suggestive';
@@ -19,24 +20,42 @@ export interface ComicSearchResult {
   latestChapter?: number | null;
 }
 
-export interface UploadableComic {
-  id: string;
-  name: string;
-  url: string;
-  coverUrl: string | null;
-  types: string;
-  status: 'pending' | 'accept' | 'reject';
-  visibility: 'public' | 'hidden';
-  /** Highest chapter number already taken, pending chapters included. */
-  latestChapter: number | null;
-  mine: boolean;
+export interface AdminImportManifest {
+  comics: Array<{
+    key: string;
+    data: Record<string, unknown>;
+    comicJsonBytes: number;
+    cover: { name: string; size: number };
+    chapters: Array<{
+      number: number;
+      title?: string;
+      folder: string;
+      pages: Array<{ name: string; size: number }>;
+    }>;
+  }>;
+}
+
+export interface AdminImportResult {
+  summary: { comics: number; chapters: number; pages: number };
+  comics: Array<{
+    id: string;
+    url: string;
+    name: string;
+    status: 'pending' | 'accept';
+    chapters: Array<{
+      id: string;
+      chapterNumber: number;
+      title: string;
+      pages: number;
+      status: 'pending' | 'accept';
+    }>;
+  }>;
 }
 
 export interface BrowseFilters {
   q?: string;
   type?: string;
   formats?: string[];
-  demographic?: string;
   releaseStatus?: string;
   genres?: string[];
   sort?: string;
@@ -213,7 +232,6 @@ export const comicApi = {
       `/comics${query({
         q: filters.q,
         type: filters.type,
-        demographic: filters.demographic,
         releaseStatus: filters.releaseStatus,
         genre: filters.genres?.join(','),
         format: filters.formats?.join(','),
@@ -230,7 +248,7 @@ export const comicApi = {
   suggest: (q: string, signal?: AbortSignal, contentFilter?: ContentFilter | string) =>
     request<ComicSearchResult[]>(`/comics/suggest${query({ q, contentRating: contentRatingParam(contentFilter) })}`, { signal }),
 
-  // use MangaDetailLayout.tsx: closest in genres / formats / demographic / type, not personalised
+  // use MangaDetailLayout.tsx: closest in genres / formats / type, not personalised
   getSimilar: (urlOrId: string, limit = 12, contentFilter?: ContentFilter | string) =>
     request<Comic[]>(`/comics/${urlOrId}/similar${query({ limit, contentRating: contentRatingParam(contentFilter) })}`),
 
@@ -544,21 +562,6 @@ export const roleRequestApi = {
   cancel: () => request<void>('/me/role-request', { method: 'DELETE' }),
 };
 
-// Keys for the publishing API (Studio → API keys).
-export const apiKeyApi = {
-  list: () => request<ApiKey[]>('/me/api-keys'),
-
-  /** The response's `token` is the full key; the server never shows it again. */
-  create: (body: { name: string; password: string; scopes: ApiKeyScope[]; expiresInDays: number }) =>
-    request<ApiKey>('/me/api-keys', { method: 'POST', body: JSON.stringify(body) }),
-
-  revoke: (keyId: string) => request<void>(`/me/api-keys/${keyId}`, { method: 'DELETE' }),
-
-  /** Comics the user's keys can add chapters to: approved ones plus the unreviewed ones they contribute to. */
-  listUploadableComics: (params: { q?: string; page?: number; pageSize?: number }) =>
-    requestPage<UploadableComic>(`/me/uploadable-comics${query(params)}`),
-};
-
 export interface PageParams {
   page?: number;
   pageSize?: number;
@@ -568,6 +571,37 @@ export const adminApi = {
   getDashboard: () => request<DashboardResponse>('/admin/dashboard'),
 
   getSettings: () => request<{ autoAccept: boolean }>('/admin/settings'),
+
+  beginImport: (manifest: AdminImportManifest) =>
+    request<{ id: string; totalComics: number; totalChapters: number; totalItems: number; totalBytes: number; warnings?: string[] }>('/admin/imports', {
+      method: 'POST',
+      body: JSON.stringify(manifest),
+    }),
+
+  getImportStatus: (importId: string, signal?: AbortSignal) =>
+    request<
+      | { status: 'complete'; result: AdminImportResult }
+      | { status: 'receiving' | 'committing' | 'cleanup_pending'; totalItems: number; uploadedItems: number; uploadedItemIds: string[] }
+    >(`/admin/imports/${importId}`, { signal }),
+
+  uploadImportFile: (importId: string, fileId: string, file: File, signal?: AbortSignal) => {
+    const body = new FormData();
+    body.append('file', file, file.name);
+    return multipartRequest<{ fileId: string; uploadedItems: number; totalItems: number }>(
+      `/admin/imports/${importId}/files/${fileId}`,
+      body,
+      { method: 'POST', signal },
+    );
+  },
+
+  /** autoApprove: publish everything at once (true) or send it to the review queue (false). */
+  commitImport: (importId: string, options: { autoApprove?: boolean } = {}) =>
+    request<AdminImportResult>(`/admin/imports/${importId}/commit`, {
+      method: 'POST',
+      body: JSON.stringify(options),
+    }),
+
+  abortImport: (importId: string) => request<void>(`/admin/imports/${importId}`, { method: 'DELETE' }),
 
   listUsers: (params: PageParams & { q?: string; role?: UserRole | ''; isBanned?: boolean }) =>
     requestPage<AdminUser>(`/admin/users${query({ ...params, isBanned: params.isBanned === undefined ? undefined : String(params.isBanned) })}`, {

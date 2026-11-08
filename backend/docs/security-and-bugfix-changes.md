@@ -30,7 +30,7 @@ Tài liệu gồm hai phần:
 | Chống **CSRF** | Request ghi dữ liệu có cookie phải đến từ origin tin cậy (header `Origin`, dự phòng `Referer`), theo khuyến nghị OWASP "verify origin with standard headers" | `middlewares/csrfMiddleware.js` |
 | Ban có hiệu lực ngay | Người bị ban không đăng nhập được (`403`), và mọi phiên cũ bị từ chối ở request kế tiếp | `authService.login`, `repositories/sessionRepository.js` |
 | Đổi mật khẩu | Phải nhập đúng mật khẩu hiện tại; mọi phiên **khác** bị đăng xuất | `services/userService.js` |
-| Quên mật khẩu | Token ngẫu nhiên 256 bit, chỉ lưu SHA-256, hết hạn sau 30 phút, dùng một lần. Luôn trả `204` dù email có tồn tại hay không (không dò được tài khoản). Đặt lại xong thì đăng xuất mọi nơi và thu hồi mọi API key | `authService.requestPasswordReset`, `resetPassword` |
+| Quên mật khẩu | Token ngẫu nhiên 256 bit, chỉ lưu SHA-256, hết hạn sau 30 phút, dùng một lần. Luôn trả `204` dù email có tồn tại hay không (không dò được tài khoản). Đặt lại xong thì đăng xuất mọi nơi | `authService.requestPasswordReset`, `resetPassword` |
 | Rate limit đăng nhập | 20 lần / 15 phút / IP cho login, register, password reset | `app.js` |
 
 ### A2. Phân quyền
@@ -50,11 +50,11 @@ Role hợp lệ: `user`, `contributor`, `moderator`, `admin`. Admin không tự 
 |---|---|
 | Whitelist MIME | Chỉ JPEG, PNG, WEBP, GIF. **Không SVG** (SVG chứa được script và được phục vụ từ chính origin của API → stored XSS) |
 | Tên file do server đặt | `randomUUID()` + đuôi suy ra từ MIME đã kiểm tra, không bao giờ lấy tên/đuôi client gửi |
-| Kiểm tra magic bytes | Publishing API đọc 12 byte đầu của mỗi file và so với loại khai báo (`middlewares/imageSignatureMiddleware.js`) |
-| Giới hạn | 10 MB / ảnh; 50 trang / chapter (Studio), 100 trang (API); vượt → `413` |
+| Kiểm tra magic bytes | Upload Studio và Admin ZIP restore đọc 12 byte đầu của mỗi file và so với loại khai báo (`middlewares/imageSignatureMiddleware.js`) |
+| Giới hạn | 10 MB / ảnh; 50 trang / chapter (Studio), 100 trang / chapter (Admin ZIP restore); vượt → `413` |
 | Dọn file khi request lỗi | Multer ghi file trước khi controller chạy; nếu response ≥ 400 thì file bị xoá (`cleanupUploadsOnFailure`) |
 | Đường dẫn cố định | `storage/` tính từ vị trí file code (hoặc `STORAGE_ROOT`), không phụ thuộc thư mục chạy lệnh; `express.static` với `dotfiles: 'deny'` |
-| Zip nhập hàng loạt | Lưu ở thư mục tạm của OS, kiểm tra số entry, dung lượng, đường dẫn (`..`, tuyệt đối) trước khi giải nén |
+| ZIP restore | Giải nén ở trình duyệt; server nhận từng ảnh vào staging riêng, kiểm tra metadata, magic bytes, số entry, dung lượng và đường dẫn trước khi commit |
 
 ### A4. HTTP và lỗi
 
@@ -66,7 +66,7 @@ Role hợp lệ: `user`, `contributor`, `moderator`, `admin`. Admin không tự 
 | Giới hạn body | JSON / urlencoded tối đa 1 MB | `app.js` |
 | Không lộ lỗi nội bộ | Lỗi ≥ 500 chỉ ghi log, client nhận `"Internal server error"`; định dạng RFC 9457 | `middlewares/errorMiddleware.js` |
 | SQL injection | Mọi giá trị đi qua Sequelize hoặc placeholder `?`; tên bảng/cột ghép vào SQL chỉ lấy từ bảng tra cố định trong code; `sort` chỉ nhận field trong whitelist | `config/database.js`, `utils/listQuery.js` |
-| Rate limit khác | Gợi ý tìm kiếm 60 / phút / IP; tạo truyện 10 / giờ / tài khoản; publishing API (xem [publishing-api.md](publishing-api.md)) | `routes/comicRoutes.js`, `middlewares/rateLimitMiddleware.js` |
+| Rate limit khác | Gợi ý tìm kiếm 60 / phút / IP; tạo truyện 10 / giờ / tài khoản | `routes/comicRoutes.js`, `middlewares/rateLimitMiddleware.js` |
 
 ### A5. Toàn vẹn dữ liệu
 
@@ -101,7 +101,7 @@ Mức độ: 🔴 nghiêm trọng · 🟠 trung bình · 🟡 lỗi logic.
 | 15 | 🟡 | Cột `read_history.scrollPosition` **thiếu trong schema** → DB mới lỗi 500 khi đọc chapter | Khai báo trong model | `models/interaction.js` | — |
 | 16 | 🟡 | **Khoá ngoại không có hiệu lực** (SQLite cần `PRAGMA foreign_keys = ON`). Bật lên thì lộ ra 3 chỗ hỏng: xoá cứng comment có reply, xoá category còn được tham chiếu, script seed xoá sai thứ tự | Bật pragma; xoá comment thành xoá mềm; sửa thứ tự xoá trong seed | `config/database.js` (Sequelize), `repositories/commentRepository.js` | `comments.test.js` (force-delete) |
 | 17 | 🟡 | **Không có transaction** cho thao tác nhiều bước (tạo truyện 5+ câu lệnh, duyệt bài sửa 2 bảng) | `withTransaction` xếp hàng, `BEGIN IMMEDIATE`; nay chạy trên Sequelize + `AsyncLocalStorage` | `config/database.js` | `services.test.js` (rollback) |
-| 18 | 🟡 | **File upload bị từ chối vẫn nằm lại** trong `storage/` | Xoá file khi response ≥ 400 | `uploadMiddleware.cleanupUploadsOnFailure` | `comics.test.js` (failed edit), `bulkImport.test.js` |
+| 18 | 🟡 | **File upload bị từ chối vẫn nằm lại** trong `storage/` | Xoá file khi response ≥ 400 | `uploadMiddleware.cleanupUploadsOnFailure` | `comics.test.js` (failed edit), `adminImport.test.js` |
 | 19 | 🟡 | Endpoint contributor của `/chapters/...` **không được mount**, frontend nhận 404 | Mount router `/chapters` | `routes/comicRoutes.js` (`chapterRouter`) | `comics.test.js` (contributor review routes) |
 | 20 | 🟡 | Đổi username sang tên đã có → **500** (vi phạm `UNIQUE`) | Kiểm tra trước, trả `409` | `services/userService.js` | — (`auth.test.js` chỉ kiểm tra trùng khi đăng ký) |
 
@@ -119,8 +119,7 @@ chạy bằng `npm test`.
 | Bỏ track `comic-platform.sqlite` và `storage/` khỏi git | ✅ Đã làm (`.gitignore`) |
 | Gộp code comment truyện/chapter, chỉ giữ `/api/v1`, có test | ✅ Đã làm (xem [instruction.md](../instruction.md)) |
 | Avatar/ảnh nền upload bằng multipart (`PUT /me/avatar`, `/me/background`) | ✅ Có endpoint. `PATCH /me` vẫn nhận `avatar` dạng chuỗi, nên giới hạn JSON vẫn để 1 MB |
-| Kiểm tra magic bytes cho upload từ **Studio** và avatar (hiện chỉ publishing API kiểm tra) | ⬜ Chưa. Rủi ro thấp: đuôi file luôn là đuôi ảnh và có `nosniff`, nhưng nên dùng chung `verifyImageSignatures` |
-| Header `WWW-Authenticate: Bearer` trên mọi `401` | ⬜ Chỉ đúng với `/publish` (API key); các route khác dùng cookie |
+| Kiểm tra magic bytes cho upload từ **Studio** và Admin ZIP restore | ✅ Đã dùng chung `detectImageType` trước khi lưu |
 
 ## Khi triển khai
 

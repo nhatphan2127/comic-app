@@ -1,7 +1,6 @@
 // Comic metadata vocabularies shared by forms, filters and moderation views.
 
 export const TYPE_OPTIONS = ['Manga', 'Manhwa', 'Manhua', 'Other'] as const;
-export const DEMOGRAPHIC_OPTIONS = ['Josei', 'Seinen', 'Shoujo', 'Shounen'] as const;
 export const STATUS_OPTIONS = ['Releasing', 'Finished', 'On hiatus', 'Discontinued'] as const;
 export const CONTENT_RATING_OPTIONS = ['Safe', 'Suggestive', 'Erotica', 'Pornographic'] as const;
 

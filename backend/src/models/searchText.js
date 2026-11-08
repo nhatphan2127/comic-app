@@ -39,8 +39,8 @@ const RAW_TEXT = [
   'comics.name',
   'comics.url',
   "(SELECT group_concat(con.name, ' ') FROM comic_other_names con WHERE con.comicId = comics.id)",
-  '(SELECT au.name FROM author au WHERE au.id = comics.authorId)',
-  '(SELECT ar.name FROM artist ar WHERE ar.id = comics.artistId)',
+  'comics.author',
+  'comics.artist',
 ].map((field) => `coalesce(${field}, '')`).join(` || ${SEP_SQL} || `);
 
 // SQLite's parser rejects deeply nested expressions ("parser stack overflow"), so the folding runs as
@@ -67,13 +67,20 @@ const triggerBody = (where) => `BEGIN ${refreshStatements(where).join(' ')} END`
 
 const TRIGGERS = {
   comics_search_insert: `AFTER INSERT ON comics ${triggerBody('id = NEW.id')}`,
-  comics_search_update: `AFTER UPDATE OF name, url, authorId, artistId ON comics ${triggerBody('id = NEW.id')}`,
+  comics_search_update: `AFTER UPDATE OF name, url, author, artist ON comics ${triggerBody('id = NEW.id')}`,
   other_names_search_insert: `AFTER INSERT ON comic_other_names ${triggerBody('id = NEW.comicId')}`,
   other_names_search_update: `AFTER UPDATE ON comic_other_names ${triggerBody('id IN (OLD.comicId, NEW.comicId)')}`,
   other_names_search_delete: `AFTER DELETE ON comic_other_names ${triggerBody('id = OLD.comicId')}`,
-  author_search_update: `AFTER UPDATE OF name ON author ${triggerBody('authorId = NEW.id')}`,
-  artist_search_update: `AFTER UPDATE OF name ON artist ${triggerBody('artistId = NEW.id')}`,
 };
+
+// Every search trigger body reads the comics columns, so SQLite refuses to drop or rename one of them
+// while any trigger exists. Schema migrations call this first; installSearchText() recreates them.
+const LEGACY_TRIGGERS = ['author_search_update', 'artist_search_update'];
+export async function dropSearchTriggers() {
+  for (const name of [...Object.keys(TRIGGERS), ...LEGACY_TRIGGERS]) {
+    await sequelize.query(`DROP TRIGGER IF EXISTS ${name}`);
+  }
+}
 
 // Called at startup, after the searchText column exists. Triggers are recreated and every row rebuilt,
 // so a change to the folding above applies to existing data on the next start.

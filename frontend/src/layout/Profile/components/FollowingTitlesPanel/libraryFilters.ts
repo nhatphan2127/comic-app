@@ -2,7 +2,6 @@ import type { FollowingComic } from '../../../../types/types';
 import { parseServerDate } from '../../../../helpers/formatDate';
 
 export {
-  DEMOGRAPHIC_OPTIONS,
   FORMAT_OPTIONS,
   GENRE_OPTIONS,
   STATUS_OPTIONS,
@@ -38,7 +37,6 @@ export interface LibraryFilters {
   query: string;
   folderId: string | null;
   types: string[];
-  demographics: string[];
   statuses: string[];
   genres: string[];
   formats: string[];
@@ -50,7 +48,6 @@ export const EMPTY_FILTERS: LibraryFilters = {
   query: '',
   folderId: null,
   types: [],
-  demographics: [],
   statuses: [],
   genres: [],
   formats: [],
@@ -87,7 +84,6 @@ export function applyLibraryFilters(items: FollowingComic[], f: LibraryFilters):
     if (q && !lower(c.name).includes(q)) return false;
     if (f.folderId && item.category?.id !== f.folderId) return false;
     if (f.types.length && !f.types.some((t) => lower(t) === lower(c.types))) return false;
-    if (f.demographics.length && !f.demographics.some((d) => lower(d) === lower(c.demographic))) return false;
     if (f.statuses.length && !f.statuses.some((s) => squash(s) === squash(c.releaseStatus))) return false;
 
     if (wanted.length) {

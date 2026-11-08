@@ -13,18 +13,17 @@ import { BadRequestError } from '../errors.js';
 
 export const CONTENT_RATINGS = ['safe', 'suggestive', 'erotica', 'pornographic'];
 export const COMIC_TYPES = ['manga', 'manhwa', 'manhua', 'other'];
-export const DEMOGRAPHICS = ['josei', 'seinen', 'shoujo', 'shounen'];
 export const RELEASE_STATUSES = ['releasing', 'finished', 'on hiatus', 'discontinued'];
 
 // Fields accepted from the comic form (multipart). Anything else in the body is ignored.
 const pickComicInput = (body = {}) => {
-  const { name, source, types, contentRating, demographic, description, url, author, artist, genres, formats, releaseStatus, releasingYear } = body;
-  return { name, source, types, contentRating, demographic, description, url, author, artist, genres, formats, releaseStatus, releasingYear };
+  const { name, source, types, contentRating, description, url, author, artist, genres, formats, releaseStatus, releasingYear } = body;
+  return { name, source, types, contentRating, description, url, author, artist, genres, formats, releaseStatus, releasingYear };
 };
 
 // ---------- Comics ----------
 
-// GET /comics?q=&contentRating=&type=&demographic=&releaseStatus=&genre=&format=&sort=&page=&pageSize=
+// GET /comics?q=&contentRating=&type=&releaseStatus=&genre=&format=&sort=&page=&pageSize=
 export const listComics = asyncHandler(async (req, res) => {
   const { query } = req;
   const page = parsePagination(query);
@@ -32,7 +31,6 @@ export const listComics = asyncHandler(async (req, res) => {
     q: typeof query.q === 'string' ? query.q.trim() : undefined,
     contentRatings: parseEnumList(query.contentRating, 'contentRating', CONTENT_RATINGS),
     types: parseEnumList(query.type, 'type', COMIC_TYPES),
-    demographics: parseEnumList(query.demographic, 'demographic', DEMOGRAPHICS),
     releaseStatuses: parseEnumList(query.releaseStatus, 'releaseStatus', RELEASE_STATUSES),
     genres: parseList(query.genre),
     formats: parseList(query.format),
@@ -70,8 +68,8 @@ export const getComic = asyncHandler(async (req, res) => {
   ok(res, await comicService.getPublicDetail(req.params.comicId, req.user?.id));
 });
 
-// GET /comics/:comicId/similar?limit=&contentRating= (id or url slug): closest in genres, formats,
-// demographic and type, each item with its `similarity` (0..1).
+// GET /comics/:comicId/similar?limit=&contentRating= (id or url slug): closest in genres, formats
+// and type, each item with its `similarity` (0..1).
 export const listSimilarComics = asyncHandler(async (req, res) => {
   const limit = parseLimit(req.query, { defaultLimit: 10, maxLimit: recommendationService.MAX_SIMILAR });
   const contentRatings = parseEnumList(req.query.contentRating, 'contentRating', CONTENT_RATINGS);

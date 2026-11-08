@@ -136,7 +136,6 @@ export async function getFollowingList(userId) {
       updatedAt: item.comicUpdatedAt || null,
       types: item.comicTypes || undefined,
       contentRating: item.comicContentRating || undefined,
-      demographic: item.comicDemographic || undefined,
       genres: genresMap[item.comicId],
       tags: [],
       formats: formatsMap[item.comicId],

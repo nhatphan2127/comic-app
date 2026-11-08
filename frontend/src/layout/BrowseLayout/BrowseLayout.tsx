@@ -5,7 +5,7 @@ import type { Comic } from '../../types/types';
 import ComicCardList from '../../components/ComicCard/ComicCard';
 import Pagination from '../../components/Pagination/Pagination';
 import { comicApi } from '../../services/api';
-import { DEMOGRAPHIC_OPTIONS, FORMAT_OPTIONS, GENRE_OPTIONS, STATUS_OPTIONS, TYPE_OPTIONS } from '../../constants/comicOptions';
+import { FORMAT_OPTIONS, GENRE_OPTIONS, STATUS_OPTIONS, TYPE_OPTIONS } from '../../constants/comicOptions';
 import useContentFilter from '../../hooks/useContentFilter';
 import cx from '../../helpers/cx';
 import styles from './BrowseLayout.module.css';
@@ -22,7 +22,7 @@ const SORT_OPTIONS = [
 ];
 
 /** Every filter lives in the URL, so a filtered view can be shared or bookmarked. */
-const FILTER_KEYS = ['search', 'type', 'demographic', 'status', 'genre', 'format', 'sort', 'page'] as const;
+const FILTER_KEYS = ['search', 'type', 'status', 'genre', 'format', 'sort', 'page'] as const;
 
 function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (v: string) => void }) {
   return (
@@ -46,7 +46,6 @@ export default function BrowseLayout() {
 
   const search = params.get('search') ?? '';
   const type = params.get('type') ?? '';
-  const demographic = params.get('demographic') ?? '';
   const status = params.get('status') ?? '';
   const genres = (params.get('genre') ?? '').split(',').filter(Boolean);
   const formats = (params.get('format') ?? '').split(',').filter(Boolean);
@@ -63,6 +62,15 @@ export default function BrowseLayout() {
 
   // The header search can change ?search= while this page is open.
   useEffect(() => setDraft(search), [search]);
+
+  useEffect(() => {
+    if (!params.has('demographic')) return;
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('demographic');
+      return next;
+    }, { replace: true });
+  }, [params, setParams]);
 
   const genreKey = genres.join(',');
   const formatKey = formats.join(',');
@@ -81,7 +89,6 @@ export default function BrowseLayout() {
         {
           q: search,
           type,
-          demographic,
           releaseStatus: status,
           genres: genreKey ? genreKey.split(',') : [],
           formats: formatKey ? formatKey.split(',') : [],
@@ -107,7 +114,7 @@ export default function BrowseLayout() {
     return () => {
       cancelled = true;
     };
-  }, [search, type, demographic, status, genreKey, formatKey, sort, page, contentFilter]);
+  }, [search, type, status, genreKey, formatKey, sort, page, contentFilter]);
 
   /** Updates some filters and goes back to page 1 (unless the page itself is what changed). */
   const update = (changes: Partial<Record<(typeof FILTER_KEYS)[number], string>>) => {
@@ -135,7 +142,7 @@ export default function BrowseLayout() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const activeCount = [search, type, demographic, status].filter(Boolean).length + genres.length + formats.length;
+  const activeCount = [search, type, status].filter(Boolean).length + genres.length + formats.length;
   const clearAll = () => setParams(sort !== SORT_OPTIONS[0].value ? { sort } : {});
 
   return (
@@ -161,7 +168,6 @@ export default function BrowseLayout() {
       <section className={styles.filters} aria-label="Filters">
         <div className={styles.selects}>
           <FilterSelect label="Type" value={type} options={TYPE_OPTIONS} onChange={(v) => update({ type: v })} />
-          <FilterSelect label="Demographic" value={demographic} options={DEMOGRAPHIC_OPTIONS} onChange={(v) => update({ demographic: v })} />
           <FilterSelect label="Status" value={status} options={STATUS_OPTIONS} onChange={(v) => update({ status: v })} />
           <label className={styles.select}>
             <span>Sort by</span>

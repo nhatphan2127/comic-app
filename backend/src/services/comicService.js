@@ -13,6 +13,19 @@ import { removeStoredFiles } from '../utils/storedFiles.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors.js';
 
 const LATEST_CHAPTERS_PER_COMIC = 3;
+const COMIC_TYPES = ['manga', 'manhwa', 'manhua', 'other'];
+const CONTENT_RATINGS = ['safe', 'suggestive', 'erotica', 'pornographic'];
+
+function normalizeEnum(value, field, allowed) {
+  if (typeof value !== 'string') {
+    throw new BadRequestError(`"${field}" must be one of: ${allowed.join(', ')}`);
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!allowed.includes(normalized)) {
+    throw new BadRequestError(`"${field}" must be one of: ${allowed.join(', ')}`);
+  }
+  return normalized;
+}
 
 // ---------- Reading ----------
 
@@ -86,7 +99,6 @@ async function toDetail(comic) {
     source: comic.source,
     types: comic.types,
     contentRating: comic.contentRating,
-    demographic: comic.demographic,
     rating: comic.rating,
     view: comic.view,
     follow: comic.follow,
@@ -95,8 +107,8 @@ async function toDetail(comic) {
     visibility: comic.visibility,
     url: comic.url,
     releasingYear: comic.releasingYear,
-    author: comic.authorName,
-    artist: comic.artistName,
+    author: comic.author,
+    artist: comic.artist,
     genres,
     formats,
   };
@@ -131,7 +143,12 @@ async function toLatestDetail(comic) {
   const detail = await toDetail(comic);
   if (!comic.pendingChanges) return { ...detail, pendingEdit: false };
   const { columns, author, artist, genres, formats } = JSON.parse(comic.pendingChanges);
-  const { authorId, artistId, ...fields } = columns;
+  const fields = { ...columns };
+  delete fields.authorId;
+  delete fields.artistId;
+  fields.author ??= author;
+  fields.artist ??= artist;
+  delete fields.demographic;
   const names = (values) => (Array.isArray(values) ? values : values ? [values] : []);
   return {
     ...detail,
@@ -165,25 +182,26 @@ export async function getForEditing(user, key) {
 // ---------- Writing ----------
 
 function requireComicFields(input) {
-  if (!input.name || !input.types || !input.demographic || !input.url) {
+  if (!input.name || !input.types || !input.url) {
     throw new BadRequestError('Missing required comic fields');
   }
 }
 
-// Turns form input into column values, creating author/artist/genre/format rows as needed.
+// Turns form input into comic column values.
 async function resolveComicColumns(input) {
   return {
     name: input.name,
     source: input.source || null,
-    types: input.types.toLowerCase(),
-    contentRating: input.contentRating || 'safe',
-    demographic: input.demographic.toLowerCase(),
+    types: normalizeEnum(input.types, 'type', COMIC_TYPES),
+    contentRating: input.contentRating
+      ? normalizeEnum(input.contentRating, 'contentRating', CONTENT_RATINGS)
+      : 'safe',
     description: input.description || null,
     url: input.url,
     releaseStatus: (input.releaseStatus || 'releasing').toLowerCase(),
     releasingYear: input.releasingYear ? Number(input.releasingYear) : null,
-    authorId: await lookupRepo.findOrCreateByName('author', input.author),
-    artistId: await lookupRepo.findOrCreateByName('artist', input.artist),
+    author: input.author?.trim() || null,
+    artist: input.artist?.trim() || null,
   };
 }
 
@@ -192,25 +210,26 @@ async function saveLinks(comicId, input) {
   await comicRepo.replaceFormats(comicId, await lookupRepo.findOrCreateMany('formats', input.formats));
 }
 
-export async function create(user, input, coverFilename) {
+// `status` overrides the site's review default (the admin ZIP import chooses it per import).
+export async function createInTransaction(user, input, coverFilename, { status: statusOverride } = {}) {
   if (!coverFilename) throw new BadRequestError('Missing required comic fields or cover image');
   requireComicFields(input);
 
   const id = uuidv4();
   const coverUrl = `comics/${coverFilename}`;
 
-  const status = await withTransaction(async () => {
-    if (await comicRepo.findIdByUrl(input.url)) throw new ConflictError('Comic URL already exists');
+  if (await comicRepo.findIdByUrl(input.url)) throw new ConflictError('Comic URL already exists');
 
-    const initialStatus = await initialReviewStatus();
-    const columns = await resolveComicColumns(input);
-    await comicRepo.insert({ id, ...columns, coverUrl, status: initialStatus });
-    await saveLinks(id, input);
-    await contributorRepo.insertIgnore('comic', { targetId: id, userId: user.id, status: initialStatus });
-    return initialStatus;
-  });
-
+  const status = statusOverride ?? (await initialReviewStatus());
+  const columns = await resolveComicColumns(input);
+  await comicRepo.insert({ id, ...columns, coverUrl, status });
+  await saveLinks(id, input);
+  await contributorRepo.insertIgnore('comic', { targetId: id, userId: user.id, status });
   return { id, name: input.name, coverUrl, status };
+}
+
+export async function create(user, input, coverFilename) {
+  return withTransaction(() => createInTransaction(user, input, coverFilename));
 }
 
 // Every edit goes through moderation. A comic that is not live yet is edited in place and goes back to
@@ -268,7 +287,15 @@ export async function update(user, comicId, input, coverFilename) {
 export async function settlePendingEdit(comicId, accept) {
   const comic = await comicRepo.findById(comicId);
   if (!comic?.pendingChanges) return [];
-  const { columns, genres, formats } = JSON.parse(comic.pendingChanges);
+  const { columns: pendingColumns, author, artist, genres, formats } = JSON.parse(comic.pendingChanges);
+  const columns = {
+    ...pendingColumns,
+    author: pendingColumns.author ?? author ?? null,
+    artist: pendingColumns.artist ?? artist ?? null,
+  };
+  delete columns.authorId;
+  delete columns.artistId;
+  delete columns.demographic;
   const changedCover = columns.coverUrl !== comic.coverUrl;
   if (!accept) {
     await comicRepo.setPendingChanges(comicId, null);

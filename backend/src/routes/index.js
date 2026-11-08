@@ -8,7 +8,7 @@ import reportRoutes from './reportRoutes.js';
 import userRoutes from './userRoutes.js';
 import { comicRouter, chapterRouter } from './comicRoutes.js';
 import { adminRouter, moderationRouter } from './adminRoutes.js';
-import publishRoutes from './publishRoutes.js';
+import adminImportRoutes from './adminImportRoutes.js';
 
 // Exported so tests can check that every route is documented in openapi.yaml.
 export const mounts = [
@@ -21,7 +21,7 @@ export const mounts = [
   ['/reports', reportRoutes],
   ['/moderation', moderationRouter],
   ['/admin', adminRouter],
-  ['/publish', publishRoutes],
+  ['/admin/imports', adminImportRoutes],
 ];
 
 const v1 = express.Router();

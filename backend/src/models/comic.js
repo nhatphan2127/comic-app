@@ -7,8 +7,6 @@ const lookupColumns = (nameIsUnique) => ({
   name: { type: TEXT, allowNull: false, unique: nameIsUnique },
 });
 
-export const Author = sequelize.define('Author', { ...lookupColumns(false), bio: TEXT }, { tableName: 'author' });
-export const Artist = sequelize.define('Artist', { ...lookupColumns(false), bio: TEXT }, { tableName: 'artist' });
 export const Genre = sequelize.define('Genre', { ...lookupColumns(true), description: TEXT }, { tableName: 'genres' });
 export const Format = sequelize.define('Format', { ...lookupColumns(true), description: TEXT }, { tableName: 'formats' });
 
@@ -16,15 +14,16 @@ export const Comic = sequelize.define('Comic', {
   id: primaryId,
   name: required(TEXT),
   source: TEXT,
+  author: TEXT,
+  artist: TEXT,
   types: required(TEXT), // manga, manhwa, manhua, other
   status: withDefault(TEXT, 'pending'), // pending, accept, reject (moderation)
   // An edit of an approved comic waiting for review (JSON); readers keep seeing the approved version.
   pendingChanges: TEXT,
   contentRating: required(TEXT), // safe, suggestive, erotica, pornographic
-  demographic: required(TEXT), // josei, seinen, shoujo, shounen
   description: TEXT,
   rating: withDefault(REAL, 0),
-  coverUrl: TEXT,
+  coverUrl: TEXT, // Relative storage object key, e.g. comics/<uuid>.webp
   view: withDefault(INTEGER, 0),
   follow: withDefault(INTEGER, 0),
   releaseStatus: required(TEXT), // releasing, finished, on hiatus, discontinued
@@ -32,8 +31,6 @@ export const Comic = sequelize.define('Comic', {
   deletedAt: TEXT, // soft delete
   url: { type: TEXT, allowNull: false, unique: true },
   releasingYear: INTEGER,
-  authorId: ref('author', { allowNull: true }),
-  artistId: ref('artist', { allowNull: true }),
   createdAt: timestamp(),
   updatedAt: timestamp(),
 }, { tableName: 'comics' });

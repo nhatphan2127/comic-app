@@ -1,0 +1,73 @@
+# Monitoring server for the comic app: Prometheus + Loki + Grafana.
+# Runs on a separate host from the application. Start with `sudo bash init.sh` (creates data dirs first).
+#
+# Data (bind mounts, owned by each image's user — init.sh sets this up):
+#   ${MONITORING_DATA_DIR}/prometheus   uid 65534 (nobody)
+#   ${MONITORING_DATA_DIR}/loki         uid 10001
+#   ${MONITORING_DATA_DIR}/grafana      uid 472
+#
+# Inbound ports on this host:
+#   ${LOKI_PORT}    Loki push API — allow ONLY the app server IP in the firewall (no auth)
+#   ${GRAFANA_PORT} Grafana UI    — protected by the Grafana admin login
+# Outbound: Prometheus scrapes <APP_SERVER_IP>:9464/metrics (see prometheus/prometheus.yml).
+
+name: comic-monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ${MONITORING_DATA_DIR:-/var/lib/comic-monitoring}/prometheus:/prometheus
+    # Prometheus UI is not published; open it through Grafana or `ssh -L 9090:localhost:9090` + uncomment:
+    # ports:
+    #   - "127.0.0.1:9090:9090"
+    networks:
+      - monitoring
+
+  loki:
+    image: grafana/loki:3.7.9
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/config.yml
+    ports:
+      - "${LOKI_BIND_ADDRESS:-0.0.0.0}:${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./loki/config.yml:/etc/loki/config.yml:ro
+      - ${MONITORING_DATA_DIR:-/var/lib/comic-monitoring}/loki:/loki
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    restart: unless-stopped
+    env_file:
+      - ./grafana/.env
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    ports:
+      - "${GRAFANA_BIND_ADDRESS:-0.0.0.0}:${GRAFANA_PORT:-3017}:3000"
+    volumes:
+      - ${MONITORING_DATA_DIR:-/var/lib/comic-monitoring}/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - monitoring
+
+networks:
+  monitoring:

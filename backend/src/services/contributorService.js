@@ -80,7 +80,7 @@ export async function listMyComicContributions(userId) {
     updatedAt: row.updatedAt,
     // The comic is live and an edit of it is waiting for review.
     pendingEdit: Boolean(row.pendingEdit),
-    comic: { id: row.id, name: row.name, coverUrl: row.coverUrl, url: row.url, types: row.types, demographic: row.demographic },
+    comic: { id: row.id, name: row.name, coverUrl: row.coverUrl, url: row.url, types: row.types },
   }));
 }
 

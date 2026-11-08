@@ -1,0 +1,36 @@
+# systemd unit for the comic app backend (host install, no Docker).
+#
+#   sudo cp comic-app-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now comic-app-backend
+#   journalctl -u comic-app-backend -f
+#
+# Expects the code in /opt/comic-app/backend, its .env next to it, and a `comic` system user that owns
+# /var/lib/comic-app and /var/log/comic-app (see README "Triển khai").
+
+[Unit]
+Description=Comic app backend (Node.js)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=comic
+Group=comic
+WorkingDirectory=/opt/comic-app/backend
+EnvironmentFile=/opt/comic-app/backend/.env
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+# Allow the 30-minute upload timeout to finish draining on restart.
+TimeoutStopSec=60
+
+# Hardening: the service may only write to its data and log directories.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/comic-app /var/log/comic-app
+
+[Install]
+WantedBy=multi-user.target

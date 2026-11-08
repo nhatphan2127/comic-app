@@ -19,11 +19,11 @@ src/config/database.js   ← tạo `sequelize`, withTransaction(), select(), now
 src/models/
 ├── columns.js           ← viết tắt cho cột: primaryId, ref('users'), timestamp()...
 ├── user.js              ← User, UserPreference, Session, PasswordReset, UserBlock
-├── comic.js             ← Comic, Author, Artist, Genre, Format, ComicGenre, ComicFormat, ComicOtherName, ComicContributor
+├── comic.js             ← Comic, Genre, Format, ComicGenre, ComicFormat, ComicOtherName, ComicContributor
 ├── chapter.js           ← Chapter, ChapterImage, ChapterContributor
 ├── interaction.js       ← ReadHistory, RatingHistory, FollowingCategory, Following, ComicDailyView, UserReadDay
 ├── comment.js           ← ComicComment, ChapterComment (+ Reaction), sinh bởi cùng một hàm
-├── system.js            ← Notification, AdminSetting, Report, RoleRequest, ApiKey, EditRequest, ModerationLog
+├── system.js            ← Notification, AdminSetting, Report, RoleRequest, AdminImportBatch, EditRequest, ModerationLog
 ├── searchText.js        ← cột comics.searchText (bỏ dấu) + trigger SQLite giữ nó luôn đúng
 └── index.js             ← quan hệ (belongsTo) + sequelize.sync() + thêm cột thiếu + export tất cả
 ```
@@ -112,3 +112,5 @@ await addColumnIfMissing('comics', 'pendingChanges', 'TEXT');
 ```
 
 `addColumnIfMissing` đọc `PRAGMA table_info` rồi chạy `ALTER TABLE ... ADD COLUMN` nếu cột chưa có, nên khởi động lại bao nhiêu lần cũng an toàn. Khi dự án lớn hơn (đổi kiểu cột, xoá cột, đổi dữ liệu hàng loạt) thì nên chuyển sang migration có version (`sequelize-cli` / Umzug).
+
+Khi bỏ cột hoặc bảng, `sync()` không tự xoá chúng khỏi DB hiện có. `models/index.js` chuyển tên author/artist từ các bảng lookup cũ vào cột văn bản trên `comics`, rồi xoá các cột khoá ngoại và bảng `author`/`artist`. Nó cũng xoá cột demographic cũ nếu còn tồn tại.

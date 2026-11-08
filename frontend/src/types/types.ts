@@ -126,7 +126,6 @@ export interface ComicContributor {
         types: string;
         releasingStatus: string;
         contentRating: string;
-        demographic:string;
     }
 }
 
@@ -188,7 +187,6 @@ export interface Comic {
     // Categories
     types?: string;
     contentRating?: string;
-    demographic?: string;
     genres?: string[];
     tags?: string[];
     formats?: string[];
@@ -308,24 +306,6 @@ export interface DashboardResponse {
     comics: Comic[];
     chapters: Chapter[];
     autoAccept: boolean;
-}
-
-export type ApiKeyScope = 'comics:write' | 'chapters:write' | 'bulk:write';
-
-/** A publishing API key as its owner sees it (never the secret, except `token` right after creation). */
-export interface ApiKey {
-    id: string;
-    name: string;
-    prefix: string;
-    hint: string;
-    scopes: ApiKeyScope[];
-    status: 'active' | 'expired' | 'revoked';
-    expiresAt: string;
-    lastUsedAt: string | null;
-    lastUsedIp: string | null;
-    revokedAt: string | null;
-    createdAt: string;
-    token?: string;
 }
 
 export type RoleRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';

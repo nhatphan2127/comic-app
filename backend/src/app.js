@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { storageRoot, cleanupUploadsOnFailure } from './middlewares/uploadMiddleware.js';
+import { getStoragePublicUrl, STORAGE_DRIVER } from './services/objectStorageService.js';
 import errorHandler, { notFoundHandler } from './middlewares/errorMiddleware.js';
 import { requireTrustedOrigin } from './middlewares/csrfMiddleware.js';
 import { TooManyRequestsError } from './errors.js';
@@ -50,9 +51,17 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // credentials: the frontend sends the session cookie with every request.
 app.use(cors({ origin: allowedOrigins, credentials: true, exposedHeaders: ['Location'] }));
 app.use(cookieParser());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-app.use('/storage', express.static(storageRoot, { dotfiles: 'deny' }));
+if (STORAGE_DRIVER === 's3') {
+  app.get('/storage/*', (req, res) => {
+    const key = req.params[0];
+    if (!key || key.split('/').some((part) => !part || part === '.' || part === '..')) return res.sendStatus(404);
+    res.redirect(302, getStoragePublicUrl(key));
+  });
+} else {
+  app.use('/storage', express.static(storageRoot, { dotfiles: 'deny' }));
+}
 app.use(cleanupUploadsOnFailure);
 
 app.get('/', (req, res) => {

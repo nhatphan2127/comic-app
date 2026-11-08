@@ -54,7 +54,6 @@ export async function createComic(owner, overrides = {}) {
     .set(auth(owner))
     .field('name', overrides.name || url)
     .field('types', overrides.types || 'manga')
-    .field('demographic', overrides.demographic || 'shounen')
     .field('contentRating', overrides.contentRating || 'safe')
     .field('url', url);
   (overrides.genres || []).forEach((genre) => req.field('genres', genre));

@@ -1,5 +1,6 @@
 // Multer trusts the Content-Type the client sends for each file. Scripts can send anything, so the
-// publishing API also checks the first bytes of every uploaded file against the declared image type.
+// Admin ZIP restore also reads the first bytes of every staged image and stores it under the type
+// found there (a wrong file extension is tolerated, a non-image is rejected).
 // A mismatch fails the request; cleanupUploadsOnFailure then deletes the files.
 import fs from 'node:fs/promises';
 import { UnsupportedMediaTypeError } from '../errors.js';
