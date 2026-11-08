@@ -1,7 +1,9 @@
-// Grafana Alloy log agent — runs on the APP server and pushes logs to Loki on the monitoring server.
-// Host log directories are mounted read-only by agent/docker-compose.yml:
-//   /var/log/comic-app  -> /var/log/comic-app   (backend Winston logs, LOG_DIR)
-//   /var/log/nginx      -> /var/log/nginx       (Nginx JSON access log)
+// Grafana Alloy log agent — runs on the APP server (host install via the Grafana apt/rpm package)
+// and pushes logs to Loki on the monitoring server. Reads host paths directly:
+//   /var/log/comic-app   backend Winston logs (LOG_DIR in backend/.env)
+//   /var/log/nginx       Nginx JSON access log
+// Setup: copy to /etc/alloy/config.alloy, add LOKI_URL / APP_HOSTNAME from alloy.env.example to
+// /etc/default/alloy, then `sudo systemctl restart alloy`. Read positions live in /var/lib/alloy/data.
 
 local.file_match "comic_app_logs" {
 	path_targets = [
@@ -39,7 +41,7 @@ loki.source.file "comic_app_logs" {
 
 loki.write "remote" {
 	endpoint {
-		// e.g. http://10.0.0.20:3100/loki/api/v1/push — set LOKI_URL in agent/.env
+		// e.g. http://10.0.0.20:3100/loki/api/v1/push — set LOKI_URL in /etc/default/alloy
 		url = sys.env("LOKI_URL")
 	}
 	external_labels = {

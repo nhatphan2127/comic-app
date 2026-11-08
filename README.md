@@ -5,8 +5,8 @@ Inkverse is a website for discovering and reading manga, manhwa, and manhua. Rea
 ## Web interface
 
 <p align="center">
-  <img src="docs/screenshots/home.png" alt="Inkverse home page with featured comics and latest updates" width="49%" />
-  <img src="docs/screenshots/browse.png" alt="Inkverse browse page with search and comic filters" width="49%" />
+  <img src="home.png" alt="Inkverse home page with featured comics and latest updates" width="49%" />
+  <img src="browse.png" alt="Inkverse browse page with search and comic filters" width="49%" />
 </p>
 
 ## System overview
@@ -40,6 +40,12 @@ flowchart LR
 - The backend stores application data in SQLite. Local development uses `backend/storage/`; production uses self-hosted SeaweedFS (a single Docker container) for S3-compatible object storage.
 - Image columns store relative object keys such as `comics/<uuid>.webp` and `chapter-images/<uuid>.jpg`, not host filesystem paths or provider-specific URLs. The frontend resolves those keys through `VITE_STORAGE_URL`; without it, `/storage/` is used.
 - In production, a host-installed Nginx ([`nginx/default.conf`](nginx/default.conf)) serves the frontend build, proxies `/api/` to the backend on `127.0.0.1:5000`, and proxies read-only `/storage/` requests to the public-read SeaweedFS bucket on `127.0.0.1:8333`. SeaweedFS ports are bound to `127.0.0.1` only.
+
+### Backend request architecture
+
+<p align="center">
+  <img src="mermaid-diagram(1).png" alt="Backend request flow through Express routes, controllers, services, repositories, SQLite, and image storage" width="80%" />
+</p>
 
 ## Project structure
 
@@ -145,21 +151,9 @@ comic-app-deploy.zip
 └── monitoring/       → monitoring server (agent/ goes to the app server)
 ```
 
-```mermaid
-flowchart LR
-    subgraph App["App server"]
-        Nginx["Nginx :80<br/>default.conf"] -->|/api/| Node["Backend :5000<br/>systemd"]
-        Nginx -->|/storage/ GET| Seaweed["SeaweedFS :8333<br/>docker run"]
-        Node --> Seaweed
-        Alloy["Alloy agent"]
-    end
-    subgraph Mon["Monitoring server"]
-        Prom["Prometheus"] --> Grafana
-        Loki --> Grafana
-    end
-    Prom -->|":9464/metrics"| Nginx
-    Alloy -->|"logs :3100"| Loki
-```
+<p align="center">
+  <img src="mermaid-diagram(2).png" alt="Production deployment architecture for the app server and monitoring server" width="100%" />
+</p>
 
 | Path | Server | Contents |
 |---|---|---|
@@ -171,7 +165,7 @@ flowchart LR
 | `/var/log/comic-app` | app | Backend logs (`LOG_DIR`), read by the Alloy agent |
 | `/var/log/nginx/comic-app.access.log` | app | Nginx JSON access log |
 | `/var/lib/seaweedfs` | app | SeaweedFS data (bind-mounted to `/data`) |
-| `/var/lib/comic-alloy` | app | Alloy agent position files |
+| `/var/lib/alloy/data` | app | Alloy agent position files (created by the `alloy` package) |
 | `/opt/comic-monitoring` | monitoring | Monitoring configuration (`monitoring/`) |
 | `/var/lib/comic-monitoring/{prometheus,loki,grafana}` | monitoring | Monitoring data |
 
@@ -270,14 +264,22 @@ sed -i 's/APP_SERVER_IP/10.0.0.10/' prometheus/prometheus.yml
 sudo bash init.sh                           # creates data dirs with the right owners, then compose up
 ```
 
-Logs are written on the app server, so the Grafana Alloy agent in [`monitoring/agent/`](monitoring/agent/) runs there and pushes backend and Nginx logs to Loki:
+Logs are written on the app server, so the Grafana Alloy agent runs there (installed directly on the host, no Docker) with the config in [`backend/monitoring-agent/`](backend/monitoring-agent/), and pushes backend and Nginx logs to Loki:
 
 ```bash
-# App server
-cd /opt/comic-app/monitoring-agent          # copy of monitoring/agent
-cp .env.example .env                        # LOKI_URL=http://<monitoring-server>:3100/loki/api/v1/push
-sudo mkdir -p /var/lib/comic-alloy
-docker compose up -d
+# App server — install Alloy from the Grafana apt repository
+sudo mkdir -p /etc/apt/keyrings
+wget -qO- https://apt.grafana.com/gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+sudo apt-get update && sudo apt-get install -y alloy
+
+cd /opt/comic-app/backend/monitoring-agent
+sudo cp config.alloy /etc/alloy/config.alloy
+cat alloy.env.example | sudo tee -a /etc/default/alloy   # then edit LOKI_URL and APP_HOSTNAME
+sudo usermod -aG adm alloy                               # read /var/log/nginx
+sudo usermod -aG comic alloy                             # read /var/log/comic-app
+sudo systemctl enable alloy && sudo systemctl restart alloy
+journalctl -u alloy -f
 ```
 
 Loki has no authentication: allow port `3100` on the monitoring server only from the app server IP. Grafana listens on `3017` behind its admin login. See [backend logging and monitoring conventions](backend/docs/api-conventions.md#8-logging) for retention, labels, and backup notes.
